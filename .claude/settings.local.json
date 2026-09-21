@@ -38,7 +38,8 @@
       "Bash(unzip -l gitlet_core/target/gitlet_core-0.0.1-SNAPSHOT.jar)",
       "Bash(mvn -B package -DskipTests)",
       "Bash(git reset *)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(grep '\\\\.java$')"
     ]
   }
 }

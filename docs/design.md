@@ -223,7 +223,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | — | `0` | 成功 |
 | 请求与内容 | `1xxxx` | 格式非法、内容校验失败、超限、限流 |
 | 认证授权 | `2xxxx` | 未认证、无权限 |
-| 仓库与分支 | `3xxxx` | 仓库不存在、分支不存在 |
+| 仓库与分支 | `3xxxx` | 提交的文件不能为空、分支不存在 |
 | 并发冲突 | `5xxxx` | 乐观锁失败 |
 | 系统 | `9xxxx` | 服务端错误 |
 
@@ -265,6 +265,8 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 ---
 
 ## 8. 关键流程
+
+![image-20260921234640396](D:\Job_project\gitlethub\docs\design.assets\image-20260921234640396.png)
 
 ### push
 

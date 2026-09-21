@@ -92,7 +92,7 @@ public class ApiReposOwnerRepoObjectsPost200Response {
   }
 
   /**
-   * Constructor with only required parameters
+   * 仅含必填参数的构造函数
    */
   public ApiReposOwnerRepoObjectsPost200Response(CodeEnum code, String message) {
     this.code = code;

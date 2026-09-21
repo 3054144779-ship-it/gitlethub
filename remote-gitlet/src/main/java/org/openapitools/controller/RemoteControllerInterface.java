@@ -3,7 +3,7 @@
  * https://openapi-generator.tech
  * Do not edit the class manually.
  */
-package org.openapitools.api;
+package org.openapitools.controller;
 
 import org.openapitools.model.ApiReposOwnerRepoObjectsGet200Response;
 import org.openapitools.model.ApiReposOwnerRepoObjectsPost200Response;
@@ -13,11 +13,8 @@ import org.openapitools.model.ModelApiResponse;
 import org.springframework.lang.Nullable;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.RefUpdateRequest;
-import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.Parameters;
-import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -31,19 +28,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.NativeWebRequest;
-import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
-import java.util.List;
-import java.util.Map;
+
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-09-21T20:19:28.153831200+08:00[Asia/Shanghai]", comments = "Generator version: 7.25.0")
 @Validated
 @Tag(name = "repo", description = "仓库与对象传输")
-public interface ApiApi {
+public interface RemoteControllerInterface {
 
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
@@ -109,7 +104,7 @@ public interface ApiApi {
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = ApiApi.PATH_API_REPOS_OWNER_REPO_OBJECTS_GET,
+        value = RemoteControllerInterface.PATH_API_REPOS_OWNER_REPO_OBJECTS_GET,
         produces = { "application/json" }
     )
     default ResponseEntity<ApiReposOwnerRepoObjectsGet200Response> apiReposOwnerRepoObjectsGet(
@@ -225,7 +220,7 @@ public interface ApiApi {
     )
     @RequestMapping(
         method = RequestMethod.POST,
-        value = ApiApi.PATH_API_REPOS_OWNER_REPO_OBJECTS_POST,
+        value = RemoteControllerInterface.PATH_API_REPOS_OWNER_REPO_OBJECTS_POST,
         produces = { "application/json" },
         consumes = { "application/json" }
     )
@@ -337,7 +332,7 @@ public interface ApiApi {
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = ApiApi.PATH_API_REPOS_OWNER_REPO_REFS_BRANCH_GET,
+        value = RemoteControllerInterface.PATH_API_REPOS_OWNER_REPO_REFS_BRANCH_GET,
         produces = { "application/json" }
     )
     default ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> apiReposOwnerRepoRefsBranchGet(
@@ -463,7 +458,7 @@ public interface ApiApi {
     )
     @RequestMapping(
         method = RequestMethod.POST,
-        value = ApiApi.PATH_API_REPOS_OWNER_REPO_REFS_BRANCH_POST,
+        value = RemoteControllerInterface.PATH_API_REPOS_OWNER_REPO_REFS_BRANCH_POST,
         produces = { "application/json" },
         consumes = { "application/json" }
     )
