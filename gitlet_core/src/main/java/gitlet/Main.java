@@ -2,6 +2,7 @@ package gitlet;
 
 
 import gitlet.repository.Repository;
+import gitlet.repository.RepositoryPaths;
 import gitlet.utils.Utils;
 
 import java.util.Objects;
@@ -131,7 +132,7 @@ public class Main {
 
     // .gitlet 目录是否存在，存在true，不存在false
     private static void checkGitLet() {
-        if (!Repository.GITLETDIR.exists()) {
+        if (!RepositoryPaths.GITLETDIR.exists()) {
             Utils.message("Not in an initialized Gitlet directory.");
             System.exit(0);
         }

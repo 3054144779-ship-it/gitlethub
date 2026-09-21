@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.8</version>
+        <version>3.3.0</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.huahuo</groupId>
@@ -21,9 +21,11 @@
     <developers>
         <developer/>
     </developers>
+
     <modules>
         <module>gitlet_core</module>
     </modules>
+
     <scm>
         <connection/>
         <developerConnection/>
@@ -48,24 +50,15 @@
             <artifactId>spring-boot-starter-data-r2dbc</artifactId>
         </dependency>
 
-        <!--spring webmvc start-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc</artifactId>
-        </dependency>
-        <!--R2DBC test start-->
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-r2dbc-test</artifactId>
+            <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <!--spring webmvc test start-->
+        <!--lombok-->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc-test</artifactId>
-            <scope>test</scope>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
         </dependency>
     </dependencies>
 

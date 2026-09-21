@@ -10,9 +10,6 @@ import java.util.*;
 
 import static gitlet.utils.Utils.join;
 
-
-// 你需要导入的设备在这里
-
 /** 代表一个 gitlet 仓库。
  *  这里介绍一下这个职业还有哪些内容是个好主意
  *  在高水平上。
@@ -20,21 +17,7 @@ import static gitlet.utils.Utils.join;
  */
 public class Repository implements Serializable {
 
-    /** 当前工作目录 */
-    public static final File CWD = new File(System.getProperty("user.dir"));
 
-    /** gilet 目录*/
-    public static final File GITLETDIR = join(CWD, ".gitlet");
-    /** 储存提交的文件备份*/
-    public static final File OBJECT = Utils.join(GITLETDIR, "Objects");
-    /** refs/heads 目录储存分支  */
-    public static final File BRANCHDIR = Utils.join(GITLETDIR, "refs", "heads");
-    /** 储存 HEAD 指针  */
-    public static final File HEADFILE = Utils.join(GITLETDIR, "HEAD");
-    /** 储存 commit 的文件  */
-    public static final File COMMITS = Utils.join(OBJECT, "commits");
-    /** 存储暂存区文件信息。 */
-    public static final File STAGINGFILE = Utils.join(GITLETDIR, "staging");
 
     private static Staging stage = getStaging();
 
@@ -45,7 +28,7 @@ public class Repository implements Serializable {
     * */
     public static void init() {
         // 如果.gitlet 文件夹不存在就创建文件夹，存在就报错。
-        if (GITLETDIR.exists()) {
+        if (RepositoryPaths.GITLETDIR.exists()) {
             // 输出错误信息
             Utils.message("A Gitlet version-control system already "
                     + "exists in the current directory.");
@@ -53,10 +36,10 @@ public class Repository implements Serializable {
         }
 
         // 初始化文件
-        GITLETDIR.mkdirs();
-        OBJECT.mkdirs();
-        BRANCHDIR.mkdirs();
-        COMMITS.mkdirs();
+        RepositoryPaths.GITLETDIR.mkdirs();
+        RepositoryPaths.OBJECT.mkdirs();
+        RepositoryPaths.BRANCHDIR.mkdirs();
+        RepositoryPaths.COMMITS.mkdirs();
 
         // 创建一个初始提交
         Commit initCommit = new Commit("initial commit", new ArrayList<>(),
@@ -64,10 +47,10 @@ public class Repository implements Serializable {
         String initCommitSha1 = initCommit.saveCommit();
 
         // 将这个提交的信息写入 master 分支,并且头指针指向 这个新提交.
-        File masterFile = Utils.join(BRANCHDIR, "master");
+        File masterFile = Utils.join(RepositoryPaths.BRANCHDIR, "master");
 
         Utils.writeContents(masterFile, initCommitSha1);
-        Utils.writeContents(HEADFILE, "master");
+        Utils.writeContents(RepositoryPaths.HEADFILE, "master");
 
         saveStaging();
     }
@@ -82,7 +65,7 @@ public class Repository implements Serializable {
     public static void add(String name) {
         /* 合法性判断 */
         // 如果不存在这文件直接报错
-        File file = Utils.join(Repository.CWD, name);
+        File file = Utils.join(RepositoryPaths.CWD, name);
         if (!file.exists()) {
             Utils.message("File does not exist.");
             return;
@@ -274,7 +257,7 @@ public class Repository implements Serializable {
         stage.clear();
         saveStaging();
         // 移动头指针到目标提交。
-        Utils.writeContents(Repository.HEADFILE, branchName);
+        Utils.writeContents(RepositoryPaths.HEADFILE, branchName);
     }
 
     /** 切换到指定提交 ID中该文件的版本 */
@@ -330,7 +313,7 @@ public class Repository implements Serializable {
             return;
         }
 
-        File branchPath = Utils.join(Repository.BRANCHDIR, branchName);
+        File branchPath = Utils.join(RepositoryPaths.BRANCHDIR, branchName);
         notCwdFileDelete(branchPath);
     }
 
@@ -517,7 +500,7 @@ public class Repository implements Serializable {
         if (sha1 == null || sha1.isEmpty()) {
             return "";
         }
-        File blobFile = Utils.join(Repository.OBJECT, sha1);
+        File blobFile = Utils.join(RepositoryPaths.OBJECT, sha1);
         // 如果文件不存在或者已经被删除就返回空字符串
         if (!blobFile.exists() || blobFile.isDirectory()) {
             return "";
@@ -528,7 +511,7 @@ public class Repository implements Serializable {
     /** 生成冲突文件，并返回文件路径 */
     private static File generateConflict(String fileName,
                                          String givenBranchFileSha1, String nowBranchFileSha1) {
-        File conflictFilePath = Utils.join(Repository.CWD, fileName);
+        File conflictFilePath = Utils.join(RepositoryPaths.CWD, fileName);
 
         StringBuilder conflictFileContent = getStringBuilder(
                 getFileContentInObject(nowBranchFileSha1),
@@ -652,7 +635,7 @@ public class Repository implements Serializable {
      *  branchName 创建的分支名称 nowSha1 当前所在分支的最新提交的SHA-1值。
      * */
     private static void createBranch(String branchName, String nowSha1) {
-        File branchPath = Utils.join(Repository.BRANCHDIR, branchName);
+        File branchPath = Utils.join(RepositoryPaths.BRANCHDIR, branchName);
         // 将当前分支的SHA-1值写入文件。
         Utils.writeContents(branchPath, nowSha1);
     }
@@ -699,7 +682,7 @@ public class Repository implements Serializable {
 
     /** 获取分支中存储提交的SHA-1值 */
     private static String readBranchSha1(String branchName) {
-        return Utils.readContentsAsString(Utils.join(Repository.BRANCHDIR, branchName));
+        return Utils.readContentsAsString(Utils.join(RepositoryPaths.BRANCHDIR, branchName));
     }
 
     /** 将Object文件夹中的覆写到工作目录
@@ -707,9 +690,9 @@ public class Repository implements Serializable {
      * */
     private static void overwriteFile(String fileName, String sha1) {
         // 被覆写的文件路径。
-        File filePath = Utils.join(Repository.CWD, fileName);
-        // 获取用来覆写的文件路径。
-        File copyFilePath = Utils.join(Repository.OBJECT, sha1);
+        File filePath = Utils.join(RepositoryPaths.CWD, fileName);
+        // 获取用来覆写文件的文件路径。
+        File copyFilePath = Utils.join(RepositoryPaths.OBJECT, sha1);
         // 获取用来覆写的文件序列化后的文件内容。
         byte[] file = Utils.readContents(copyFilePath);
         // 将Object内的文件覆写到同名文件。
@@ -728,7 +711,7 @@ public class Repository implements Serializable {
             // 只有当 "未追踪文件" 在 "给定分支" 中存在，且内容不同时，才算“没被追踪”
             // 情况 A：给定分支有这个文件，且内容和工作区不一样 (会被覆盖)
             if (givenBranchFiles.containsKey(fileName)) {
-                String currentSha1 = getFileSha1(Utils.join(Repository.CWD, fileName));
+                String currentSha1 = getFileSha1(Utils.join(RepositoryPaths.CWD, fileName));
                 if (!currentSha1.equals(givenBranchFiles.get(fileName))) {
                     return false;
                 }
@@ -803,7 +786,7 @@ public class Repository implements Serializable {
         for (String fileName : cwdFiles) {
             // 如果在暂存区的所有提交中存在这个文件的话。
             if (stagingMap.containsKey(fileName)) {
-                String serCwd = getFileSha1(Utils.join(Repository.CWD, fileName));
+                String serCwd = getFileSha1(Utils.join(RepositoryPaths.CWD, fileName));
                 String serStaging = stagingMap.get(fileName);
                 // SHA-1值不同加入未加入暂存区
                 if (!serStaging.equals(serCwd)) {
@@ -811,7 +794,7 @@ public class Repository implements Serializable {
                 }
             } else if (commitFilesMap.containsKey(fileName)) {
                 // 如果这个文件之前提交过的话(最新的一次为准)，SHA-1值不同说明修改过。
-                String serCwd = getFileSha1(Utils.join(Repository.CWD, fileName));
+                String serCwd = getFileSha1(Utils.join(RepositoryPaths.CWD, fileName));
                 String serCommit = commitFilesMap.get(fileName);
                 // SHA-1值不同加入未加入暂存区
                 if (!serCommit.equals(serCwd)) {
@@ -865,12 +848,12 @@ public class Repository implements Serializable {
 
     /** 获取当前工作目录下的全部文件名 */
     private static List<String> getCwdFiles() {
-        return Utils.plainFilenamesIn(Repository.CWD);
+        return Utils.plainFilenamesIn(RepositoryPaths.CWD);
     }
 
     /** 获取所有分支 */
     private static List<String> getBranches() {
-        return Utils.plainFilenamesIn(Repository.BRANCHDIR);
+        return Utils.plainFilenamesIn(RepositoryPaths.BRANCHDIR);
     }
 
     /** 获取所有分支（带标记） */
@@ -922,9 +905,9 @@ public class Repository implements Serializable {
     /** 获取 head-commit 中的 <\name:SHA-1> 映射表*/
     private static Map<String, String> getHeadCommitTrackedFilesMap() {
         // 获取头指针指向的分支
-        String branch = Utils.readContentsAsString(Repository.HEADFILE);
+        String branch = Utils.readContentsAsString(RepositoryPaths.HEADFILE);
         // 获取头指针指向的分支中存储的 commit 的SHA-1值
-        File file = Utils.join(Repository.BRANCHDIR, branch);
+        File file = Utils.join(RepositoryPaths.BRANCHDIR, branch);
         String sha1 = Utils.readContentsAsString(file);
 
         return getCommit(sha1).getTrackedFiles();
@@ -933,16 +916,16 @@ public class Repository implements Serializable {
     /** 获取 head-commit 中的 merge 链表*/
     private static List<String> getHeadCommitMargeFilesList() {
         // 获取头指针指向的分支
-        String branch = Utils.readContentsAsString(Repository.HEADFILE);
+        String branch = Utils.readContentsAsString(RepositoryPaths.HEADFILE);
         // 获取头指针指向的分支中存储的 commit 的SHA-1值
-        File file = Utils.join(Repository.BRANCHDIR, branch);
+        File file = Utils.join(RepositoryPaths.BRANCHDIR, branch);
         String sha1 = Utils.readContentsAsString(file);
 
         return getCommit(sha1).getMergeFiles();
     }
 
     private static Commit getCommit(String sha1) {
-        File commitFile = Utils.join(Repository.COMMITS, sha1);
+        File commitFile = Utils.join(RepositoryPaths.COMMITS, sha1);
         return Utils.readObject(commitFile, Commit.class);
     }
 
@@ -953,39 +936,39 @@ public class Repository implements Serializable {
 
     /** 获取头指针指向的分支路径 */
     private static File getHeadBranch() {
-        return Utils.join(Repository.BRANCHDIR, getHead());
+        return Utils.join(RepositoryPaths.BRANCHDIR, getHead());
     }
 
     /** 获取头指针指向的分支名称 */
     private static String getHead() {
-        return Utils.readContentsAsString(Repository.HEADFILE);
+        return Utils.readContentsAsString(RepositoryPaths.HEADFILE);
     }
 
     /** 获取暂存区对象 */
     private static Staging getStaging() {
         // 如果 .gitlet 目录都不存在，说明是刚开始 init，直接返回空对象
-        if (!Repository.GITLETDIR.exists()) {
+        if (!RepositoryPaths.GITLETDIR.exists()) {
             return new Staging();
         }
 
         /* 如果当前文件不存在就创建这个文件 */
-        if (!Repository.STAGINGFILE.exists()) {
-            Utils.writeObject(Repository.STAGINGFILE, new Staging());
+        if (!RepositoryPaths.STAGINGFILE.exists()) {
+            Utils.writeObject(RepositoryPaths.STAGINGFILE, new Staging());
         }
 
-        return Utils.readObject(Repository.STAGINGFILE, Staging.class);
+        return Utils.readObject(RepositoryPaths.STAGINGFILE, Staging.class);
     }
 
     /** 将文件保存到Object文件夹 */
     private static void saveFile(String sha1, File file) {
-        File filePath = Utils.join(Repository.OBJECT, sha1); // 保存路径
+        File filePath = Utils.join(RepositoryPaths.OBJECT, sha1); // 保存路径
         byte[] fileSer = Utils.readContents(file); // 序列化文件到byt文件
         Utils.writeContents(filePath, (Object) fileSer);
     }
 
     /** 删除工作目录下的文件 */
     private static void deleteCwdFile(String name) {
-        File file = Utils.join(Repository.CWD, name);
+        File file = Utils.join(RepositoryPaths.CWD, name);
         Utils.restrictedDelete(file);
     }
 
@@ -1012,12 +995,12 @@ public class Repository implements Serializable {
 
     /** 获取全部的提交文件作为名称的SHA-1值 */
     private static List<String> getCommitsFiles() {
-        return Utils.plainFilenamesIn(Repository.COMMITS);
+        return Utils.plainFilenamesIn(RepositoryPaths.COMMITS);
     }
 
     // 暂存区持久化
     private static void saveStaging() {
-        Utils.writeObject(Repository.STAGINGFILE, stage);
+        Utils.writeObject(RepositoryPaths.STAGINGFILE, stage);
     }
 
 }

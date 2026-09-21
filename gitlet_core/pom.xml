@@ -12,6 +12,9 @@
     <groupId>com.huahuo.gitlet_core</groupId>
     <artifactId>gitlet_core</artifactId>
 
+    <dependencies>
+
+    </dependencies>
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
