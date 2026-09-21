@@ -16,10 +16,22 @@ import java.util.TreeSet;
 
 /** 状态查询：工作目录 / 暂存区 / 分支状态的各种派生查询与打印。 */
 public class StatusHandler {
+    /** 本次操作针对的仓库 */
+    private final Repository repo;
+    /** 该仓库的路径集合 */
+    private final RepositoryPaths paths;
+    /** 该仓库的对象存储 */
+    private final ObjectStore objects;
 
-    public static void status() {
+    public StatusHandler(Repository repo) {
+        this.repo = repo;
+        this.paths = repo.getPaths();
+        this.objects = repo.getObjects();
+    }
+
+    public void status() {
         /* 打印状态 */
-        Staging stage = Repository.getStaging();
+        Staging stage = repo.getStaging();
         // 分支状态
         printSection("Branches", getMarkingsBranches());
         // 暂存区的文件
@@ -33,12 +45,12 @@ public class StatusHandler {
     }
 
     /** 检查工作目录下是否所有文件都被追踪，都被追踪返回 true，有未被追踪的返回 false */
-    public static boolean trackingCheck() {
+    public boolean trackingCheck() {
         return getNotTrackingFiles().isEmpty();
     }
 
     /** 打印已修改未暂存的文件列表(信息特殊) */
-    public static void printSection(String title, Collection<String> items1,
+    public void printSection(String title, Collection<String> items1,
                                      Collection<String> items2) {
 
         System.out.println("=== " + title + " ===");
@@ -54,7 +66,7 @@ public class StatusHandler {
     }
 
     /** 打印状态信息 */
-    public static void printSection(String title, Collection<String> items) {
+    public void printSection(String title, Collection<String> items) {
         System.out.println("=== " + title + " ===");
         for (final String fileName : items) {
             System.out.println(fileName);
@@ -63,10 +75,10 @@ public class StatusHandler {
     }
 
     /**  获取已修改未暂存的文件列表（排序后） */
-    public static List<String> getNotTrackingFiles() {
+    public List<String> getNotTrackingFiles() {
         Set<String> trackingFiles = getTrackingFiles();
         List<String> unTrackingFiles = new ArrayList<>();
-        List<String> cwdFiles = ObjectStore.getCwdFiles();
+        List<String> cwdFiles = objects.getCwdFiles();
         if (cwdFiles != null) {
             for (final String file : cwdFiles) {
                 if (!trackingFiles.contains(file)) {
@@ -80,19 +92,19 @@ public class StatusHandler {
     }
 
     /** 获取已修改未暂存的文件列表（排序后） */
-    public static List<String> getModifyNotStagingFiles() {
+    public List<String> getModifyNotStagingFiles() {
         // 获取最新提交时所有的文件映射。
-        Map<String, String> commitFilesMap = BranchManager.getHeadCommitTrackedFilesMap();
-        Map<String, String> stagingMap = Repository.getStaging().getStagingMap();
+        Map<String, String> commitFilesMap = new BranchManager(repo).getHeadCommitTrackedFilesMap();
+        Map<String, String> stagingMap = repo.getStaging().getStagingMap();
 
         List<String> modifiedFiles = new ArrayList<>();
         // 获取工作目录所有的文件名
-        List<String> cwdFiles = ObjectStore.getCwdFiles();
+        List<String> cwdFiles = objects.getCwdFiles();
 
         for (String fileName : cwdFiles) {
             // 如果在暂存区的所有提交中存在这个文件的话。
             if (stagingMap.containsKey(fileName)) {
-                String serCwd = ObjectStore.getFileSha1(Utils.join(RepositoryPaths.CWD, fileName));
+                String serCwd = objects.getFileSha1(Utils.join(paths.getCwd(), fileName));
                 String serStaging = stagingMap.get(fileName);
                 // SHA-1值不同加入未加入暂存区
                 if (!serStaging.equals(serCwd)) {
@@ -100,7 +112,7 @@ public class StatusHandler {
                 }
             } else if (commitFilesMap.containsKey(fileName)) {
                 // 如果这个文件之前提交过的话(最新的一次为准)，SHA-1值不同说明修改过。
-                String serCwd = ObjectStore.getFileSha1(Utils.join(RepositoryPaths.CWD, fileName));
+                String serCwd = objects.getFileSha1(Utils.join(paths.getCwd(), fileName));
                 String serCommit = commitFilesMap.get(fileName);
                 // SHA-1值不同加入未加入暂存区
                 if (!serCommit.equals(serCwd)) {
@@ -116,8 +128,8 @@ public class StatusHandler {
     }
 
     /** 获取暂存区的文件名（排序后） */
-    public static List<String> getStagingFiles() {
-        Map<String, String> stagedFileMap = Repository.getStaging().getStagingMap();
+    public List<String> getStagingFiles() {
+        Map<String, String> stagedFileMap = repo.getStaging().getStagingMap();
         List<String> stagedFiles = new ArrayList<>();
         stagedFileMap.forEach((fileName, sha1) -> {
             stagedFiles.add(fileName);
@@ -128,14 +140,14 @@ public class StatusHandler {
     }
 
     /** 获取暂存区的删除标记文件集合 */
-    public static Set<String> getDeleteFiles() {
+    public Set<String> getDeleteFiles() {
         // 获取当前目录下的所有文件，如果是手动删除不是 rm 删除的话，那么不会在 removeSet 记录，
         // 同时应该在头指针提交下，因为被追踪过
-        List<String> cwdFiles = ObjectStore.getCwdFiles();
+        List<String> cwdFiles = objects.getCwdFiles();
         // 最新提交下被追踪的所有文件。
-        Set<String> headCommitRepository = BranchManager.getHeadCommitTrackedFilesMap().keySet();
+        Set<String> headCommitRepository = new BranchManager(repo).getHeadCommitTrackedFilesMap().keySet();
         // 被标记的删除文件。
-        Set<String> removeSet = Repository.getStaging().getRemoveSet();
+        Set<String> removeSet = repo.getStaging().getRemoveSet();
         // 手动删除，未被记录的文件。
         Set<String> deleteFiles = new TreeSet<>();
         // 将被标记的文件全部去除掉，剩下的都是本应该存在的。
@@ -153,10 +165,10 @@ public class StatusHandler {
     }
 
     /** 获取所有分支（带标记） */
-    public static List<String> getMarkingsBranches() {
+    public List<String> getMarkingsBranches() {
         // 当前所在的分支
-        String nowBranch = BranchManager.getHead();
-        List<String> branches = ObjectStore.getBranches();
+        String nowBranch = new BranchManager(repo).getHead();
+        List<String> branches = objects.getBranches();
         branches.sort(String::compareTo);
         // 将字典序排序完之后做所在分支的位置替换为带星号的分支。
         String markingBranch = "*" + nowBranch;
@@ -165,15 +177,15 @@ public class StatusHandler {
     }
 
     /** 获取已追踪的文件 */
-    public static Set<String> getTrackingFiles() {
+    public Set<String> getTrackingFiles() {
         Set<String> tracking = new HashSet<>();
 
         // 1. 获取 HEAD Commit 的所有文件
-        Map<String, String> headFiles = BranchManager.getHeadCommitTrackedFilesMap();
+        Map<String, String> headFiles = new BranchManager(repo).getHeadCommitTrackedFilesMap();
         tracking.addAll(headFiles.keySet());
 
         // 2. 获取暂存区中准备 Add 的文件
-        Staging stage = Repository.getStaging();
+        Staging stage = repo.getStaging();
         Map<String, String> stagedFiles = stage.getStagingMap();
         tracking.addAll(stagedFiles.keySet());
 
@@ -185,7 +197,7 @@ public class StatusHandler {
     }
 
     /** 用于集合或者列表的合并 */
-    public static Set<String> arrayMerge(Collection<String> items1,
+    public Set<String> arrayMerge(Collection<String> items1,
                                           Collection<String> items2) {
         Set<String> st = new TreeSet<>();
         st.addAll(items1);

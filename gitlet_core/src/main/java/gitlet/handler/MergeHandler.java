@@ -21,6 +21,18 @@ import java.util.TreeSet;
 
 /** 合并逻辑：三路合并、最近公共祖先（LCA）查找、冲突生成。 */
 public class MergeHandler {
+    /** 本次操作针对的仓库 */
+    private final Repository repo;
+    /** 该仓库的路径集合 */
+    private final RepositoryPaths paths;
+    /** 该仓库的对象存储 */
+    private final ObjectStore objects;
+
+    public MergeHandler(Repository repo) {
+        this.repo = repo;
+        this.paths = repo.getPaths();
+        this.objects = repo.getObjects();
+    }
 
     /** 合并操作：
      * 情况 A：文件在给定分支中被修改，当前分支中未修改
@@ -53,15 +65,17 @@ public class MergeHandler {
      * 一个修改了内容，另一个删除了文件；
      * 分割点没有该文件，但两个分支都新增了同名文件且内容不同。
      * */
-    public static void merge(String branchName) {
+    public void merge(String branchName) {
+        BranchManager branches = new BranchManager(repo);
+
         // 如果不存在当前分支
-        if (!BranchManager.branchCheck(branchName)) {
+        if (!branches.branchCheck(branchName)) {
             Utils.message("A branch with that name does not exist.");
             return;
         }
 
         // 尝试合并自身分支
-        if (branchName.equals(BranchManager.getHead())) {
+        if (branchName.equals(branches.getHead())) {
             Utils.message("Cannot merge a branch with itself.");
             return;
         }
@@ -69,19 +83,19 @@ public class MergeHandler {
         // 最近公共祖先的commit的SHA-1值
         String lcaSha1 = getLCA(branchName);
         // 给定分支的SHA—1值
-        String givenBranchSha1 = BranchManager.readBranchSha1(branchName);
+        String givenBranchSha1 = branches.readBranchSha1(branchName);
         // 当前所在的提交
-        String nowHeadBranchSha1 = BranchManager.getHeadSha1();
+        String nowHeadBranchSha1 = branches.getHeadSha1();
 
         // 工作区中有未追踪文件
-        if (!trackingCheck(ObjectStore.getCommit(givenBranchSha1).getTrackedFiles(),
-                ObjectStore.getCommit(lcaSha1).getTrackedFiles())) {
+        if (!trackingCheck(objects.getCommit(givenBranchSha1).getTrackedFiles(),
+                objects.getCommit(lcaSha1).getTrackedFiles())) {
             Utils.message("There is an untracked file in the way"
                                   + "delete it, or add and commit it first.");
             return;
         }
 
-        Staging stage = Repository.getStaging();
+        Staging stage = repo.getStaging();
 
         // 暂存区有未提交的添加或删除
         if (!stage.isEmpty()) {
@@ -96,8 +110,8 @@ public class MergeHandler {
         }
 
         // 分割点就是当前分支效果等同于 “检出”（checkout）给定分支
-        if (lcaSha1.equals(BranchManager.getHeadSha1())) {
-            CommandHandler.checkoutBranch(branchName);
+        if (lcaSha1.equals(nowHeadBranchSha1)) {
+            new CommandHandler(repo).checkoutBranch(branchName);
             Utils.message("Current branch fast-forwarded.");
             return;
         }
@@ -112,13 +126,13 @@ public class MergeHandler {
 
         // 无论冲突是否解决，创建新的提交对象
         // Merged [给定分支名] into [当前分支名]。
-        String mes = "Merged " + branchName + " into " + BranchManager.getHead() + ".";
+        String mes = "Merged " + branchName + " into " + branches.getHead() + ".";
         List<String> mergeFiles = new ArrayList<>();
         mergeFiles.add(nowHeadBranchSha1.substring(0, 7)); // 第一父提交
         mergeFiles.add(givenBranchSha1.substring(0, 7)); // 第二父提交
 
         Map<String, String> newTrackedFiles =
-                new TreeMap<>(BranchManager.getHeadCommitTrackedFilesMap());
+                new TreeMap<>(branches.getHeadCommitTrackedFilesMap());
         newTrackedFiles.putAll(stage.getStagingMap());
         for (String removeFile : stage.getRemoveSet()) {
             newTrackedFiles.remove(removeFile);
@@ -129,15 +143,15 @@ public class MergeHandler {
                                         givenBranchSha1, newTrackedFiles);
 
         /** 更新当前分支的进度至最新提交 */
-        Utils.writeContents(BranchManager.getHeadBranch(), newCommit.saveCommit());
+        Utils.writeContents(branches.getHeadBranch(), objects.saveCommit(newCommit));
         // 清空暂存区文件
         stage.clear();
         // 持久化暂存区
-        Repository.saveStaging();
+        repo.saveStaging();
     }
 
     /** 生成冲突文件内容 */
-    public static StringBuilder getStringBuilder(String nowContent, String givenContent) {
+    public StringBuilder getStringBuilder(String nowContent, String givenContent) {
         StringBuilder conflictFileContent = new StringBuilder();
         conflictFileContent.append("<<<<<<< HEAD\n");
         conflictFileContent.append(nowContent);
@@ -159,34 +173,34 @@ public class MergeHandler {
     }
 
     /** 生成冲突文件，并返回文件路径 */
-    public static File generateConflict(String fileName,
+    public File generateConflict(String fileName,
                                          String givenBranchFileSha1, String nowBranchFileSha1) {
-        File conflictFilePath = Utils.join(RepositoryPaths.CWD, fileName);
+        File conflictFilePath = Utils.join(paths.getCwd(), fileName);
 
         StringBuilder conflictFileContent = getStringBuilder(
-                ObjectStore.getFileContentInObject(nowBranchFileSha1),
-                ObjectStore.getFileContentInObject(givenBranchFileSha1));
+                objects.getFileContentInObject(nowBranchFileSha1),
+                objects.getFileContentInObject(givenBranchFileSha1));
 
         Utils.writeContents(conflictFilePath, conflictFileContent.toString());
 
         return conflictFilePath;
     }
 
-    public static boolean fileProcessing(String givenBranchSha1,
+    public boolean fileProcessing(String givenBranchSha1,
                                           String nowHeadBranchSha1, String lcaSha1) {
 
         // 获取三个提交的全部不重复文件
         Set<String> allFiles = new TreeSet<>();
-        allFiles.addAll(ObjectStore.getCommit(givenBranchSha1).getTrackedFiles().keySet());
-        allFiles.addAll(ObjectStore.getCommit(nowHeadBranchSha1).getTrackedFiles().keySet());
-        allFiles.addAll(ObjectStore.getCommit(lcaSha1).getTrackedFiles().keySet());
+        allFiles.addAll(objects.getCommit(givenBranchSha1).getTrackedFiles().keySet());
+        allFiles.addAll(objects.getCommit(nowHeadBranchSha1).getTrackedFiles().keySet());
+        allFiles.addAll(objects.getCommit(lcaSha1).getTrackedFiles().keySet());
 
-        Staging stage = Repository.getStaging();
+        Staging stage = repo.getStaging();
         boolean hasConflict = false;
         for (String fileName : allFiles) {
-            String lcaSha = ObjectStore.getCommit(lcaSha1).getTrackedFiles().get(fileName);
-            String givenSha = ObjectStore.getCommit(givenBranchSha1).getTrackedFiles().get(fileName);
-            String nowSha = ObjectStore.getCommit(nowHeadBranchSha1).getTrackedFiles().get(fileName);
+            String lcaSha = objects.getCommit(lcaSha1).getTrackedFiles().get(fileName);
+            String givenSha = objects.getCommit(givenBranchSha1).getTrackedFiles().get(fileName);
+            String nowSha = objects.getCommit(nowHeadBranchSha1).getTrackedFiles().get(fileName);
 
             // 情况 1: Given 和 Now 内容一致 (无论 LCA 是什么，或者是否存在)
             // 或者是 Given 的内容相对于 LCA 没变
@@ -198,11 +212,11 @@ public class MergeHandler {
             if (Objects.equals(nowSha, lcaSha)) {
                 if (givenSha != null) {
                     // Given 修改了文件或新增了文件
-                    ObjectStore.overwriteFile(fileName, givenSha);
+                    objects.overwriteFile(fileName, givenSha);
                     stage.getStagingMap().put(fileName, givenSha);
                 } else {
                     // Given 删除了文件
-                    ObjectStore.deleteCwdFile(fileName);
+                    objects.deleteCwdFile(fileName);
                     stage.getRemoveSet().add(fileName);
                 }
                 continue;
@@ -211,7 +225,7 @@ public class MergeHandler {
             // 情况 3: 冲突（LCA, Given, Now 三者各不相同）
             // 这里已经隐含了 givenSha != nowSha 且两者都与 lcaSha 不同
             File conflictFile = generateConflict(fileName, givenSha, nowSha);
-            stage.getStagingMap().put(fileName, ObjectStore.getFileSha1(conflictFile));
+            stage.getStagingMap().put(fileName, objects.getFileSha1(conflictFile));
             hasConflict = true;
         }
 
@@ -219,12 +233,13 @@ public class MergeHandler {
     }
 
     /** 获取两个分支的最近公共祖先 (LCA) */
-    public static String getLCA(String branchName) {
+    public String getLCA(String branchName) {
+        BranchManager branches = new BranchManager(repo);
 
         // 找出当前分支的所有祖先（包含自己）
         Set<String> ancestorsOfCurrent = new HashSet<>();
         Queue<String> queue = new LinkedList<>();
-        queue.add(BranchManager.getHeadSha1());
+        queue.add(branches.getHeadSha1());
 
         while (!queue.isEmpty()) {
             String p = queue.poll();
@@ -233,19 +248,19 @@ public class MergeHandler {
             }
             ancestorsOfCurrent.add(p);
 
-            if (ObjectStore.getCommit(p).getParent() != null) {
-                queue.add(ObjectStore.getCommit(p).getParent());
+            if (objects.getCommit(p).getParent() != null) {
+                queue.add(objects.getCommit(p).getParent());
             }
             // 如果是 Merge Commit，也要把第二个父节点加进去
-            if (ObjectStore.getCommit(p).getSecondParent() != null) {
+            if (objects.getCommit(p).getSecondParent() != null) {
                 // parentBranch 存了第二个父节点的 SHA1
-                queue.add(ObjectStore.getCommit(p).getSecondParent());
+                queue.add(objects.getCommit(p).getSecondParent());
             }
         }
 
         // 从 Given 分支开始 BFS，找到第一个在 ancestorsOfCurrent 中的节点
         queue.clear();
-        queue.add(BranchManager.readBranchSha1(branchName));
+        queue.add(branches.readBranchSha1(branchName));
         // 记录已访问，防止在图里绕圈
         Set<String> visited = new HashSet<>();
 
@@ -260,11 +275,11 @@ public class MergeHandler {
                 return p; // 找到了最近的
             }
 
-            if (ObjectStore.getCommit(p).getParent() != null) {
-                queue.add(ObjectStore.getCommit(p).getParent());
+            if (objects.getCommit(p).getParent() != null) {
+                queue.add(objects.getCommit(p).getParent());
             }
-            if (ObjectStore.getCommit(p).getSecondParent() != null) {
-                queue.add(ObjectStore.getCommit(p).getSecondParent());
+            if (objects.getCommit(p).getSecondParent() != null) {
+                queue.add(objects.getCommit(p).getSecondParent());
             }
         }
 
@@ -272,14 +287,14 @@ public class MergeHandler {
     }
 
     /** 检查分支目录下是否所有文件都被追踪，都被追踪返回 true，有未被追踪的返回 false */
-    public static boolean trackingCheck(Map<String, String> givenBranchFiles,
+    public boolean trackingCheck(Map<String, String> givenBranchFiles,
                                          Map<String, String> lcaFiles) {
-        for (String fileName : StatusHandler.getNotTrackingFiles()) {
+        for (String fileName : new StatusHandler(repo).getNotTrackingFiles()) {
             // 只有当 "未追踪文件" 在 "给定分支" 中存在，且内容不同时，才算“没被追踪”
             // 情况 A：给定分支有这个文件，且内容和工作区不一样 (会被覆盖)
             if (givenBranchFiles.containsKey(fileName)) {
                 String currentSha1 =
-                        ObjectStore.getFileSha1(Utils.join(RepositoryPaths.CWD, fileName));
+                        objects.getFileSha1(Utils.join(paths.getCwd(), fileName));
                 if (!currentSha1.equals(givenBranchFiles.get(fileName))) {
                     return false;
                 }

@@ -36,6 +36,19 @@ M2_REPO ?= $(abspath $(HOME)/.m2/repository)
 LOMBOK ?= $(shell ls -1 "$(M2_REPO)/org/projectlombok/lombok"/*/lombok-[0-9]*.jar 2>/dev/null \
                    | grep -v -- '-sources' | sort -V | tail -1)
 
+# Under Git Bash that javac is a native Windows binary: it wants Windows paths
+# and ';' as the classpath separator, while make/cygwin hand us POSIX paths and
+# ':'.  cygpath translates both.
+ifeq ($(OS),Windows_NT)
+  CP_SEP := ;
+  CP_SRC := $(shell cygpath -w "$(dir $(GITLET_DIR))")
+  CP_LOMBOK := $(shell cygpath -w "$(LOMBOK)")
+else
+  CP_SEP := :
+  CP_SRC := $(dir $(GITLET_DIR))
+  CP_LOMBOK := $(LOMBOK)
+endif
+
 SRCS := $(shell find "$(GITLET_DIR)" -name '*.java')
 
 TESTER = $(PYTHON) tester.py --progdir="$(PROG_DIR)"
@@ -51,7 +64,7 @@ compile:
 	@test -n "$(LOMBOK)" || \
 	  { echo "No lombok.jar under $(M2_REPO); rerun as 'make LOMBOK=/path/to/lombok.jar'"; exit 1; }
 	@echo "Compiling gitlet.Main..."
-	@javac $(JFLAGS) -d "$(PROG_DIR)" -cp "$(dir $(GITLET_DIR)):$(LOMBOK)" $(SRCS)
+	@javac $(JFLAGS) -d "$(PROG_DIR)" -cp "$(CP_SRC)$(CP_SEP)$(CP_LOMBOK)" $(SRCS)
 
 check: compile
 	@echo "Testing application gitlet.Main..."

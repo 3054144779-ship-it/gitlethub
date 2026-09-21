@@ -9,9 +9,19 @@
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
-    <groupId>com.huahuo.gitlet_core</groupId>
     <artifactId>gitlet_core</artifactId>
+    <name>gitlet_core</name>
 
+    <!--
+      gitlet_core is a plain library: no Spring, no web, no database.  It is used
+      both by the CLI entry point (gitlet.Main, run as a bare JVM and also
+      compiled directly by src/test/gitlet_test/Makefile with only lombok on the
+      classpath) and, later, by the gateway.  Keep it dependency-light.
+
+      No <properties> here: spring-boot-starter-parent already sets
+      java.version=17, maven.compiler.release and project.build.sourceEncoding=UTF-8,
+      all of which this module inherits.
+    -->
     <dependencies>
         <!-- gitlet.commit.Commit uses @Data; the version comes from the parent. -->
         <dependency>
@@ -20,10 +30,5 @@
             <scope>provided</scope>
         </dependency>
     </dependencies>
-    <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
 
 </project>

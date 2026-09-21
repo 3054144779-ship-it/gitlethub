@@ -1,12 +1,9 @@
 package gitlet.commit;
 
 
-import gitlet.repository.Repository;
-import gitlet.repository.RepositoryPaths;
 import gitlet.utils.Utils;
 import lombok.Data;
 
-import java.io.File;
 import java.io.Serial;
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
@@ -44,18 +41,5 @@ public class Commit implements Serializable {
         this.parent = parent;
         this.secondParent = secondParent;
         this.trackedFiles = trackedFiles;
-    }
-
-    /** 保存提交到 Object/commits 文件夹，并返回 SHA-1 值 */
-    public String saveCommit() {
-        // 获取字节数组(序列化之后的结果)
-        byte[] readfile = Utils.serialize(this);
-        // 计算SHA-1 值
-        String fileSha1 = Utils.sha1((Object) readfile);
-        // 创建一个以sha-1命名的文件来记录提交
-        File file = Utils.join(RepositoryPaths.COMMITS, fileSha1);
-        // 将 commit 写入文件
-        Utils.writeObject(file, this);
-        return fileSha1;
     }
 }

@@ -1,25 +1,73 @@
 package gitlet.repository;
 
-import gitlet.utils.Utils;
-
 import java.io.File;
 
 import static gitlet.utils.Utils.join;
 
+/** 一个仓库涉及的所有磁盘路径。
+ *  路径只在构造时算出，之后不再变化；构造函数不碰磁盘，
+ *  目录的创建交给 CommandHandler.init()。
+ */
 public class RepositoryPaths {
-    /** 当前工作目录 */
-    public static final File CWD = new File(System.getProperty("user.dir"));
+    /** 仓库的标识，只用于日志 / 诊断，不参与路径计算 */
+    private final String repoId;
+    /** 仓库所在的工作目录，由调用方传入 */
+    private final File cwd;
 
     /** gilet 目录*/
-    public static final File GITLETDIR = join(CWD, ".gitlet");
+    private final File gitletDir;
     /** 储存提交的文件备份*/
-    public static final File OBJECT = join(GITLETDIR, "Objects");
+    private final File object;
     /** refs/heads 目录储存分支  */
-    public static final File BRANCHDIR = join(GITLETDIR, "refs", "heads");
+    private final File branchDir;
     /** 储存 HEAD 指针  */
-    public static final File HEADFILE = join(GITLETDIR, "HEAD");
+    private final File headFile;
     /** 储存 commit 的文件  */
-    public static final File COMMITS = join(OBJECT, "commits");
+    private final File commits;
     /** 存储暂存区文件信息。 */
-    public static final File STAGINGFILE = join(GITLETDIR, "staging");
+    private final File stagingFile;
+
+    public RepositoryPaths(String repoId, File cwd) {
+        this.repoId = repoId;
+        this.cwd = cwd;
+        this.gitletDir = join(cwd, ".gitlet");
+        this.object = join(gitletDir, "Objects");
+        this.branchDir = join(gitletDir, "refs", "heads");
+        this.headFile = join(gitletDir, "HEAD");
+        this.commits = join(object, "commits");
+        this.stagingFile = join(gitletDir, "staging");
+    }
+
+    public String getRepoId() {
+        return repoId;
+    }
+
+    /** 当前工作目录 */
+    public File getCwd() {
+        return cwd;
+    }
+
+    public File getGitletDir() {
+        return gitletDir;
+    }
+
+    public File getObject() {
+        return object;
+    }
+
+    public File getBranchDir() {
+        return branchDir;
+    }
+
+    public File getHeadFile() {
+        return headFile;
+    }
+
+    public File getCommits() {
+        return commits;
+    }
+
+    public File getStagingFile() {
+        return stagingFile;
+    }
 }

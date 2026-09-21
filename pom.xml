@@ -37,38 +37,18 @@
         <java.version>17</java.version>
     </properties>
 
-    <dependencies>
-        <!--spring web start-->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
+    <!--
+      This is an aggregator (packaging=pom), so it deliberately declares no
+      <dependencies>.  Anything listed here is inherited by EVERY child module
+      unconditionally, which is how gitlet_core ended up on
+      spring-boot-starter-web / r2dbc despite being a plain library.  Each
+      module now declares only what it uses; versions still come from
+      spring-boot-starter-parent's BOM, so nothing needs repeating here.
 
-        <!--R2DBC-->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-r2dbc</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!--lombok-->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
+      <build> is omitted for the same reason.  spring-boot-starter-parent already
+      registers spring-boot-maven-plugin (with its repackage execution) in
+      <pluginManagement>, so declaring it here would only switch it back on for
+      every child.  The runnable module opts in from its own <build><plugins>.
+    -->
 
 </project>

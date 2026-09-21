@@ -3,21 +3,35 @@ package gitlet.repository;
 import gitlet.commit.Commit;
 import gitlet.stag.Staging;
 import gitlet.utils.Utils;
+import lombok.Getter;
 
 import java.io.File;
 import java.util.List;
 
 /** 代表一个 gitlet 仓库。
+ *  一个仓库一个实例：目录由构造时传入，所以同一个进程可以同时持有多个互不干扰的仓库。
  *  这里只保留跨命令共享的状态（暂存区）以及几个通用的文件 / 日志工具，
  *  具体的命令逻辑见 gitlet.handler 包下的各个 Handler。
  */
+@Getter
 public class Repository {
+    /** 仓库标识，只用于日志 / 诊断 */
+    private final String repoId;
+    /** 该仓库涉及的所有磁盘路径 */
+    private final RepositoryPaths paths;
+    /** 该仓库的对象存储 */
+    private final ObjectStore objects;
+    /** 该仓库自己的暂存区，首次调用 getStaging() 时才从磁盘加载 */
+    private Staging stage;
 
-    /** 全局唯一的暂存区实例，add / commit / rm / status 共享同一份内存对象 */
-    private static Staging stage;
+    public Repository(String repoId, File cwd) {
+        this.repoId = repoId;
+        this.paths = new RepositoryPaths(repoId, cwd);
+        this.objects = new ObjectStore(paths);
+    }
 
     /** 获取共享的暂存区对象，首次调用时才从磁盘加载 */
-    public static Staging getStaging() {
+    public Staging getStaging() {
         if (stage == null) {
             stage = loadStaging(); // 懒加载每次用的时候读
         }
@@ -25,23 +39,23 @@ public class Repository {
     }
 
     /** 从磁盘加载暂存区，.gitlet 还没创建时返回一个空的暂存区 */
-    private static Staging loadStaging() {
+    private Staging loadStaging() {
         // 如果 .gitlet 目录都不存在，说明是刚开始 init，直接返回空对象
-        if (!RepositoryPaths.GITLETDIR.exists()) {
+        if (!paths.getGitletDir().exists()) {
             return new Staging();
         }
 
         /* 如果暂存区文件不存在就创建这个文件 */
-        if (!RepositoryPaths.STAGINGFILE.exists()) {
-            Utils.writeObject(RepositoryPaths.STAGINGFILE, new Staging());
+        if (!paths.getStagingFile().exists()) {
+            Utils.writeObject(paths.getStagingFile(), new Staging());
         }
 
-        return Utils.readObject(RepositoryPaths.STAGINGFILE, Staging.class);
+        return Utils.readObject(paths.getStagingFile(), Staging.class);
     }
 
     /** 暂存区持久化 */
-    public static void saveStaging() {
-        Utils.writeObject(RepositoryPaths.STAGINGFILE, getStaging());
+    public void saveStaging() {
+        Utils.writeObject(paths.getStagingFile(), getStaging());
     }
 
     /** 删除不在当前工作目录下的文件(比如分支，Object下的文件等) */

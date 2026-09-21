@@ -11,23 +11,29 @@ import java.util.List;
  * 对象存储类
  */
 public class ObjectStore {
+    /** 该对象存储所属仓库的路径集合 */
+    private final RepositoryPaths paths;
+
+    public ObjectStore(RepositoryPaths paths) {
+        this.paths = paths;
+    }
 
     /**
      * 检测当前提交是否存在，存在就返回true，否则就false
      * @param sha1
      * @return
      */
-    public static boolean sha1Check(String sha1) {
+    public boolean sha1Check(String sha1) {
         List<String> commitFiles = getCommitsFiles();
         return commitFiles.contains(sha1);
     }
-    
+
     /**
      * 补全简写的SHA-1值
      * @param sha1
      * @return
      */
-    public static String completeSha1(String sha1) {
+    public String completeSha1(String sha1) {
         if (sha1 == null) {
             return null;
         }
@@ -59,32 +65,32 @@ public class ObjectStore {
      * 获取所有分支的名称
      * @return
      */
-    public static List<String> getBranches() {
-        return Utils.plainFilenamesIn(RepositoryPaths.BRANCHDIR);
+    public List<String> getBranches() {
+        return Utils.plainFilenamesIn(paths.getBranchDir());
     }
-    
+
     /**
      * 获取全部的提交文件作为名称的SHA-1值
      * @return
      */
-    public static List<String> getCommitsFiles() {
-        return Utils.plainFilenamesIn(RepositoryPaths.COMMITS);
+    public List<String> getCommitsFiles() {
+        return Utils.plainFilenamesIn(paths.getCommits());
     }
-    
+
     /**
      * 获取工作目录下的所有文件
      * @return
      */
-    public static List<String> getCwdFiles() {
-        return Utils.plainFilenamesIn(RepositoryPaths.CWD);
+    public List<String> getCwdFiles() {
+        return Utils.plainFilenamesIn(paths.getCwd());
     }
-    
+
     /**
      * 删除工作目录下的文件
      * @param name
      */
-    public static void deleteCwdFile(String name) {
-        File file = Utils.join(RepositoryPaths.CWD, name);
+    public void deleteCwdFile(String name) {
+        File file = Utils.join(paths.getCwd(), name);
         Utils.restrictedDelete(file);
     }
 
@@ -93,11 +99,11 @@ public class ObjectStore {
      * @param fileName 被覆写的文件的文件名
      * @param sha1 用来覆写的文件的SHA1值
      */
-    public static void overwriteFile(String fileName, String sha1) {
+    public void overwriteFile(String fileName, String sha1) {
         // 被覆写的文件路径。
-        File filePath = Utils.join(RepositoryPaths.CWD, fileName);
+        File filePath = Utils.join(paths.getCwd(), fileName);
         // 获取用来覆写文件的文件路径。
-        File copyFilePath = Utils.join(RepositoryPaths.OBJECT, sha1);
+        File copyFilePath = Utils.join(paths.getObject(), sha1);
         // 获取用来覆写的文件序列化后的文件内容。
         byte[] file = Utils.readContents(copyFilePath);
         // 将Object内的文件覆写到同名文件。
@@ -109,12 +115,12 @@ public class ObjectStore {
      * @param sha1
      * @return
      */
-    public static String getFileContentInObject(String sha1) {
+    public String getFileContentInObject(String sha1) {
         // 如果 sha1 为空或 null，直接返回空字符串，不要去读文件
         if (sha1 == null || sha1.isEmpty()) {
             return "";
         }
-        File blobFile = Utils.join(RepositoryPaths.OBJECT, sha1);
+        File blobFile = Utils.join(paths.getObject(), sha1);
         // 如果文件不存在或者已经被删除就返回空字符串
         if (!blobFile.exists() || blobFile.isDirectory()) {
             return "";
@@ -127,7 +133,7 @@ public class ObjectStore {
      * @param file
      * @return
      */
-    public static String getFileSha1(File file) {
+    public String getFileSha1(File file) {
         byte[] fileSer = Utils.readContents(file); // 文件序列化
         return Utils.sha1((Object) fileSer);
     }
@@ -137,10 +143,27 @@ public class ObjectStore {
      * @param sha1
      * @param file
      */
-    public static void saveFile(String sha1, File file) {
-        File filePath = Utils.join(RepositoryPaths.OBJECT, sha1); // 保存路径
+    public void saveFile(String sha1, File file) {
+        File filePath = Utils.join(paths.getObject(), sha1); // 保存路径
         byte[] fileSer = Utils.readContents(file); // 序列化文件到byt文件
         Utils.writeContents(filePath, (Object) fileSer);
+    }
+
+    /**
+     * 保存提交到 Object/commits 文件夹，并返回 SHA-1 值
+     * @param commit
+     * @return
+     */
+    public String saveCommit(Commit commit) {
+        // 获取字节数组(序列化之后的结果)
+        byte[] readfile = Utils.serialize(commit);
+        // 计算SHA-1 值
+        String fileSha1 = Utils.sha1((Object) readfile);
+        // 创建一个以sha-1命名的文件来记录提交
+        File file = Utils.join(paths.getCommits(), fileSha1);
+        // 将 commit 写入文件
+        Utils.writeObject(file, commit);
+        return fileSha1;
     }
 
     /**
@@ -148,8 +171,8 @@ public class ObjectStore {
      * @param sha1
      * @return
      */
-    public static Commit getCommit(String sha1) {
-        File commitFile = Utils.join(RepositoryPaths.COMMITS, sha1);
+    public Commit getCommit(String sha1) {
+        File commitFile = Utils.join(paths.getCommits(), sha1);
         return Utils.readObject(commitFile, Commit.class);
     }
 }
