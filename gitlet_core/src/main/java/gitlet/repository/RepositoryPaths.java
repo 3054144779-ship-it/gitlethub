@@ -1,5 +1,7 @@
 package gitlet.repository;
 
+import lombok.Getter;
+
 import java.io.File;
 
 import static gitlet.utils.Utils.join;
@@ -8,6 +10,7 @@ import static gitlet.utils.Utils.join;
  *  路径只在构造时算出，之后不再变化；构造函数不碰磁盘，
  *  目录的创建交给 CommandHandler.init()。
  */
+@Getter
 public class RepositoryPaths {
     /** 仓库的标识，只用于日志 / 诊断，不参与路径计算 */
     private final String repoId;
@@ -36,38 +39,5 @@ public class RepositoryPaths {
         this.headFile = join(gitletDir, "HEAD");
         this.commits = join(object, "commits");
         this.stagingFile = join(gitletDir, "staging");
-    }
-
-    public String getRepoId() {
-        return repoId;
-    }
-
-    /** 当前工作目录 */
-    public File getCwd() {
-        return cwd;
-    }
-
-    public File getGitletDir() {
-        return gitletDir;
-    }
-
-    public File getObject() {
-        return object;
-    }
-
-    public File getBranchDir() {
-        return branchDir;
-    }
-
-    public File getHeadFile() {
-        return headFile;
-    }
-
-    public File getCommits() {
-        return commits;
-    }
-
-    public File getStagingFile() {
-        return stagingFile;
     }
 }
