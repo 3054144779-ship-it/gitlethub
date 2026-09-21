@@ -16,7 +16,13 @@ SHELL = /bin/bash
 JFLAGS = -g -encoding UTF-8 -Xlint:unchecked -Xlint:deprecation
 
 # See comment in ../../main/java/gitlet/Makefile
-PYTHON = python3
+#
+# The .in / src files are UTF-8, but Python reads them with locale.getencoding()
+# (cp936 on this machine), so their Chinese comments abort the run with
+# "FAILED (gbk)" before gitlet is even invoked.  -X utf8 makes open() default to
+# UTF-8 while leaving locale.getencoding() -- which decodes gitlet's own GBK
+# stdout -- untouched.
+PYTHON = python3 -X utf8
 
 # Root of the gitlet package tree, and the directory to compile into.
 GITLET_DIR := $(abspath ../../main/java/gitlet)
@@ -45,7 +51,7 @@ compile:
 	@test -n "$(LOMBOK)" || \
 	  { echo "No lombok.jar under $(M2_REPO); rerun as 'make LOMBOK=/path/to/lombok.jar'"; exit 1; }
 	@echo "Compiling gitlet.Main..."
-	@javac $(JFLAGS) -d "$(PROG_DIR)" -cp "$(dir $(GITLET_DIR));$(LOMBOK)" $(SRCS)
+	@javac $(JFLAGS) -d "$(PROG_DIR)" -cp "$(dir $(GITLET_DIR)):$(LOMBOK)" $(SRCS)
 
 check: compile
 	@echo "Testing application gitlet.Main..."

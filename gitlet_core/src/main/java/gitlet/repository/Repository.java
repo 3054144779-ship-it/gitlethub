@@ -14,10 +14,13 @@ import java.util.List;
 public class Repository {
 
     /** 全局唯一的暂存区实例，add / commit / rm / status 共享同一份内存对象 */
-    private static Staging stage = loadStaging();
+    private static Staging stage;
 
-    /** 获取共享的暂存区对象 */
+    /** 获取共享的暂存区对象，首次调用时才从磁盘加载 */
     public static Staging getStaging() {
+        if (stage == null) {
+            stage = loadStaging(); // 懒加载每次用的时候读
+        }
         return stage;
     }
 
@@ -38,7 +41,7 @@ public class Repository {
 
     /** 暂存区持久化 */
     public static void saveStaging() {
-        Utils.writeObject(RepositoryPaths.STAGINGFILE, stage);
+        Utils.writeObject(RepositoryPaths.STAGINGFILE, getStaging());
     }
 
     /** 删除不在当前工作目录下的文件(比如分支，Object下的文件等) */

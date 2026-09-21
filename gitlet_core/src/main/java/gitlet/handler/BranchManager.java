@@ -41,9 +41,12 @@ public class BranchManager {
         Repository.notCwdFileDelete(branchPath);
     }
 
-    /** 创建一个新的分支，并且存入最新提交的SHA-1值代表这个分支是在这个提交创建的
-     *  branchName 创建的分支名称 nowSha1 当前所在分支的最新提交的SHA-1值。
-     * */
+    /**
+     * 创建一个新的分支，并且存入最新提交的SHA-1值代表这个分支是在这个提交创建的
+     * branchName 创建的分支名称 nowSha1 当前所在分支的最新提交的SHA-1值。
+     * @param branchName
+     * @param nowSha1
+     */
     public static void createBranch(String branchName, String nowSha1) {
         File branchPath = Utils.join(RepositoryPaths.BRANCHDIR, branchName);
         // 将当前分支的SHA-1值写入文件。
