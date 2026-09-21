@@ -1,0 +1,161 @@
+# 一个简单的测试，包括添加、提交、修改和结账。
+
+I definitions.inc
+
+> init
+<<<
+
++ wug.txt wug.txt
+> add wug.txt
+<<<
+
+> commit "added wug"
+<<<
++ wug.txt notwug.txt
+
+> checkout -- wug.txt
+<<<
+= wug.txt wug.txt
+
+# 查看当前状态(应该在master)
+> status
+${ARBLINES}
+<<<*
+
+# 创建并切换到分支branch2（来回切验证正确性）
+> branch "branch2"
+<<<
+
+
+> checkout "branch2"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
+> checkout "master"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
+> checkout "branch2"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
+> checkout "master"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
+> checkout "branch2"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
+> checkout "master"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
+> checkout "branch2"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
++ test1.txt test1.txt
+> add test1.txt
+<<<
+
+# 查看当前状态(应该在branch2)
+> status
+${ARBLINES}
+<<<*
+
+# 在branch2提交一次
+>commit "This is test1"
+<<<
+
+# 在branch2再提交一次
++ test2.txt test2.txt
+> add test2.txt
+<<<
+
+# 查看当前状态(应该在branch2)
+> status
+${ARBLINES}
+<<<*
+
+> commit "This is test1 in branch2"
+<<<
+
+# 查看当前分支提交信息
+> log
+${ARBLINES}
+<<<*
+
+# 切回主分支
+> checkout "master"
+<<<
+E wug.txt
+* test1.txt
+* test2.txt
+
+# 查看当前分支提交信息
+> log
+${ARBLINES}
+<<<*
+
+# 主分支进行一次提交
++ test3.txt test3.txt
+> add test3.txt
+<<<
+
+# 查看当前状态(应该在master)
+> status
+${ARBLINES}
+<<<*
+
+> commit "This is master commit"
+<<<
+
+# 删除当前所在的分支
+> rm-branch "master"
+Cannot remove the current branch.
+<<<
+
+# 删除没有带有该名称的分支
+> rm-branch "abc"
+A branch with that name does not exist.
+<<<
+# 删除 branch2 之前应该有这个分支
+E .gitlet/refs/heads/branch2
+
+# 删除 branch2 分支
+> rm-branch "branch2"
+<<<
+# 删除 branch2 之后应该没有这个分支
+* .gitlet/refs/heads/branch2
+
+# 查看当前状态(应该只有master)
+> status
+${ARBLINES}
+<<<*
+
+# 查看全局提交信息
+> global-log
+${ARBLINES}
+<<<*

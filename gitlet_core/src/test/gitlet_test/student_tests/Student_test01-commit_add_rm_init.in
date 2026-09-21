@@ -1,0 +1,152 @@
+# 检测 init, rm, add, commit, log
+
+I definitions.inc
+
+# 检测初始化文件正确性
+>init
+<<<
+E .gitlet
+E .gitlet/Objects
+E .gitlet/Objects/commits
+E .gitlet/refs/heads/master
+E .gitlet/HEAD
+
+# add
++test1.txt test1.txt
+>add test1.txt
+<<<
+E .gitlet/staging
+
++test2.txt test2.txt
+>add test2.txt
+<<<
+E .gitlet/staging
+
+# rm
+>rm test2.txt
+<<<
+E test2.txt
+
+# commit
+>commit "This is test1"
+<<<
+
+# log
+> log
+===
+${COMMIT_HEAD}
+This is test1
+
+===
+${COMMIT_HEAD}
+initial commit
+
+<<<*
+
+# rm 此时应该有，此时还不被 commit 追踪
+>rm test2.txt
+No reason to remove the file.
+<<<
+E test2.txt
+
+# add
+>add test1.txt
+<<<
+
+# commit 此时 test2 未被追踪，因为之前删除了暂存区的 test2, test1没修改staging应该没东西。
+>commit "This is test2"
+No changes added to the commit
+<<<
+
+# add
++test3.txt test3.txt
+>add test3.txt
+<<<
+
+# commit
+>commit "This is test3"
+<<<
+
+# log
+> log
+===
+${COMMIT_HEAD}
+This is test3
+
+===
+${COMMIT_HEAD}
+This is test1
+
+===
+${COMMIT_HEAD}
+initial commit
+
+<<<*
+
+# add
+>add test2.txt
+<<<
+
+>commit "This is test2"
+<<<
+
+>log
+===
+${COMMIT_HEAD}
+This is test2
+
+===
+${COMMIT_HEAD}
+This is test3
+
+===
+${COMMIT_HEAD}
+This is test1
+
+===
+${COMMIT_HEAD}
+initial commit
+
+<<<*
+
+# rm 此时应该没有这个文件了，此时被 commit 追踪
+>rm test2.txt
+<<<
+* test2.txt
+
+>commit "not have"
+<<<
+
++test1.txt test3.txt
+>add test1.txt
+<<<
+
+>commit "This is test5"
+<<<
+
+>log
+===
+${COMMIT_HEAD}
+This is test5
+
+===
+${COMMIT_HEAD}
+not have
+
+===
+${COMMIT_HEAD}
+This is test2
+
+===
+${COMMIT_HEAD}
+This is test3
+
+===
+${COMMIT_HEAD}
+This is test1
+
+===
+${COMMIT_HEAD}
+initial commit
+
+<<<*

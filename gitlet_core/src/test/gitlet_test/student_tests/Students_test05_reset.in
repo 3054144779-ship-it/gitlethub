@@ -1,0 +1,51 @@
+# 测试reset
+
+I definitions.inc
+
+> init
+<<<
+
++ test1.txt test1.txt
+> add test1.txt
+<<<
+
+> commit "This is test1"
+<<<
+
++ test2.txt test2.txt
+> add test2.txt
+<<<
+
+> commit "This is test2"
+<<<
+
+# 此时应该存在两个文件
+E test1.txt
+E test2.txt
+
+# 关键修改在这里：先 log，捕获 "This is test1" 的 Commit ID (它是第二个出现的，所以是 ${2})
+> log
+===
+commit ([a-f0-9]+)
+Date: .*
+This is test2
+
+===
+commit ([a-f0-9]+)
+Date: .*
+This is test1
+
+===
+commit [a-f0-9]+
+Date: .*
+initial commit
+
+<<<*
+
+# 这里紧跟在 log 后面使用 ${2}，捕获组仍然有效
+> reset ${2}
+<<<*
+
+# 重置之后只有 test1.txt 了
+E test1.txt
+* test2.txt

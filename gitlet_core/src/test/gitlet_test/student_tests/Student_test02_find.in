@@ -1,0 +1,66 @@
+# 检查 find
+
+I definitions.inc
+
+>init
+<<<
++ test1.txt test1.txt
++ test2.txt test2.txt
++ test3.txt test3.txt
+
+>add test1.txt
+<<<
+
+>add test2.txt
+<<<
+
+>commit "This is test"
+<<<
+
+>find "This is test"
+${ARBLINE}
+<<<*
+
+>add test3.txt
+<<<
+
+>commit "This is test"
+<<<
+
++ notwug.txt notwug.txt
+>add notwug.txt
+<<<
+
+>commit "This not is test"
+<<<
+
+>find "This is test"
+${ARBLINES}
+<<<*
+
+>find "This not is test"
+${ARBLINE}
+<<<*
+
+>find "error"
+Found no commit with that message.
+<<<
+
+>log
+===
+${COMMIT_HEAD}
+This not is test
+
+===
+${COMMIT_HEAD}
+This is test
+
+===
+${COMMIT_HEAD}
+This is test
+
+===
+${COMMIT_HEAD}
+initial commit
+
+<<<*

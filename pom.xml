@@ -11,6 +11,7 @@
     <groupId>com.huahuo</groupId>
     <artifactId>gitlethub</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
     <name>gitlethub</name>
     <description>gitlethub</description>
     <url/>
@@ -20,6 +21,9 @@
     <developers>
         <developer/>
     </developers>
+    <modules>
+        <module>gitlet_core</module>
+    </modules>
     <scm>
         <connection/>
         <developerConnection/>
