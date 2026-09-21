@@ -1,0 +1,105 @@
+package org.openapitools.model;
+
+import java.net.URI;
+import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import org.openapitools.model.GitletObject;
+import org.springframework.lang.Nullable;
+import org.openapitools.jackson.nullable.JsonNullable;
+import java.time.OffsetDateTime;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
+import io.swagger.v3.oas.annotations.media.Schema;
+
+
+import java.util.*;
+import jakarta.annotation.Generated;
+
+/**
+ * ObjectBundle
+ */
+
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-09-21T20:19:28.153831200+08:00[Asia/Shanghai]", comments = "Generator version: 7.25.0")
+public class ObjectBundle {
+
+  private List<@Valid GitletObject> objects = new ArrayList<>();
+
+  public ObjectBundle() {
+    super();
+  }
+
+  /**
+   * Constructor with only required parameters
+   */
+  public ObjectBundle(List<@Valid GitletObject> objects) {
+    this.objects = objects;
+  }
+
+  public ObjectBundle objects(List<@Valid GitletObject> objects) {
+    this.objects = objects;
+    return this;
+  }
+
+  public ObjectBundle addObjectsItem(GitletObject objectsItem) {
+    if (this.objects == null) {
+      this.objects = new ArrayList<>();
+    }
+    this.objects.add(objectsItem);
+    return this;
+  }
+
+  /**
+   * Get objects
+   * @return objects
+   */
+  @NotNull @Valid 
+  @Schema(name = "objects", requiredMode = Schema.RequiredMode.REQUIRED)
+  @JsonProperty("objects")
+  public List<@Valid GitletObject> getObjects() {
+    return objects;
+  }
+
+  @JsonProperty("objects")
+  public void setObjects(List<@Valid GitletObject> objects) {
+    this.objects = objects;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    ObjectBundle objectBundle = (ObjectBundle) o;
+    return Objects.equals(this.objects, objectBundle.objects);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(objects);
+  }
+
+  @Override
+  public String toString() {
+    StringBuilder sb = new StringBuilder();
+    sb.append("class ObjectBundle {\n");
+    sb.append("    objects: ").append(toIndentedString(objects)).append("\n");
+    sb.append("}");
+    return sb.toString();
+  }
+
+  /**
+   * Convert the given object to string with each line indented by 4 spaces
+   * (except the first line).
+   */
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
+  }
+}
+

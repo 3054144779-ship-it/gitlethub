@@ -1,0 +1,946 @@
+openapi: 3.0.3
+info:
+  description: |
+    仓库与对象传输的接口契约。由 remote-gitlet 实现，经 gateway 暴露给 CLI。
+
+    这份文件是「接口」的唯一权威来源。改接口请改这里，不要改 Markdown。
+
+    约定：
+    - 统一响应结构 `{code, message, data}`，见 ApiResponse。`code` 是业务码段（0 成功），
+      与 HTTP 状态码解耦；HTTP 状态码仍保留语义，给网关和通用中间件用。→ D18
+    - 鉴权、限流、日志过滤都在 gateway 完成，本服务假定到达的请求已通过校验。→ D9、D19
+    - gateway 自身的接口（`/health`、429 限流响应）不在这份契约里。
+    - AI 接口属于独立 project `gitlet_ai_helper`，契约跟着那个项目走，不在这里。→ D15
+
+    校验：npx @redocly/cli lint docs/openapi.yaml
+    生成骨架：openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
+  title: gitlethub 仓库服务 API
+  version: 0.1.0
+servers:
+- description: 本地开发（gateway 入口）
+  url: http://localhost:8080
+security:
+- bearerAuth: []
+tags:
+- description: 仓库与对象传输
+  name: repo
+paths:
+  /api/repos/{owner}/{repo}/objects:
+    get:
+      description: |
+        *临时* since 的语义：返回「客户端从 since 出发还缺的」全部对象。
+        如果 since 为空或服务端不认识，返回该仓库当前可达的全部对象。
+
+        仓库必须已存在——没被 push 过的仓库拉不到东西，返回 404（code 30001）。
+      parameters:
+      - example: huahuo
+        explode: false
+        in: path
+        name: owner
+        required: true
+        schema:
+          pattern: "^[a-z0-9][a-z0-9_-]{0,38}$"
+          type: string
+        style: simple
+      - example: gitlethub
+        explode: false
+        in: path
+        name: repo
+        required: true
+        schema:
+          pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+          type: string
+        style: simple
+      - description: 客户端已有的最新 commit sha1；空表示全新 clone
+        explode: true
+        in: query
+        name: since
+        required: false
+        schema:
+          pattern: "^[0-9a-f]{40}$"
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                code: 0
+                message: ok
+                data:
+                  objects:
+                  - sha1: 380e098531072b99fd4ce38ad4b46c9faf00e6e3
+                    type: commit
+                    content: ""
+              schema:
+                $ref: "#/components/schemas/_api_repos__owner___repo__objects_get_200_response"
+          description: 对象列表
+        "400":
+          content:
+            application/json:
+              example:
+                code: 10001
+                message: objects is required
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 请求格式非法（JSON 解析失败、缺必填字段、路径参数不合法）→ code 10001
+        "401":
+          content:
+            application/json:
+              example:
+                code: 20001
+                message: missing or expired bearer token
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 未认证或 token 失效 → code 20001。由 gateway 拦截，理论上不会到达本服务
+        "403":
+          content:
+            application/json:
+              example:
+                code: 20002
+                message: huahuo cannot write huahuo/notes
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 已认证但不是该仓库的 owner → code 20002
+        "404":
+          content:
+            application/json:
+              examples:
+                repo:
+                  value:
+                    code: 30001
+                    message: "no such repository: huahuo/notes"
+                    data: null
+                branch:
+                  value:
+                    code: 30002
+                    message: "no such branch: dev"
+                    data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 仓库或分支不存在 → code 30001 / 30002
+        "429":
+          content:
+            application/json:
+              example:
+                code: 10005
+                message: "too many requests, retry after 3s"
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 触发限流 → code 10005。由 gateway 拦截，理论上不会到达本服务
+        "500":
+          content:
+            application/json:
+              example:
+                code: 90001
+                message: internal error
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 服务端错误 → code 90001
+      summary: 拉取对象（pull / clone）
+      tags:
+      - repo
+      x-accepts:
+      - application/json
+      x-tags:
+      - tag: repo
+    post:
+      description: |
+        幂等：已存在的 sha1 直接忽略，客户端可以安全重传。
+        服务端只按 sha1 校验内容，校验失败返回 422（code 10002）。
+
+        **仓库不存在时自动创建**（不需要单独的开仓接口）。仅当本次至少含一个对象时才建；
+        空数组视为无操作，直接返回 200。→ D21
+      parameters:
+      - example: huahuo
+        explode: false
+        in: path
+        name: owner
+        required: true
+        schema:
+          pattern: "^[a-z0-9][a-z0-9_-]{0,38}$"
+          type: string
+        style: simple
+      - example: gitlethub
+        explode: false
+        in: path
+        name: repo
+        required: true
+        schema:
+          pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+          type: string
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ObjectUploadRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                code: 0
+                message: ok
+                data:
+                  received:
+                  - a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+                  missing: []
+              schema:
+                $ref: "#/components/schemas/_api_repos__owner___repo__objects_post_200_response"
+          description: 上传完成（仓库可能是本次新建的）
+        "400":
+          content:
+            application/json:
+              example:
+                code: 10001
+                message: objects is required
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 请求格式非法（JSON 解析失败、缺必填字段、路径参数不合法）→ code 10001
+        "401":
+          content:
+            application/json:
+              example:
+                code: 20001
+                message: missing or expired bearer token
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 未认证或 token 失效 → code 20001。由 gateway 拦截，理论上不会到达本服务
+        "403":
+          content:
+            application/json:
+              example:
+                code: 20002
+                message: huahuo cannot write huahuo/notes
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 已认证但不是该仓库的 owner → code 20002
+        "413":
+          content:
+            application/json:
+              example:
+                code: 10004
+                message: object exceeds 10 MB limit
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 超过体积限制 → code 10004
+        "422":
+          content:
+            application/json:
+              examples:
+                hashMismatch:
+                  value:
+                    code: 10002
+                    message: "sha1 mismatch: header says a26d7d6..., content hashes\
+                      \ to 1b2c3d4..."
+                    data: null
+                objectMissing:
+                  value:
+                    code: 10003
+                    message: "commit 380e098... not found, upload objects first"
+                    data:
+                      missingSha: 380e098531072b99fd4ce38ad4b46c9faf00e6e3
+              schema:
+                $ref: "#/components/schemas/_api_repos__owner___repo__objects_post_422_response"
+          description: 内容校验失败 → code 10002（sha1 与内容不符）/ 10003（目标 commit 缺失）
+        "429":
+          content:
+            application/json:
+              example:
+                code: 10005
+                message: "too many requests, retry after 3s"
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 触发限流 → code 10005。由 gateway 拦截，理论上不会到达本服务
+        "500":
+          content:
+            application/json:
+              example:
+                code: 90001
+                message: internal error
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 服务端错误 → code 90001
+      summary: 上传对象（push 第一步）
+      tags:
+      - repo
+      x-content-type: application/json
+      x-accepts:
+      - application/json
+      x-tags:
+      - tag: repo
+  /api/repos/{owner}/{repo}/refs/{branch}:
+    get:
+      parameters:
+      - example: huahuo
+        explode: false
+        in: path
+        name: owner
+        required: true
+        schema:
+          pattern: "^[a-z0-9][a-z0-9_-]{0,38}$"
+          type: string
+        style: simple
+      - example: gitlethub
+        explode: false
+        in: path
+        name: repo
+        required: true
+        schema:
+          pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+          type: string
+        style: simple
+      - description: 分支名（如 master）
+        explode: false
+        in: path
+        name: branch
+        required: true
+        schema:
+          example: master
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                code: 0
+                message: ok
+                data:
+                  branch: master
+                  sha: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+              schema:
+                $ref: "#/components/schemas/_api_repos__owner___repo__refs__branch__get_200_response"
+          description: 当前指向
+        "401":
+          content:
+            application/json:
+              example:
+                code: 20001
+                message: missing or expired bearer token
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 未认证或 token 失效 → code 20001。由 gateway 拦截，理论上不会到达本服务
+        "403":
+          content:
+            application/json:
+              example:
+                code: 20002
+                message: huahuo cannot write huahuo/notes
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 已认证但不是该仓库的 owner → code 20002
+        "404":
+          content:
+            application/json:
+              examples:
+                repo:
+                  value:
+                    code: 30001
+                    message: "no such repository: huahuo/notes"
+                    data: null
+                branch:
+                  value:
+                    code: 30002
+                    message: "no such branch: dev"
+                    data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 仓库或分支不存在 → code 30001 / 30002
+        "429":
+          content:
+            application/json:
+              example:
+                code: 10005
+                message: "too many requests, retry after 3s"
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 触发限流 → code 10005。由 gateway 拦截，理论上不会到达本服务
+        "500":
+          content:
+            application/json:
+              example:
+                code: 90001
+                message: internal error
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 服务端错误 → code 90001
+      summary: 读取分支指向
+      tags:
+      - repo
+      x-accepts:
+      - application/json
+      x-tags:
+      - tag: repo
+    post:
+      description: |
+        乐观锁：服务端当前指向不等于 expectedOldSha 时返回 409（code 50001），
+        客户端需先 pull 再重试。
+
+        客户端要先补一个 commit（仓库里 HEAD 指向的），再把分支指过去。
+        分支不存在即新建（expectedOldSha 传空）；但**仓库必须已存在**——
+        这一步假定对象已经传完了，不在这里建仓库。→ D21
+      parameters:
+      - example: huahuo
+        explode: false
+        in: path
+        name: owner
+        required: true
+        schema:
+          pattern: "^[a-z0-9][a-z0-9_-]{0,38}$"
+          type: string
+        style: simple
+      - example: gitlethub
+        explode: false
+        in: path
+        name: repo
+        required: true
+        schema:
+          pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+          type: string
+        style: simple
+      - description: 分支名（如 master）
+        explode: false
+        in: path
+        name: branch
+        required: true
+        schema:
+          example: master
+          type: string
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            example:
+              sha: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+              expectedOldSha: 380e098531072b99fd4ce38ad4b46c9faf00e6e3
+            schema:
+              $ref: "#/components/schemas/RefUpdateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                code: 0
+                message: ok
+                data:
+                  branch: master
+                  sha: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+              schema:
+                $ref: "#/components/schemas/_api_repos__owner___repo__refs__branch__get_200_response"
+          description: 更新成功
+        "400":
+          content:
+            application/json:
+              example:
+                code: 10001
+                message: objects is required
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 请求格式非法（JSON 解析失败、缺必填字段、路径参数不合法）→ code 10001
+        "401":
+          content:
+            application/json:
+              example:
+                code: 20001
+                message: missing or expired bearer token
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 未认证或 token 失效 → code 20001。由 gateway 拦截，理论上不会到达本服务
+        "403":
+          content:
+            application/json:
+              example:
+                code: 20002
+                message: huahuo cannot write huahuo/notes
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 已认证但不是该仓库的 owner → code 20002
+        "404":
+          content:
+            application/json:
+              examples:
+                repo:
+                  value:
+                    code: 30001
+                    message: "no such repository: huahuo/notes"
+                    data: null
+                branch:
+                  value:
+                    code: 30002
+                    message: "no such branch: dev"
+                    data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 仓库或分支不存在 → code 30001 / 30002
+        "409":
+          content:
+            application/json:
+              example:
+                code: 50001
+                message: "branch master is now at 380e098..., expected 0000000..."
+                data:
+                  currentSha: 380e098531072b99fd4ce38ad4b46c9faf00e6e3
+              schema:
+                $ref: "#/components/schemas/_api_repos__owner___repo__objects_post_422_response"
+          description: 分支已被别人推进（乐观锁失败）→ code 50001
+        "422":
+          content:
+            application/json:
+              examples:
+                hashMismatch:
+                  value:
+                    code: 10002
+                    message: "sha1 mismatch: header says a26d7d6..., content hashes\
+                      \ to 1b2c3d4..."
+                    data: null
+                objectMissing:
+                  value:
+                    code: 10003
+                    message: "commit 380e098... not found, upload objects first"
+                    data:
+                      missingSha: 380e098531072b99fd4ce38ad4b46c9faf00e6e3
+              schema:
+                $ref: "#/components/schemas/_api_repos__owner___repo__objects_post_422_response"
+          description: 内容校验失败 → code 10002（sha1 与内容不符）/ 10003（目标 commit 缺失）
+        "429":
+          content:
+            application/json:
+              example:
+                code: 10005
+                message: "too many requests, retry after 3s"
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 触发限流 → code 10005。由 gateway 拦截，理论上不会到达本服务
+        "500":
+          content:
+            application/json:
+              example:
+                code: 90001
+                message: internal error
+                data: null
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+          description: 服务端错误 → code 90001
+      summary: 更新分支指向（push 第二步）
+      tags:
+      - repo
+      x-content-type: application/json
+      x-accepts:
+      - application/json
+      x-tags:
+      - tag: repo
+components:
+  parameters:
+    Owner:
+      example: huahuo
+      explode: false
+      in: path
+      name: owner
+      required: true
+      schema:
+        pattern: "^[a-z0-9][a-z0-9_-]{0,38}$"
+        type: string
+      style: simple
+    Repo:
+      example: gitlethub
+      explode: false
+      in: path
+      name: repo
+      required: true
+      schema:
+        pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+        type: string
+      style: simple
+  responses:
+    BadRequest:
+      content:
+        application/json:
+          example:
+            code: 10001
+            message: objects is required
+            data: null
+          schema:
+            $ref: "#/components/schemas/ApiResponse"
+      description: 请求格式非法（JSON 解析失败、缺必填字段、路径参数不合法）→ code 10001
+    Unauthorized:
+      content:
+        application/json:
+          example:
+            code: 20001
+            message: missing or expired bearer token
+            data: null
+          schema:
+            $ref: "#/components/schemas/ApiResponse"
+      description: 未认证或 token 失效 → code 20001。由 gateway 拦截，理论上不会到达本服务
+    Forbidden:
+      content:
+        application/json:
+          example:
+            code: 20002
+            message: huahuo cannot write huahuo/notes
+            data: null
+          schema:
+            $ref: "#/components/schemas/ApiResponse"
+      description: 已认证但不是该仓库的 owner → code 20002
+    NotFound:
+      content:
+        application/json:
+          examples:
+            repo:
+              value:
+                code: 30001
+                message: "no such repository: huahuo/notes"
+                data: null
+            branch:
+              value:
+                code: 30002
+                message: "no such branch: dev"
+                data: null
+          schema:
+            $ref: "#/components/schemas/ApiResponse"
+      description: 仓库或分支不存在 → code 30001 / 30002
+    Conflict:
+      content:
+        application/json:
+          example:
+            code: 50001
+            message: "branch master is now at 380e098..., expected 0000000..."
+            data:
+              currentSha: 380e098531072b99fd4ce38ad4b46c9faf00e6e3
+          schema:
+            $ref: "#/components/schemas/_api_repos__owner___repo__objects_post_422_response"
+      description: 分支已被别人推进（乐观锁失败）→ code 50001
+    TooLarge:
+      content:
+        application/json:
+          example:
+            code: 10004
+            message: object exceeds 10 MB limit
+            data: null
+          schema:
+            $ref: "#/components/schemas/ApiResponse"
+      description: 超过体积限制 → code 10004
+    Unprocessable:
+      content:
+        application/json:
+          examples:
+            hashMismatch:
+              value:
+                code: 10002
+                message: "sha1 mismatch: header says a26d7d6..., content hashes to\
+                  \ 1b2c3d4..."
+                data: null
+            objectMissing:
+              value:
+                code: 10003
+                message: "commit 380e098... not found, upload objects first"
+                data:
+                  missingSha: 380e098531072b99fd4ce38ad4b46c9faf00e6e3
+          schema:
+            $ref: "#/components/schemas/_api_repos__owner___repo__objects_post_422_response"
+      description: 内容校验失败 → code 10002（sha1 与内容不符）/ 10003（目标 commit 缺失）
+    TooManyRequests:
+      content:
+        application/json:
+          example:
+            code: 10005
+            message: "too many requests, retry after 3s"
+            data: null
+          schema:
+            $ref: "#/components/schemas/ApiResponse"
+      description: 触发限流 → code 10005。由 gateway 拦截，理论上不会到达本服务
+    InternalError:
+      content:
+        application/json:
+          example:
+            code: 90001
+            message: internal error
+            data: null
+          schema:
+            $ref: "#/components/schemas/ApiResponse"
+      description: 服务端错误 → code 90001
+  schemas:
+    ApiResponse:
+      description: |
+        统一响应外层。所有接口（含错误）都用这个结构。
+
+        `code` 是**业务码段**，与 HTTP 状态码解耦。HTTP 状态码仍保留语义，
+        但客户端判断分支应该只看 `code`。
+
+        | code | HTTP | 含义 | 客户端动作 |
+        | --- | --- | --- | --- |
+        | 0 | 200 | 成功 | — |
+        | 10001 | 400 | 请求格式非法 | 修 bug |
+        | 10002 | 422 | sha1 与内容不符 | 修 bug |
+        | 10003 | 422 | refs 指向的 commit 服务端没有 | 先补传对象再重试 |
+        | 10004 | 413 | 超过体积限制 | 拆分后重传 |
+        | 10005 | 429 | 触发限流 | 退避重试 |
+        | 20001 | 401 | 未认证或 token 失效 | 重新认证 |
+        | 20002 | 403 | 非 owner，无权限 | 放弃 |
+        | 30001 | 404 | 仓库不存在 | — |
+        | 30002 | 404 | 分支不存在 | — |
+        | 50001 | 409 | 分支已被推进（乐观锁失败） | pull 后重试 |
+        | 90001 | 500 | 服务端错误 | 重试 / 上报 |
+
+        码段划分：`1xxxx` 请求与内容，`2xxxx` 认证授权，`3xxxx` 仓库与分支，
+        `5xxxx` 并发冲突，`9xxxx` 系统。`4xxxx`、`6xxxx`–`8xxxx` 预留。
+      example:
+        code: 0
+        message: ok
+        data: ""
+      properties:
+        code:
+          description: 业务码段，见上表
+          enum:
+          - 0
+          - 10001
+          - 10002
+          - 10003
+          - 10004
+          - 10005
+          - 20001
+          - 20002
+          - 30001
+          - 30002
+          - 50001
+          - 90001
+          example: 0
+          type: integer
+        message:
+          description: 人类可读的描述，成功时为 ok
+          example: ok
+          type: string
+        data:
+          description: 业务数据；失败时为 null 或错误详情
+      required:
+      - code
+      - message
+      type: object
+    ObjectUploadRequest:
+      example:
+        objects:
+        - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+          type: blob
+          content: aGVsbG8gd29ybGQK
+        - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+          type: blob
+          content: aGVsbG8gd29ybGQK
+        - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+          type: blob
+          content: aGVsbG8gd29ybGQK
+        - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+          type: blob
+          content: aGVsbG8gd29ybGQK
+        - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+          type: blob
+          content: aGVsbG8gd29ybGQK
+      properties:
+        objects:
+          items:
+            $ref: "#/components/schemas/GitletObject"
+          maxItems: 500
+          type: array
+      required:
+      - objects
+      type: object
+    ObjectBundle:
+      example:
+        objects:
+        - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+          type: blob
+          content: aGVsbG8gd29ybGQK
+        - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+          type: blob
+          content: aGVsbG8gd29ybGQK
+      properties:
+        objects:
+          items:
+            $ref: "#/components/schemas/GitletObject"
+          type: array
+      required:
+      - objects
+      type: object
+    ObjectUploadResult:
+      example:
+        received:
+        - received
+        - received
+        missing:
+        - missing
+        - missing
+      properties:
+        received:
+          description: 服务端已确认接收的 sha1
+          items:
+            type: string
+          type: array
+        missing:
+          description: 服务端仍缺失的 sha1，客户端据此重传
+          items:
+            type: string
+          type: array
+      required:
+      - received
+      type: object
+    GitletObject:
+      example:
+        sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+        type: blob
+        content: aGVsbG8gd29ybGQK
+      properties:
+        sha1:
+          description: 40 位十六进制
+          pattern: "^[0-9a-f]{40}$"
+          type: string
+        type:
+          enum:
+          - blob
+          - commit
+          type: string
+        content:
+          description: |
+            *临时* base64 编码的原始字节。
+            注意：commit 是 Java 序列化对象（serialVersionUID 1L），
+            不是文本，服务端必须原样落盘不能重新序列化，否则 sha1 会变。
+          format: byte
+          type: string
+      required:
+      - content
+      - sha1
+      - type
+      type: object
+    RefUpdateRequest:
+      example:
+        sha: sha
+        expectedOldSha: expectedOldSha
+      properties:
+        sha:
+          description: 目标 commit，服务端必须已有该对象
+          pattern: "^[0-9a-f]{40}$"
+          type: string
+        expectedOldSha:
+          description: |
+            *临时* 乐观锁。服务端当前指向不等于它时返回 409。
+            新建分支时传空。
+          nullable: true
+          pattern: "^[0-9a-f]{40}$"
+          type: string
+      required:
+      - sha
+      type: object
+    RefView:
+      example:
+        branch: branch
+        sha: sha
+      properties:
+        branch:
+          type: string
+        sha:
+          pattern: "^[0-9a-f]{40}$"
+          type: string
+      required:
+      - branch
+      - sha
+      type: object
+    ErrorDetail:
+      description: 通用错误详情，放在 `data` 里
+      example:
+        currentSha: currentSha
+        missingSha: missingSha
+      properties:
+        currentSha:
+          description: 仅 code 50001（REF_CONFLICT）时出现，服务端当前指向
+          type: string
+        missingSha:
+          description: 仅 code 10003（OBJECT_MISSING）时出现，缺失的对象
+          type: string
+      type: object
+    _api_repos__owner___repo__objects_get_200_response:
+      allOf:
+      - $ref: "#/components/schemas/ApiResponse"
+      - properties:
+          data:
+            $ref: "#/components/schemas/ObjectBundle"
+        type: object
+      example:
+        code: 0
+        message: ok
+        data:
+          objects:
+          - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+            type: blob
+            content: aGVsbG8gd29ybGQK
+          - sha1: a26d7d6b7164c1672f85f148a194a1e75f31d9d2
+            type: blob
+            content: aGVsbG8gd29ybGQK
+    _api_repos__owner___repo__objects_post_200_response:
+      allOf:
+      - $ref: "#/components/schemas/ApiResponse"
+      - properties:
+          data:
+            $ref: "#/components/schemas/ObjectUploadResult"
+        type: object
+      example:
+        code: 0
+        message: ok
+        data:
+          received:
+          - received
+          - received
+          missing:
+          - missing
+          - missing
+    _api_repos__owner___repo__objects_post_422_response:
+      allOf:
+      - $ref: "#/components/schemas/ApiResponse"
+      - properties:
+          data:
+            $ref: "#/components/schemas/ErrorDetail"
+        type: object
+      example:
+        code: 0
+        message: ok
+        data:
+          currentSha: currentSha
+          missingSha: missingSha
+    _api_repos__owner___repo__refs__branch__get_200_response:
+      allOf:
+      - $ref: "#/components/schemas/ApiResponse"
+      - properties:
+          data:
+            $ref: "#/components/schemas/RefView"
+        type: object
+      example:
+        code: 0
+        message: ok
+        data:
+          branch: branch
+          sha: sha
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      scheme: bearer
+      type: http
