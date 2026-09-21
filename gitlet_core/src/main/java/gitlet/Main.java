@@ -1,7 +1,10 @@
 package gitlet;
 
 
-import gitlet.repository.Repository;
+import gitlet.handler.BranchManager;
+import gitlet.handler.CommandHandler;
+import gitlet.handler.MergeHandler;
+import gitlet.handler.StatusHandler;
 import gitlet.repository.RepositoryPaths;
 import gitlet.utils.Utils;
 
@@ -26,13 +29,13 @@ public class Main {
             case "init":
                 // 一个文件夹下只能 init 一次 .gitlet 仓库
                 validateNumArgs("init", args, 1);
-                Repository.init();
+                CommandHandler.init();
                 break;
             case "add":
                 // add 添加的时候一次只能添加一个文件
                 checkGitLet();
                 validateNumArgs("add", args, 2);
-                Repository.add(args[1]);
+                CommandHandler.add(args[1]);
                 break;
             case "commit":
                 checkGitLet();
@@ -43,33 +46,33 @@ public class Main {
                         Utils.message("Please enter a commit message.");
                         System.exit(0);
                     }
-                    Repository.commit(args[1]);
+                    CommandHandler.commit(args[1]);
                 }
                 break;
             case "rm":
                 checkGitLet();
                 validateNumArgs("rm", args, 2);
-                Repository.rm(args[1]);
+                CommandHandler.rm(args[1]);
                 break;
             case "log":
                 checkGitLet();
                 validateNumArgs("log", args, 1);
-                Repository.log();
+                CommandHandler.log();
                 break;
             case "global-log":
                 checkGitLet();
                 validateNumArgs("global-log", args, 1);
-                Repository.globalLog();
+                CommandHandler.globalLog();
                 break;
             case "find":
                 checkGitLet();
                 validateNumArgs("find", args, 2);
-                Repository.find(args[1]);
+                CommandHandler.find(args[1]);
                 break;
             case "status":
                 checkGitLet();
                 validateNumArgs("status", args, 1);
-                Repository.status();
+                StatusHandler.status();
                 break;
             case "checkout":
                 checkGitLet();
@@ -78,22 +81,22 @@ public class Main {
             case "branch":
                 checkGitLet();
                 validateNumArgs("branch", args, 2);
-                Repository.branch(args[1]);
+                BranchManager.branch(args[1]);
                 break;
             case "rm-branch":
                 checkGitLet();
                 validateNumArgs("rm-branch", args, 2);
-                Repository.rmBranch(args[1]);
+                BranchManager.rmBranch(args[1]);
                 break;
             case "reset":
                 checkGitLet();
                 validateNumArgs("reset", args, 2);
-                Repository.reset(args[1]);
+                CommandHandler.reset(args[1]);
                 break;
             case "merge":
                 checkGitLet();
                 validateNumArgs("merge", args, 2);
-                Repository.merge(args[1]);
+                MergeHandler.merge(args[1]);
                 break;
             default:
                 // 不存在的指令
@@ -111,7 +114,7 @@ public class Main {
                 System.exit(0);
             }
 
-            Repository.checkoutHeadFile(args[2]);
+            CommandHandler.checkoutHeadFile(args[2]);
         } else if (args.length == 4) {
             // 获取指定提交下的文件 checkout <commit id> -- <文件名>
             // 格式检查
@@ -120,10 +123,10 @@ public class Main {
                 System.exit(0);
             }
 
-            Repository.checkoutID(args[1], args[3]);
+            CommandHandler.checkoutID(args[1], args[3]);
         } else if (args.length == 2) {
             // 切换到目标分支 checkout <branch name>
-            Repository.checkoutBranch(args[1]);
+            CommandHandler.checkoutBranch(args[1]);
         } else {
             throw new RuntimeException(
                     "Incorrect operands.");

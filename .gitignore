@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Classes compiled by 'make check' in gitlet_test.
+gitlet_core/src/test/gitlet_test/build/

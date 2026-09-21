@@ -13,7 +13,12 @@
     <artifactId>gitlet_core</artifactId>
 
     <dependencies>
-
+        <!-- gitlet.commit.Commit uses @Data; the version comes from the parent. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
