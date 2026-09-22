@@ -50,4 +50,12 @@ public interface RemoteService {
      * @return ApiReposOwnerRepoObjectsGet200Response
      */
     ApiReposOwnerRepoObjectsGet200Response pull(String owner, String repo, String since);
+
+    /**
+     * 克隆远程仓库
+      * @param owner  (required) 当前仓库的所有者
+      * @param repo  (required) 当前仓库的名称
+      * @return ApiReposOwnerRepoObjectsGet200Response
+     */
+    ApiReposOwnerRepoObjectsGet200Response cloneRepository(String owner, String repo);
 }

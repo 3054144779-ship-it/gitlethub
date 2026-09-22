@@ -46,7 +46,7 @@ public class ApiReposOwnerRepoObjectsGet200Response {
     
     NUMBER_20002(20002),
     
-    NUMBER_30001(30001),
+    NUMBER_30001(30001), // 仓库不存在
     
     NUMBER_30002(30002),
 

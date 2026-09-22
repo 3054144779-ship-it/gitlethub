@@ -200,10 +200,11 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | POST | `/api/repos/{owner}/{repo}/objects` | push 第一步：上传对象 |
-| GET | `/api/repos/{owner}/{repo}/objects?since=` | pull / clone：拉取对象 |
+| GET | `/api/repos/{owner}/{repo}/objects?since=` | pull 拉取对象 |
 | POST | `/api/repos/{owner}/{repo}/refs/{branch}` | push 第二步：更新分支（乐观锁） |
 | GET | `/api/repos/{owner}/{repo}/refs/{branch}` | 读取分支指向 |
 | POST | `/api/repos/{owner}/{repo}/repo` | 创建仓库 |
+| GET | `/api/repos/{owner}/{repo}/clone` | clone 拉取对象 |
 
 **不在 spec 里的**
 

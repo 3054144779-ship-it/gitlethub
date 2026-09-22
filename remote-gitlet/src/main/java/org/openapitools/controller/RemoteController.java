@@ -100,4 +100,20 @@ public class RemoteController {
         ApiReposOwnerRepoObjectsPost200Response response = remoteService.createRemoteRepository(owner, repo);
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * clone 远程仓库
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return ResponseEntity&lt;ApiReposOwnerRepoObjectsGet200Response&gt;
+     */
+    @GetMapping("/clone")
+    public ResponseEntity<ApiReposOwnerRepoObjectsGet200Response> cloneRepository(
+            @PathVariable String owner, @PathVariable String repo) {
+
+        ApiReposOwnerRepoObjectsGet200Response response = remoteService.cloneRepository(owner, repo);
+        return ResponseEntity.ok(response);
+    }
+
+
 }

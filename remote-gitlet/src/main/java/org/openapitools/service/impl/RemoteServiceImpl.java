@@ -48,7 +48,6 @@ public class RemoteServiceImpl implements RemoteService {
 
         // 检查仓库是否存在(不存在则报错)
         if (!RepositoryVerification.repositoryExists(repositoryPaths)) {
-            log.info("仓库 {}/{} 不存在，创建中", owner, repo);
             return new ApiReposOwnerRepoObjectsPost200Response()
                     .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_30001)
                     .message(MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
@@ -185,13 +184,20 @@ public class RemoteServiceImpl implements RemoteService {
     public ApiReposOwnerRepoObjectsGet200Response pull(String owner, String repo, String since) {
         log.info("拉取 {} / {} 从 {} 开始的提交", owner, repo, since);
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
-//        Utils.readContentsAsString(repositoryPaths.getCommits());
+
+        // 检查仓库是否存在(不存在则报错)
+        if (!RepositoryVerification.repositoryExists(repositoryPaths)) {
+            return new ApiReposOwnerRepoObjectsGet200Response()
+                    .code(ApiReposOwnerRepoObjectsGet200Response.CodeEnum.NUMBER_30001)
+                    .message(MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+
         // 读取仓库中所有的提交(存的是提交SHA1值)
         List<String> commitNames = Utils.plainFilenamesIn(repositoryPaths.getCommits());
         // 读取仓库中所有的Blobs(存的是BlobHA1值)
         List<String> blobNames = Utils.plainFilenamesIn(repositoryPaths.getObject());
         // 提交不能为空
-        if (CollUtil.isEmpty(commitNames)) {
+        if (CollUtil.isEmpty(commitNames) || CollUtil.isEmpty(blobNames)) {
             log.info("仓库 {} / {} 中没有提交", owner, repo);
             return new ApiReposOwnerRepoObjectsGet200Response()
                     .code(ApiReposOwnerRepoObjectsGet200Response.CodeEnum.NUMBER_30005)
@@ -229,5 +235,18 @@ public class RemoteServiceImpl implements RemoteService {
                 .code(ApiReposOwnerRepoObjectsGet200Response.CodeEnum.NUMBER_0)
                 .message(MsgConstant.OK)
                 .data(new ObjectBundle().objects(fileList));
+    }
+
+    /**
+     * 克隆远程仓库
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return
+     */
+    @Override
+    public ApiReposOwnerRepoObjectsGet200Response cloneRepository(String owner, String repo) {
+        log.info("克隆 {} / {}", owner, repo);
+        // TODO：后续将这里（since）改为第一个提交
+        return this.pull(owner, repo, null);
     }
 }
