@@ -7,4 +7,5 @@ public class MsgConstant {
     public static final String THE_WAREHOUSE_ALREADY_EXISTS = "仓库已存在";
     public static final String THE_BRANCH_DOES_NOT_EXIST = "分支不存在";
     public static final String PULL_FAILED = "拉取失败，因为远程仓库提交为空";
+    public static final String MAIN_BRANCH = "master";
 }

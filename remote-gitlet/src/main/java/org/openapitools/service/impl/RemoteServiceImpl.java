@@ -3,16 +3,21 @@ package org.openapitools.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.openapitools.mapper.RemoteRepositoryMapper;
+import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
+import org.openapitools.model.po.Repository;
 import org.openapitools.service.RemoteService;
 import org.openapitools.utils.Utils;
 import org.openapitools.verification.BranchVerification;
 import org.openapitools.verification.RepositoryVerification;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -25,7 +30,13 @@ public class RemoteServiceImpl implements RemoteService {
     @Value("${storage.base-path:${user.dir}}")
     private String basePath;
 
+    // 远程用户Mapper
+    @Autowired
+    private RemoteUserMapper remoteUserMapper;
 
+    // 远程仓库Mapper
+    @Autowired
+    private RemoteRepositoryMapper remoteRepositoryMapper;
     /**
      * push 到远程仓库
      * 第一步：上传对象
@@ -140,6 +151,23 @@ public class RemoteServiceImpl implements RemoteService {
 
         // 如果仓库不存在则创建仓库
         RepositoryVerification.createRepository(repositoryPaths);
+
+        // 获取当前用户ID(根据用户名字查)
+        Long ownerId = remoteUserMapper.getUserId(owner);
+
+        // 创建仓库对象
+        Repository repository = Repository.builder()
+                .ownerId(ownerId)
+                .name(repo)
+                .description("")
+                .visibility(0)
+                .defaultBranch(MsgConstant.MAIN_BRANCH)
+                .createTime(LocalDateTime.now())
+                .updateTime(LocalDateTime.now())
+                .isDeleted(0)
+                .build();
+        // 存入到数据库
+        remoteRepositoryMapper.insert(repository);
 
         return new ApiReposOwnerRepoObjectsPost200Response()
                 .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_0).message(MsgConstant.OK);

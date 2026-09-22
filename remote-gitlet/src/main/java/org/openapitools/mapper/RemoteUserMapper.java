@@ -7,4 +7,5 @@ import org.openapitools.model.po.User;
 @Mapper
 public interface RemoteUserMapper extends BaseMapper<User> {
 
+    Long getUserId(String username);
 }
