@@ -49,7 +49,11 @@ public class ApiReposOwnerRepoRefsBranchGet200Response {
     NUMBER_30001(30001),
     
     NUMBER_30002(30002),
-    
+
+    NUMBER_30003(30003),
+
+    NUMBER_30004(30004), // 分支不存在
+
     NUMBER_50001(50001),
     
     NUMBER_90001(90001);

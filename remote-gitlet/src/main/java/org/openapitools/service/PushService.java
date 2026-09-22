@@ -35,4 +35,13 @@ public interface PushService {
      * @return ApiReposOwnerRepoObjectsPost200Response
      */
     ApiReposOwnerRepoObjectsPost200Response createRemoteRepository(String owner, String repo);
+
+    /**
+     * 读取分支指向
+      * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param branch  (required) 分支名（如 master）
+     * @return ApiReposOwnerRepoRefsBranchGet200Response
+     */
+    ApiReposOwnerRepoRefsBranchGet200Response getBranchInformation(String owner, String repo, String branch);
 }

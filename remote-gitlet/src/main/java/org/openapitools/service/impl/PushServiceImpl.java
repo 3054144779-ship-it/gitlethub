@@ -35,6 +35,12 @@ public class PushServiceImpl implements PushService {
     public ApiReposOwnerRepoObjectsPost200Response pushObject(
             String owner, String repo, ObjectUploadRequest objectUploadRequest) {
 
+        if (objectUploadRequest == null) {
+            return new ApiReposOwnerRepoObjectsPost200Response()
+                    .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_30002)
+                    .message(MsgConstant.THE_SUBMITTED_FILE_CANNOT_BE_EMPTY);
+        }
+
         // 创建仓库路径对象
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
 
@@ -136,5 +142,32 @@ public class PushServiceImpl implements PushService {
 
         return new ApiReposOwnerRepoObjectsPost200Response()
                 .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_0).message(MsgConstant.OK);
+    }
+
+    /**
+     * 读取分支指向（为了后续做增量同步）
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param branch  (required) 分支名（如 master）
+     * @return 分支信息
+     */
+    @Override
+    public ApiReposOwnerRepoRefsBranchGet200Response getBranchInformation(String owner, String repo, String branch) {
+        log.info("获取 {} / {} 的 {} 分支指向", owner, repo, branch);
+        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
+        // 当前分支文件
+        File branchFile = Utils.join(repositoryPaths.getBranchDir(), branch);
+        // 判断当前分支是否存在，如果不存在则返回错误码30004
+        if (!branchFile.exists()) {
+            return new ApiReposOwnerRepoRefsBranchGet200Response()
+                    .code(ApiReposOwnerRepoRefsBranchGet200Response.CodeEnum.NUMBER_30004)
+                    .message(MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
+        }
+
+        // 如果存在则返回 分支所指向的提交
+        return new ApiReposOwnerRepoRefsBranchGet200Response()
+                .code(ApiReposOwnerRepoRefsBranchGet200Response.CodeEnum.NUMBER_0)
+                .message(MsgConstant.OK)
+                .data(new RefView().branch(branch).sha(Utils.readContentsAsString(branchFile)));
     }
 }

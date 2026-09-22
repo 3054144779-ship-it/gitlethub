@@ -55,7 +55,7 @@ public class RemoteController {
     }
 
     /**
-     * 获取分支信息
+     * 读取分支指向
       * @param owner  (required) 当前仓库的所有者
       * @param repo  (required) 当前仓库的名称
      * @param branch 分支名（如 master） (required)
@@ -64,7 +64,9 @@ public class RemoteController {
     @GetMapping("/refs/{branch}")
     public ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> getBranchInformation(
             @PathVariable String owner, @PathVariable String repo, @PathVariable String branch) {
-        return null;
+        ApiReposOwnerRepoRefsBranchGet200Response response =
+                pushService.getBranchInformation(owner, repo, branch);
+        return ResponseEntity.ok(response);
     }
 
     /**
