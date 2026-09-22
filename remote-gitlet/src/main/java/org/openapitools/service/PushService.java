@@ -13,7 +13,7 @@ public interface PushService {
      * @param repo  (required) 当前仓库的名称
      * @param objectUploadRequest  (required) push 的内容
      */
-    ApiReposOwnerRepoObjectsPost200Response apiReposOwnerRepoObjectsPost(
+    ApiReposOwnerRepoObjectsPost200Response pushObject(
             String owner, String repo, ObjectUploadRequest objectUploadRequest);
 
     /**
@@ -25,6 +25,14 @@ public interface PushService {
      * @param refUpdateRequest  (required) push 的内容
      * @return ApiReposOwnerRepoRefsBranchGet200Response
      */
-    ApiReposOwnerRepoRefsBranchGet200Response apiReposOwnerRepoRefsBranchPost(
+    ApiReposOwnerRepoRefsBranchGet200Response pushUpdateBranch(
             String owner, String repo, String branch, RefUpdateRequest refUpdateRequest);
+
+    /**
+     * 创建当前用户的远程仓库
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return ApiReposOwnerRepoObjectsPost200Response
+     */
+    ApiReposOwnerRepoObjectsPost200Response createRemoteRepository(String owner, String repo);
 }

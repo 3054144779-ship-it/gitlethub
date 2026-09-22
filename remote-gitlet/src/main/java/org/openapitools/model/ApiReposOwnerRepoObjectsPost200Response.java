@@ -46,10 +46,14 @@ public class ApiReposOwnerRepoObjectsPost200Response {
     
     NUMBER_20002(20002),
     
-    NUMBER_30001(30001),
+    NUMBER_30001(30001), // 仓库不存在
     
-    NUMBER_30002(30002),
-    
+    NUMBER_30002(30002), // 提交的文件不能为空
+
+    NUMBER_30003(30003), // 仓库已存在
+
+    NUMBER_30004(30004),
+
     NUMBER_50001(50001),
     
     NUMBER_90001(90001);

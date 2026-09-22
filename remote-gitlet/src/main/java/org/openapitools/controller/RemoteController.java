@@ -11,35 +11,19 @@ import org.openapitools.service.PushService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.bind.annotation.*;
 
-import java.util.Optional;
 import jakarta.annotation.Generated;
 
 import javax.annotation.Nullable;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-09-21T20:19:28.153831200+08:00[Asia/Shanghai]", comments = "Generator version: 7.25.0")
 @Controller
-@RequestMapping("${openapi.gitlethub.base-path:}")
-public class RemoteController implements RemoteControllerInterface {
-
-    private final NativeWebRequest request;
+@RequestMapping("/api/repos/{owner}/{repo}")
+public class RemoteController {
 
     @Autowired
     public PushService pushService;
-
-
-    @Autowired
-    public RemoteController(NativeWebRequest request) {
-        this.request = request;
-    }
-
-    @Override
-    public Optional<NativeWebRequest> getRequest() {
-        return Optional.ofNullable(request);
-    }
-
 
     /**
      * pull 拉取对象
@@ -48,9 +32,10 @@ public class RemoteController implements RemoteControllerInterface {
      * @param since 客户端已有的最新 commit sha1；空表示全新 clone (optional)
      * @return
      */
-    @Override
-    public ResponseEntity<ApiReposOwnerRepoObjectsGet200Response> apiReposOwnerRepoObjectsGet(String owner, String repo, @Nullable String since) {
-        return RemoteControllerInterface.super.apiReposOwnerRepoObjectsGet(owner, repo, since);
+    @GetMapping("/objects")
+    public ResponseEntity<ApiReposOwnerRepoObjectsGet200Response> pull(
+            @PathVariable String owner, @PathVariable String repo, @Nullable @RequestParam("since") String since) {
+        return null;
     }
 
     /**
@@ -61,9 +46,11 @@ public class RemoteController implements RemoteControllerInterface {
      * @param objectUploadRequest  (required) push 的内容
      * @return ResponseEntity&lt;ApiReposOwnerRepoObjectsPost200Response&gt;
      */
-    @Override
-    public ResponseEntity<ApiReposOwnerRepoObjectsPost200Response> apiReposOwnerRepoObjectsPost(String owner, String repo, ObjectUploadRequest objectUploadRequest) {
-        ApiReposOwnerRepoObjectsPost200Response response = pushService.apiReposOwnerRepoObjectsPost(owner, repo, objectUploadRequest);
+    @PostMapping("/objects")
+    public ResponseEntity<ApiReposOwnerRepoObjectsPost200Response> pushObject(
+            @PathVariable String owner, @PathVariable String repo, @RequestBody ObjectUploadRequest objectUploadRequest) {
+        ApiReposOwnerRepoObjectsPost200Response response =
+                pushService.pushObject(owner, repo, objectUploadRequest);
         return ResponseEntity.ok(response);
     }
 
@@ -74,23 +61,41 @@ public class RemoteController implements RemoteControllerInterface {
      * @param branch 分支名（如 master） (required)
      * @return ResponseEntity&lt;ApiReposOwnerRepoRefsBranchGet200Response&gt;
      */
-    @Override
-    public ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> apiReposOwnerRepoRefsBranchGet(String owner, String repo, String branch) {
-        return RemoteControllerInterface.super.apiReposOwnerRepoRefsBranchGet(owner, repo, branch);
+    @GetMapping("/refs/{branch}")
+    public ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> getBranchInformation(
+            @PathVariable String owner, @PathVariable String repo, @PathVariable String branch) {
+        return null;
     }
 
     /**
      * push 到远程仓库
-     * 第二步：更新分支信息
+     * 第二步：更新分支信息（TODO：加乐观锁）
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param branch 分支名（如 master） (required)
      * @param refUpdateRequest  (required)
      * @return ResponseEntity&lt;ApiReposOwnerRepoRefsBranchGet200Response&gt;
      */
-    @Override
-    public ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> apiReposOwnerRepoRefsBranchPost(String owner, String repo, String branch, RefUpdateRequest refUpdateRequest) {
-        ApiReposOwnerRepoRefsBranchGet200Response response = pushService.apiReposOwnerRepoRefsBranchPost(owner, repo, branch, refUpdateRequest);
-        return RemoteControllerInterface.super.apiReposOwnerRepoRefsBranchPost(owner, repo, branch, refUpdateRequest);
+    @PostMapping("/refs/{branch}")
+    public ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> pushUpdateBranch(
+                                                    @PathVariable String owner, @PathVariable String repo,
+                                                    @PathVariable String branch, @RequestBody RefUpdateRequest refUpdateRequest) {
+        ApiReposOwnerRepoRefsBranchGet200Response response =
+                pushService.pushUpdateBranch(owner, repo, branch, refUpdateRequest);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 创建当前用户的远程仓库
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return ResponseEntity&lt;ApiReposOwnerRepoObjectsPost200Response&gt;
+     */
+    @PostMapping("/repo")
+    public ResponseEntity<ApiReposOwnerRepoObjectsPost200Response> createRemoteRepository(
+            @PathVariable String owner, @PathVariable String repo) {
+
+        ApiReposOwnerRepoObjectsPost200Response response = pushService.createRemoteRepository(owner, repo);
+        return ResponseEntity.ok(response);
     }
 }

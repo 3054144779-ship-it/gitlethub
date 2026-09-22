@@ -99,9 +99,9 @@ public class Utils {
         }
     }
 
-    /** Return the entire contents of FILE as a String.  FILE must
-     *  be a normal file.  Throws IllegalArgumentException
-     *  in case of problems. */
+    /** 将 FILE 的全部内容作为字符串返回。FILE 必须
+ *  是一个普通文件。若出现问题，将抛出 IllegalArgumentException
+ *  异常。 */
     public static String readContentsAsString(File file) {
         return new String(readContents(file), StandardCharsets.UTF_8);
     }

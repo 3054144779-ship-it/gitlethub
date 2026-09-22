@@ -2,9 +2,12 @@ package org.openapitools.service.impl;
 
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
 import org.openapitools.service.PushService;
 import org.openapitools.utils.Utils;
+import org.openapitools.verification.BranchVerification;
+import org.openapitools.verification.RepositoryVerification;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +23,7 @@ public class PushServiceImpl implements PushService {
     @Value("${storage.base-path:${user.dir}}")
     private String basePath;
 
+
     /**
      * push 到远程仓库
      * 第一步：上传对象
@@ -28,19 +32,18 @@ public class PushServiceImpl implements PushService {
      * @param objectUploadRequest  (required) push 的内容
      */
     @Override
-    public ApiReposOwnerRepoObjectsPost200Response apiReposOwnerRepoObjectsPost(
+    public ApiReposOwnerRepoObjectsPost200Response pushObject(
             String owner, String repo, ObjectUploadRequest objectUploadRequest) {
 
         // 创建仓库路径对象
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
 
-        // 检查仓库是否存在
-        if (!repositoryPaths.getRepositoryId().exists()) {
+        // 检查仓库是否存在(不存在则报错)
+        if (!RepositoryVerification.repositoryExists(repositoryPaths)) {
             log.info("仓库 {}/{} 不存在，创建中", owner, repo);
-            repositoryPaths.getRepositoryId().mkdirs();
-            repositoryPaths.getObject().mkdirs();
-            repositoryPaths.getCommits().mkdirs();
-            repositoryPaths.getBranchDir().mkdirs();
+            return new ApiReposOwnerRepoObjectsPost200Response()
+                    .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_30001)
+                    .message(MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
 
         // 获取当前所有对象
@@ -50,19 +53,14 @@ public class PushServiceImpl implements PushService {
         List<String> blobNames = Utils.plainFilenamesIn(repositoryPaths.getObject());
         List<String> commitNames = Utils.plainFilenamesIn(repositoryPaths.getCommits());
 
-        // 检查提交的文件是否为空
-        if ((blobNames == null || blobNames.isEmpty()) && (commitNames == null || commitNames.isEmpty())) {
-            log.debug("提交的文件不能为空");
-            return new ApiReposOwnerRepoObjectsPost200Response()
-                    .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_30001).message("提交的文件不能为空");
-        }
-
         for (GitletObject object : objects) {
             // 检查对象是否已存在
             boolean exists;
             if (object.getType() == GitletObject.TypeEnum.COMMIT) {
+                log.info("检查commit {} 是否存在", object.getSha1());
                 exists = commitNames != null && commitNames.contains(object.getSha1());
             } else {
+                log.info("检查Blob {} 是否存在", object.getSha1());
                 exists = blobNames != null && blobNames.contains(object.getSha1());
             }
 
@@ -74,9 +72,11 @@ public class PushServiceImpl implements PushService {
             File target;
 
             if (object.getType() == GitletObject.TypeEnum.COMMIT) {
+                log.info("上传提交 {}, 我是一个Commit", object.getSha1());
                 // 如果当前是一个新的提交
                 target = Utils.join(repositoryPaths.getCommits(), object.getSha1());
             } else {
+                log.info("上传提交 {}, 我是一个Blob", object.getSha1());
                 // 如果当前是一个新的 blob
                 target = Utils.join(repositoryPaths.getObject(), object.getSha1());
             }
@@ -84,7 +84,7 @@ public class PushServiceImpl implements PushService {
             log.debug("写入对象: type={}, sha1={}", object.getType(), object.getSha1());
         }
         return new ApiReposOwnerRepoObjectsPost200Response()
-                .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_0).message("ok");
+                .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_0).message(MsgConstant.OK);
     }
 
     /**
@@ -97,22 +97,44 @@ public class PushServiceImpl implements PushService {
      * @return
      */
     @Override
-    public ApiReposOwnerRepoRefsBranchGet200Response apiReposOwnerRepoRefsBranchPost(
+    public ApiReposOwnerRepoRefsBranchGet200Response pushUpdateBranch(
             String owner, String repo, String branch, RefUpdateRequest refUpdateRequest) {
 
         log.info("更新分支 {} {}", branch, refUpdateRequest);
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
-        File currentBranch = Utils.join(repositoryPaths.getBranchDir(), branch);
 
-        if (!currentBranch.exists()) {
-            log.info("分支 {} 不存在，创建新分支", branch);
-            currentBranch.getParentFile().mkdirs();
-        }
+        // 检查分支是否存在, 如果不存在则创建
+        File currentBranch = BranchVerification.branchExists(repositoryPaths, branch);
 
         // 更新当前分支指向的提交
         Utils.writeContents(currentBranch, refUpdateRequest.getSha());
+        // 此时不再更新头指针指向的分支，一直指向默认分支即可
 
         return new ApiReposOwnerRepoRefsBranchGet200Response()
-                .code(ApiReposOwnerRepoRefsBranchGet200Response.CodeEnum.NUMBER_0).message("ok");
+                .code(ApiReposOwnerRepoRefsBranchGet200Response.CodeEnum.NUMBER_0).message(MsgConstant.OK);
+    }
+
+    /**
+     * 创建远程仓库
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return
+     */
+    @Override
+    public ApiReposOwnerRepoObjectsPost200Response createRemoteRepository(String owner, String repo) {
+        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
+        // 校验仓库是否存在
+        if (RepositoryVerification.repositoryExists(repositoryPaths)) {
+            // 仓库存在则禁止重复创建
+            return new ApiReposOwnerRepoObjectsPost200Response()
+                    .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_30003)
+                    .message(MsgConstant.THE_WAREHOUSE_ALREADY_EXISTS);
+        }
+
+        // 如果仓库不存在则创建仓库
+        RepositoryVerification.createRepository(repositoryPaths);
+
+        return new ApiReposOwnerRepoObjectsPost200Response()
+                .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_0).message(MsgConstant.OK);
     }
 }
