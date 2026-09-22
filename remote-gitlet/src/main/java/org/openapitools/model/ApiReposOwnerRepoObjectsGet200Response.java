@@ -49,7 +49,9 @@ public class ApiReposOwnerRepoObjectsGet200Response {
     NUMBER_30001(30001),
     
     NUMBER_30002(30002),
-    
+
+    NUMBER_30005(30005), // 提交为空，分支拉取失败
+
     NUMBER_50001(50001),
     
     NUMBER_90001(90001);

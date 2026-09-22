@@ -81,11 +81,11 @@
             <scope>provided</scope>
         </dependency>
         <!--hutool-->
-<!--        <dependency>-->
-<!--            <groupId>cn.hutool</groupId>-->
-<!--            <artifactId>hutool-core</artifactId>-->
-<!--            <version>5.8.22</version>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-core</artifactId>
+            <version>5.8.22</version>
+        </dependency>
 
     </dependencies>
 </project>

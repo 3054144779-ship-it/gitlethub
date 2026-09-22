@@ -7,7 +7,7 @@ import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.RefUpdateRequest;
 
 
-import org.openapitools.service.PushService;
+import org.openapitools.service.RemoteService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -23,8 +23,7 @@ import javax.annotation.Nullable;
 public class RemoteController {
 
     @Autowired
-    public PushService pushService;
-
+    private RemoteService remoteService;
     /**
      * pull 拉取对象
      * @param owner  (required) 当前仓库的所有者
@@ -35,7 +34,8 @@ public class RemoteController {
     @GetMapping("/objects")
     public ResponseEntity<ApiReposOwnerRepoObjectsGet200Response> pull(
             @PathVariable String owner, @PathVariable String repo, @Nullable @RequestParam("since") String since) {
-        return null;
+        ApiReposOwnerRepoObjectsGet200Response response = remoteService.pull(owner, repo, since);
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -50,7 +50,7 @@ public class RemoteController {
     public ResponseEntity<ApiReposOwnerRepoObjectsPost200Response> pushObject(
             @PathVariable String owner, @PathVariable String repo, @RequestBody ObjectUploadRequest objectUploadRequest) {
         ApiReposOwnerRepoObjectsPost200Response response =
-                pushService.pushObject(owner, repo, objectUploadRequest);
+                remoteService.pushObject(owner, repo, objectUploadRequest);
         return ResponseEntity.ok(response);
     }
 
@@ -65,7 +65,7 @@ public class RemoteController {
     public ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> getBranchInformation(
             @PathVariable String owner, @PathVariable String repo, @PathVariable String branch) {
         ApiReposOwnerRepoRefsBranchGet200Response response =
-                pushService.getBranchInformation(owner, repo, branch);
+                remoteService.getBranchInformation(owner, repo, branch);
         return ResponseEntity.ok(response);
     }
 
@@ -83,7 +83,7 @@ public class RemoteController {
                                                     @PathVariable String owner, @PathVariable String repo,
                                                     @PathVariable String branch, @RequestBody RefUpdateRequest refUpdateRequest) {
         ApiReposOwnerRepoRefsBranchGet200Response response =
-                pushService.pushUpdateBranch(owner, repo, branch, refUpdateRequest);
+                remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest);
         return ResponseEntity.ok(response);
     }
 
@@ -97,7 +97,7 @@ public class RemoteController {
     public ResponseEntity<ApiReposOwnerRepoObjectsPost200Response> createRemoteRepository(
             @PathVariable String owner, @PathVariable String repo) {
 
-        ApiReposOwnerRepoObjectsPost200Response response = pushService.createRemoteRepository(owner, repo);
+        ApiReposOwnerRepoObjectsPost200Response response = remoteService.createRemoteRepository(owner, repo);
         return ResponseEntity.ok(response);
     }
 }

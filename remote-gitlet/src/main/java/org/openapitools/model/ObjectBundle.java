@@ -33,7 +33,7 @@ public class ObjectBundle {
   }
 
   /**
-   * Constructor with only required parameters
+   * 仅含必填参数的构造函数
    */
   public ObjectBundle(List<@Valid GitletObject> objects) {
     this.objects = objects;
@@ -95,8 +95,8 @@ public class ObjectBundle {
   }
 
   /**
-   * Convert the given object to string with each line indented by 4 spaces
-   * (except the first line).
+* 将给定的对象转换为字符串，每行缩进4个空格
+   * （第一行除外）。
    */
   private String toIndentedString(@Nullable Object o) {
     return o == null ? "null" : o.toString().replace("\n", "\n    ");

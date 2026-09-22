@@ -1,11 +1,8 @@
 package org.openapitools.service;
 
-import org.openapitools.model.ApiReposOwnerRepoObjectsPost200Response;
-import org.openapitools.model.ApiReposOwnerRepoRefsBranchGet200Response;
-import org.openapitools.model.ObjectUploadRequest;
-import org.openapitools.model.RefUpdateRequest;
+import org.openapitools.model.*;
 
-public interface PushService {
+public interface RemoteService {
     /**
      * push 到远程仓库
      * 第一步：上传对象
@@ -44,4 +41,13 @@ public interface PushService {
      * @return ApiReposOwnerRepoRefsBranchGet200Response
      */
     ApiReposOwnerRepoRefsBranchGet200Response getBranchInformation(String owner, String repo, String branch);
+
+    /**
+     * 拉取远程仓库
+      * @param owner  (required) 当前仓库的所有者
+      * @param repo  (required) 当前仓库的名称
+      * @param since  (required) 从哪个提交开始拉取
+     * @return ApiReposOwnerRepoObjectsGet200Response
+     */
+    ApiReposOwnerRepoObjectsGet200Response pull(String owner, String repo, String since);
 }

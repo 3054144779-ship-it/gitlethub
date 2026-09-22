@@ -1,10 +1,11 @@
 package org.openapitools.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
-import org.openapitools.service.PushService;
+import org.openapitools.service.RemoteService;
 import org.openapitools.utils.Utils;
 import org.openapitools.verification.BranchVerification;
 import org.openapitools.verification.RepositoryVerification;
@@ -13,11 +14,12 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.util.List;
+import java.util.stream.Collectors;
 
 
 @Slf4j
 @Service
-public class PushServiceImpl implements PushService {
+public class RemoteServiceImpl implements RemoteService {
 
     // TODO：此处应为仓库的根路径，确保仓库路径正确（默认为程序当前目录）
     @Value("${storage.base-path:${user.dir}}")
@@ -169,5 +171,63 @@ public class PushServiceImpl implements PushService {
                 .code(ApiReposOwnerRepoRefsBranchGet200Response.CodeEnum.NUMBER_0)
                 .message(MsgConstant.OK)
                 .data(new RefView().branch(branch).sha(Utils.readContentsAsString(branchFile)));
+    }
+
+    /**
+     * 拉取远程仓库
+     * TODO：全量拉取（临时）后续需要改为增量拉取
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param since  (required) 从哪个提交开始拉取
+     * @return 拉取的提交列表
+     */
+    @Override
+    public ApiReposOwnerRepoObjectsGet200Response pull(String owner, String repo, String since) {
+        log.info("拉取 {} / {} 从 {} 开始的提交", owner, repo, since);
+        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
+//        Utils.readContentsAsString(repositoryPaths.getCommits());
+        // 读取仓库中所有的提交(存的是提交SHA1值)
+        List<String> commitNames = Utils.plainFilenamesIn(repositoryPaths.getCommits());
+        // 读取仓库中所有的Blobs(存的是BlobHA1值)
+        List<String> blobNames = Utils.plainFilenamesIn(repositoryPaths.getObject());
+        // 提交不能为空
+        if (CollUtil.isEmpty(commitNames)) {
+            log.info("仓库 {} / {} 中没有提交", owner, repo);
+            return new ApiReposOwnerRepoObjectsGet200Response()
+                    .code(ApiReposOwnerRepoObjectsGet200Response.CodeEnum.NUMBER_30005)
+                    .message(MsgConstant.PULL_FAILED);
+        }
+
+        // 提交列表
+        List<GitletObject> commitList = commitNames.stream()
+                // 读取仓库中的所有提交的内容（byte数组），byte数组支持的文件类型更多，String只能传入文本，只不过会base64编码大小会膨胀33%
+                .map(commit -> new GitletObject()
+                        .type(GitletObject.TypeEnum.COMMIT)
+                        // 根据SHA1值读取内容
+                        .content(Utils.readContents(Utils.join(repositoryPaths.getCommits(), commit)))
+                        .sha1(commit))
+                .collect(Collectors.toList());
+
+        // Blob列表
+        List<GitletObject> blobList = blobNames.stream()
+                .map(blob -> new GitletObject()
+                        .type(GitletObject.TypeEnum.BLOB)
+                        .content(Utils.readContents(Utils.join(repositoryPaths.getObject(), blob)))
+                        .sha1(blob))
+                .collect(Collectors.toList());
+
+        log.info("拉取的提交列表 {}", commitList);
+        log.info("拉取的Blob列表 {}", blobList);
+
+        List<GitletObject> fileList = CollUtil.newArrayList();
+        fileList.addAll(commitList);
+        fileList.addAll(blobList);
+
+        log.info("拉取的文件列表 {}", fileList);
+
+        return new ApiReposOwnerRepoObjectsGet200Response()
+                .code(ApiReposOwnerRepoObjectsGet200Response.CodeEnum.NUMBER_0)
+                .message(MsgConstant.OK)
+                .data(new ObjectBundle().objects(fileList));
     }
 }
