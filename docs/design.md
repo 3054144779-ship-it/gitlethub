@@ -114,6 +114,24 @@ gitlethub (parent, packaging=pom)
 gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
 ```
 
+远程存储：
+
+```tex
+远程存储结构：
+
+.gitlet/
+└── {owner}/
+    └── {repo}/
+        ├── Objects/
+        │   ├── commits/          ← type=COMMIT 的写这里
+        │   │   ├── abc123...
+        │   │   └── def456...
+        │   ├── sha_a1            ← type=BLOB 的写这里
+        │   └── sha_b2
+        ├── refs/heads/
+        └── HEAD
+```
+
 **职责与依赖方向（单向，不可逆）**
 
 | 模块 | 职责 | 依赖 `gitlet_core` |
@@ -264,7 +282,20 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 > `Commit` 是 Java 序列化对象（`serialVersionUID = 1L`），不是文本。服务端**必须原样落盘**，不能反序列化再重新序列化，否则 SHA-1 会变、所有引用失效。
 
----
+#### 数据库表设计
+
+| 表名                          | 字段                                                         | 备注                                                         |
+| ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 用户信息表（user）            | id, username, password, email, create_time, update_time, is_deleted(逻辑删除) | 用户密码使用`BCrypt`加密存储                                 |
+| 仓库列表（repository_list）   | id, owner_id(属于哪个用户), name, visibility(可见性，0私有, 1公开),  description(仓库信息), create_time, update_time, default_branch(默认分支), is_deleted(逻辑删除) | 这里的 `user_id` 其实是 `owner_id`（仓库拥有者）             |
+| 分支指针（branch_pointer）    | id, branch_name, commit_sha(分支指针指向的commit的SHA1值), repository_id(属于哪个仓库), is_protected(是否为保护分支), version(版本号用于乐观锁), update_time, is_deleted(逻辑删除) |                                                              |
+| 协作者权限（collaborator）    | id, level(权限等级), user_id(协作者的用户id), repository_id(属于哪个仓库), create_time, is_deleted(逻辑删除) |                                                              |
+| 提交记录（submission_record） | id, submit_time, commit_sha1(关联对象存储中真实的 SHA-1), user_id(提交的用户id), repository_id(仓库id), branch_name(提交到了哪个分支) | 在 Git 的世界里，没有 `branch_id` 这个概念，用branch_name更合理 |
+| 提交图谱索引(commit_parent)   | id, repository_id, commit_sha, parent_sha                    | 记录 commit 之间的父子关系，git log 遍历提交历史时需要，否则每次都要去对象存储读文件解析 |
+| tag                           | id, repository_id, tag_name, commit_sha, user_id, create_time, is_deleted | 标签功能                                                     |
+| pull_request                  | id, repository_id, title, description, source_branch, target_branch, status, author_id, create_time, update_time, is_deleted | PR 机制（合并请求）                                          |
+
+
 
 ## 8. 关键流程
 

@@ -122,3 +122,35 @@ static 本身只是"属于类"的意思，不加 synchronized 的 static 方法�
 InnoDB 的行锁是加在索引上的，不是加在数据行上：
 如果 WHERE 条件命中了索引，才会锁行
 如果 WHERE 条件没走索引，会退化成表锁
+
+问题：
+
+远程仓库的架构设计？
+
+解决：
+
+**Object Storage（你的 `.gitlet/` 目录）**：只用来存**不可变的、大体积的** Git 对象。
+
+- `Objects/commits/abc123` (Commit 对象)
+- `Objects/sha_a1` (Blob 对象)
+- **绝对不要在这里存 `refs/heads/` 和 `HEAD`！** 它们是高频变动的元数据。
+
+**MySQL**：用来存**高频变动的、需要原子操作的、需要复杂查询的**元数据。
+
+- 分支指针表 `t_branch_pointer` 才是云端的 `refs/heads/`。
+- `HEAD` 在云端是个伪概念，云端通常只有默认分支（Default Branch）。因为云端不存在“当前工作目录”，只有在 clone 的时候，才会决定 checkout 哪个分支
+
+> 放数据库（结构化、高频变更、需要查询）：
+>   ✅ 用户信息（User）
+>   ✅ 仓库元数据（Repo：名字、描述、owner、默认分支）
+>   ✅ 分支指针（Branch：分支名 → SHA）
+>   ✅ 权限信息（Permission）
+>   ✅ 保护分支规则（ProtectedBranch）
+>
+> 放文件系统（大体积、内容寻址、只增不改）：
+>   ✅ Blob 对象（文件内容，按 SHA-1 命名）
+>   ✅ Commit 对象（提交历史，按 SHA-1 命名）
+>
+> 原则：
+>   小的、会变的、需要查的 → 数据库
+>   大的、不变的、按 SHA 找的 → 文件系统
