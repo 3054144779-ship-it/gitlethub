@@ -4,23 +4,28 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.jwt.JWT;
 import cn.hutool.jwt.JWTUtil;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.huahuo.mapper.UserMapper;
 import com.huahuo.message.MsgConstant;
 import com.huahuo.service.UserService;
 import dto.UserDTO;
 import dto.UserLoginDTO;
+import dto.UserPageSearch;
+import dto.UserSearchVO;
 import exception.LoginException;
 import jwt.KeyPairManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import po.User;
 import vo.UserLoginVO;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -105,5 +110,36 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                     TimeUnit.MILLISECONDS
             );
         }
+    }
+
+    /**
+     * 根据用户名获取用户信息
+     * @param userPageSearch 用户分页查询参数
+     * @return 用户分页信息
+     */
+    @Override
+    public IPage<UserSearchVO> getUserByUserNamePage(UserPageSearch userPageSearch) {
+        // 创建分页对象
+        Page<User> page = new Page<>(userPageSearch.getPageNum(), userPageSearch.getPageSize());
+        // 根据用户名查询用户信息
+        IPage<User> userIPage = lambdaQuery().like(User::getUsername, userPageSearch.getUsername()).page(page);
+        // 转换用户信息为用户分页信息
+        List<UserSearchVO> userSearchVOS = BeanUtil.copyToList(userIPage.getRecords(), UserSearchVO.class);
+        log.info("userSearchVOS: {}", userSearchVOS);
+        // 创建用户分页对象
+        Page<UserSearchVO> pageVO = new Page<>(userPageSearch.getPageNum(), userPageSearch.getPageSize());
+        // 设置用户分页信息
+        pageVO.setRecords(userSearchVOS);
+        return pageVO;
+    }
+
+    /**
+     * 根据用户名查询用户信息
+     * @param userId 用户ID
+     * @return 用户信息
+     */
+    @Override
+    public User searchUser(Long userId) {
+        return userMapper.selectById(userId);
     }
 }

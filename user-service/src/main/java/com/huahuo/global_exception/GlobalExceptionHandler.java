@@ -14,6 +14,7 @@ public class GlobalExceptionHandler {
 //        return Result.fail(ResultCode.INTERNAL_ERROR, e.getMessage());
 //    }
 
+
     @ExceptionHandler(LoginException.class)
     public Result<?> handleLoginException(LoginException e) {
         return Result.fail(ResultCode.UNAUTHORIZED, e.getMessage());

@@ -1,17 +1,19 @@
 package com.huahuo.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.huahuo.service.UserService;
 import common.Result;
 import dto.UserDTO;
 import dto.UserLoginDTO;
+import dto.UserPageSearch;
+import dto.UserSearchVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.*;
 import po.User;
 import vo.UserLoginVO;
+
+import java.util.List;
 
 @Controller
 @RequestMapping("/user")
@@ -49,6 +51,27 @@ public class UserController {
     public Result<String> logout(@RequestHeader("Authorization") String token) {
         userService.logout(token);
         return Result.ok();
+    }
+
+
+    /**
+     * 根据用户名查询用户
+      * @param userPageSearch 用户分页查询参数
+     * @return 用户信息
+     */
+    @GetMapping("/username/list")
+    public Result<IPage<UserSearchVO>> getUserByUserNamePage(UserPageSearch userPageSearch) {
+        return Result.ok(userService.getUserByUserNamePage(userPageSearch));
+    }
+
+    /**
+     * 查询用户的详细信息
+     * @param userId 用户ID
+     * @return 用户分页信息
+     */
+    @GetMapping("/{user_id}")
+    public Result<User> searchUser(@PathVariable("user_id") Long userId) {
+        return Result.ok(userService.searchUser(userId));
     }
 
 }
