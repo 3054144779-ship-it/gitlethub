@@ -69,6 +69,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     public UserLoginVO login(UserLoginDTO userLoginDTO) {
         // 查询用户信息，list() 防止重名
         List<User> userList = lambdaQuery().eq(User::getUsername, userLoginDTO.getUsername()).list();
+        log.info("userList: {}", userList.toString());
         if (CollUtil.isEmpty(userList)) {
             // 如果当前用户不存在则返回报错信息
             log.info("用户不存在");

@@ -34,5 +34,5 @@ public class User {
 
     @TableField("is_deleted")
     @TableLogic
-    private Integer isDeleted;
+    private Integer isDeleted = 0;
 }

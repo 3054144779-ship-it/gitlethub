@@ -330,3 +330,42 @@ String fakeToken = JWT.create()
 | **设置 Token 过期时间**     | 即使泄露，过期后自动失效              |
 | **密钥轮换**                | 定期重新生成密钥对，旧 Token 全部失效 |
 | **Token 黑名单**            | 用户登出时把 Token 加入 Redis 黑名单  |
+
+问题：
+
+集成测试用H2内存数据库，内存数据库是什么？
+
+解决：
+
+H2 内存数据库是什么
+
+H2 是一个**纯 Java 的轻量级数据库**，"内存数据库"的意思是数据存在内存里，**程序一关数据就没了**。专门用来跑测试，不需要你安装 MySQL，也不需要连远程数据库。
+
+```
+正常开发：代码 → MySQL（192.168.12.168）
+跑测试时：代码 → H2（内存里，用完就丢）
+```
+
+好处是：
+- 测试不依赖远程数据库，断网也能跑
+- 每次测试都是干净的库，不会有脏数据干扰
+- 速度快（内存操作）
+
+但对你来说，**H2 不是必须的**。你也可以直接用测试环境的 MySQL 跑集成测试。如果你不想引入 H2，把 pom 里的 H2 依赖删掉，测试配置文件改成连你的 MySQL 就行：
+
+```yaml
+# src/test/resources/application-test.yaml
+spring:
+  datasource:
+    url: jdbc:mysql://192.168.12.168:3306/gitlethub_test
+    username: root
+    password: 你的密码
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: 192.168.12.168
+      port: 6379
+      database: 1
+```
+
+**简单说**：H2 就是个测试用的临时数据库，不用也行，看你方便。

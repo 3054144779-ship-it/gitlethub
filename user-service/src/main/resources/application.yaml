@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8081
 
 spring:
   application:
@@ -16,12 +16,10 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 
-
 # jwt 密钥配置
 com:
   hanabi:
     jwt:
-      key: hanabi
+      key: RSA
       expires-time: 604800 # 一周过期
       key-size: 2048
-      key-dir: /shared/keys

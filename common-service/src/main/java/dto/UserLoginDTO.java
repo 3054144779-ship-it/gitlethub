@@ -1,11 +1,15 @@
 package dto;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 用户登录DTO
  */
 @Data
+@AllArgsConstructor
+@NoArgsConstructor
 public class UserLoginDTO {
     private String username;
     private String password;

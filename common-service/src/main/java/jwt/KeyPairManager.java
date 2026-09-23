@@ -29,8 +29,11 @@ public class KeyPairManager {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
-    @Value("${com.hanabi.jwt.key:hanabi}")
+    @Value("${com.hanabi.jwt.key:RSA}")
     private String key;
+
+    @Value("${com.hanabi.jwt.key-size:2048}")
+    private int keySize;
 
     @Getter
     @Value("${com.hanabi.jwt.expires-time:86400}")
@@ -61,7 +64,7 @@ public class KeyPairManager {
             log.info("从 Redis 加载 JWT 密钥对");
         } else {
             // 创建密钥对
-            keyPair = KeyUtil.generateKeyPair(key);
+            keyPair = KeyUtil.generateKeyPair(key, keySize);
             ops.set(PRIVATE_KEY_REDIS,Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded()));
             ops.set(PUBLIC_KEY_REDIS, Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
             log.info("生成新 JWT 密钥对并存入 Redis");
