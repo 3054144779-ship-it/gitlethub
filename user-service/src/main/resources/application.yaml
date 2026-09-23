@@ -1,20 +1,16 @@
-server:
-  port: 8081
+#server:
+#  port: 8081
 
 spring:
-  application:
-    name: user-service
   data:
     redis:
       port: 6379
       host: 192.168.12.168
       database: 1
-
 # 开启驼峰命名
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-
 
 # jwt 密钥配置
 com:
@@ -23,3 +19,15 @@ com:
       key: RSA
       expires-time: 604800 # 一周过期
       key-size: 2048
+
+hm:
+  db:
+    database: gitlethub
+  swagger:
+    title: 用户服务接口文档
+    package: com.huahuo.controller
+#  mq:
+#    host: 192.168.12.168
+#    un: hmall
+#    pw: 123
+#    vh: /hmall

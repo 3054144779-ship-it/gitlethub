@@ -22,6 +22,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public Result<?> handleException(Exception e) {
+        e.printStackTrace();  // ← 确保这行在，这样控制台会打印完整栈
         return Result.fail(ResultCode.INTERNAL_ERROR, e.getMessage());
     }
 }

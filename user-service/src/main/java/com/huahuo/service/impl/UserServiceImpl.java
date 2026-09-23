@@ -84,6 +84,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new LoginException(MsgConstant.INCORRECT_USERNAME_OR_PASSWORD);
         }
         String token = keyPairManager.createToken(userList.get(0).getId(), userList.get(0).getUsername());
+        log.info("token: {}", token);
         // 登录成功
         return UserLoginVO.builder()
                 .token(token)
