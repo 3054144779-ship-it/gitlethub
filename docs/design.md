@@ -215,11 +215,16 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 **user-service:**
 
-| 方法 | 路径                 | 用途             |
-| ---- | -------------------- | ---------------- |
-| POST | `/user/registration` | 用户注册         |
-| GET  | `/user/{user_id}`    | 获取用户详细信息 |
-| POST | `/user/login`        | 用户登录         |
+| 方法 | 路径                    | 用途                         |
+| ---- | ----------------------- | ---------------------------- |
+| POST | `/user/registration`    | 用户注册（BCrypt）           |
+| GET  | `/user/{user_id}`       | 获取用户详细信息             |
+| POST | `/user/login`           | 用户登录                     |
+| PUT  | `/user`                 | 修改用户信息（邮箱、头像等） |
+| POST | `/user/logout`          | 用户登出（Token 加入黑名单） |
+| GET  | `/user/search?keyword=` | 搜索用户（添加协作者时需要） |
+| PUT  | `/user/password`        | 修改密码(可选)               |
+| POST | `/user/avatar`          | 上传/更换头像(可选)          |
 
 
 

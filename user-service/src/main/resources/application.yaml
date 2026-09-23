@@ -1,0 +1,20 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: user-service
+  data:
+    redis:
+      port: 6379
+      host: 192.168.12.168
+      database: 1
+
+# jwt 密钥
+com:
+  hanabi:
+    jwt:
+      key: hanabi
+      expires-time: 604800 # 一周过期
+      key-size: 2048
+      key-dir: /shared/keys

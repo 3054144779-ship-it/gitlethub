@@ -50,7 +50,8 @@
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -pl remote-gitlet dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt -Duser.language=en -Duser.country=US)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -N install -Duser.language=en -Duser.country=US)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B compile -Duser.language=en -Duser.country=US)",
-      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B clean compile -pl common-service,remote-gitlet -am -Duser.language=en -Duser.country=US)"
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B clean compile -pl common-service,remote-gitlet -am -Duser.language=en -Duser.country=US)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q clean compile -pl common-service,remote-gitlet -am -Duser.language=en -Duser.country=US)"
     ]
   }
 }
