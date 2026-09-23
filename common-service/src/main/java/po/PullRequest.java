@@ -1,42 +1,39 @@
-package org.openapitools.model.po;
+package po;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-/**
- * Repository 表对应的实体类
- */
 @Data
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-@TableName("repository")
-public class Repository {
+@TableName("pull_request")
+public class PullRequest {
     @TableId
     private Long id;
 
-    @TableField("owner_id")
-    private Long ownerId;
+    @TableField("repository_id")
+    private Long repositoryId;
 
-    @TableField("name")
-    private String name;
+    @TableField("title")
+    private String title;
 
     @TableField("description")
     private String description;
 
-    @TableField("visibility")
-    private Integer visibility;
+    @TableField("source_branch")
+    private String sourceBranch;
 
-    @TableField("default_branch")
-    private String defaultBranch;
+    @TableField("target_branch")
+    private String targetBranch;
+
+    @TableField("status")
+    private Integer status;
+
+    @TableField("author_id")
+    private Long authorId;
 
     @TableField("create_time")
     private LocalDateTime createTime;

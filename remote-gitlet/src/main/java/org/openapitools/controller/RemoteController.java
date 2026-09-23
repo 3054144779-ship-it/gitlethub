@@ -1,10 +1,11 @@
 package org.openapitools.controller;
 
-import org.openapitools.model.ApiReposOwnerRepoObjectsGet200Response;
-import org.openapitools.model.ApiReposOwnerRepoObjectsPost200Response;
-import org.openapitools.model.ApiReposOwnerRepoRefsBranchGet200Response;
+import common.Result;
+import org.openapitools.model.ObjectBundle;
 import org.openapitools.model.ObjectUploadRequest;
+import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.model.RefUpdateRequest;
+import org.openapitools.model.RefView;
 
 
 import org.openapitools.service.RemoteService;
@@ -29,12 +30,12 @@ public class RemoteController {
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param since 客户端已有的最新 commit sha1；空表示全新 clone (optional)
-     * @return
+     * @return 拉取到的对象列表
      */
     @GetMapping("/objects")
-    public ResponseEntity<ApiReposOwnerRepoObjectsGet200Response> pull(
+    public ResponseEntity<Result<ObjectBundle>> pull(
             @PathVariable String owner, @PathVariable String repo, @Nullable @RequestParam("since") String since) {
-        ApiReposOwnerRepoObjectsGet200Response response = remoteService.pull(owner, repo, since);
+        Result<ObjectBundle> response = remoteService.pull(owner, repo, since);
         return ResponseEntity.ok(response);
     }
 
@@ -44,12 +45,12 @@ public class RemoteController {
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param objectUploadRequest  (required) push 的内容
-     * @return ResponseEntity&lt;ApiReposOwnerRepoObjectsPost200Response&gt;
+     * @return 上传结果
      */
     @PostMapping("/objects")
-    public ResponseEntity<ApiReposOwnerRepoObjectsPost200Response> pushObject(
+    public ResponseEntity<Result<ObjectUploadResult>> pushObject(
             @PathVariable String owner, @PathVariable String repo, @RequestBody ObjectUploadRequest objectUploadRequest) {
-        ApiReposOwnerRepoObjectsPost200Response response =
+        Result<ObjectUploadResult> response =
                 remoteService.pushObject(owner, repo, objectUploadRequest);
         return ResponseEntity.ok(response);
     }
@@ -57,14 +58,14 @@ public class RemoteController {
     /**
      * 读取分支指向
       * @param owner  (required) 当前仓库的所有者
-      * @param repo  (required) 当前仓库的名称
+     * @param repo  (required) 当前仓库的名称
      * @param branch 分支名（如 master） (required)
-     * @return ResponseEntity&lt;ApiReposOwnerRepoRefsBranchGet200Response&gt;
+     * @return 分支信息
      */
     @GetMapping("/refs/{branch}")
-    public ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> getBranchInformation(
+    public ResponseEntity<Result<RefView>> getBranchInformation(
             @PathVariable String owner, @PathVariable String repo, @PathVariable String branch) {
-        ApiReposOwnerRepoRefsBranchGet200Response response =
+        Result<RefView> response =
                 remoteService.getBranchInformation(owner, repo, branch);
         return ResponseEntity.ok(response);
     }
@@ -76,13 +77,13 @@ public class RemoteController {
      * @param repo  (required) 当前仓库的名称
      * @param branch 分支名（如 master） (required)
      * @param refUpdateRequest  (required)
-     * @return ResponseEntity&lt;ApiReposOwnerRepoRefsBranchGet200Response&gt;
+     * @return 更新后的分支指向
      */
     @PostMapping("/refs/{branch}")
-    public ResponseEntity<ApiReposOwnerRepoRefsBranchGet200Response> pushUpdateBranch(
+    public ResponseEntity<Result<RefView>> pushUpdateBranch(
                                                     @PathVariable String owner, @PathVariable String repo,
                                                     @PathVariable String branch, @RequestBody RefUpdateRequest refUpdateRequest) {
-        ApiReposOwnerRepoRefsBranchGet200Response response =
+        Result<RefView> response =
                 remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest);
         return ResponseEntity.ok(response);
     }
@@ -91,13 +92,13 @@ public class RemoteController {
      * 创建当前用户的远程仓库
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
-     * @return ResponseEntity&lt;ApiReposOwnerRepoObjectsPost200Response&gt;
+     * @return 创建结果
      */
     @PostMapping("/repo")
-    public ResponseEntity<ApiReposOwnerRepoObjectsPost200Response> createRemoteRepository(
+    public ResponseEntity<Result<ObjectUploadResult>> createRemoteRepository(
             @PathVariable String owner, @PathVariable String repo) {
 
-        ApiReposOwnerRepoObjectsPost200Response response = remoteService.createRemoteRepository(owner, repo);
+        Result<ObjectUploadResult> response = remoteService.createRemoteRepository(owner, repo);
         return ResponseEntity.ok(response);
     }
 
@@ -105,13 +106,13 @@ public class RemoteController {
      * clone 远程仓库
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
-     * @return ResponseEntity&lt;ApiReposOwnerRepoObjectsGet200Response&gt;
+     * @return 仓库的全部对象
      */
     @GetMapping("/clone")
-    public ResponseEntity<ApiReposOwnerRepoObjectsGet200Response> cloneRepository(
+    public ResponseEntity<Result<ObjectBundle>> cloneRepository(
             @PathVariable String owner, @PathVariable String repo) {
 
-        ApiReposOwnerRepoObjectsGet200Response response = remoteService.cloneRepository(owner, repo);
+        Result<ObjectBundle> response = remoteService.cloneRepository(owner, repo);
         return ResponseEntity.ok(response);
     }
 

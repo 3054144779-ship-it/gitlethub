@@ -21,3 +21,10 @@
 #docs/*.md
 # Then explicitly reverse the ignore rule for a single file:
 #!docs/README.md
+
+# 统一响应外层已抽取到 common-service 的 common.Result，重新生成时不要再产出这些信封类
+**/model/ApiReposOwnerRepoObjectsGet200Response.java
+**/model/ApiReposOwnerRepoObjectsPost200Response.java
+**/model/ApiReposOwnerRepoObjectsPost422Response.java
+**/model/ApiReposOwnerRepoRefsBranchGet200Response.java
+**/model/ModelApiResponse.java

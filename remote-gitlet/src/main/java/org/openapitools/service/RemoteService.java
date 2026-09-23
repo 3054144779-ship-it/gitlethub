@@ -1,6 +1,11 @@
 package org.openapitools.service;
 
-import org.openapitools.model.*;
+import common.Result;
+import org.openapitools.model.ObjectBundle;
+import org.openapitools.model.ObjectUploadRequest;
+import org.openapitools.model.ObjectUploadResult;
+import org.openapitools.model.RefUpdateRequest;
+import org.openapitools.model.RefView;
 
 public interface RemoteService {
     /**
@@ -9,8 +14,9 @@ public interface RemoteService {
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param objectUploadRequest  (required) push 的内容
+     * @return 上传结果
      */
-    ApiReposOwnerRepoObjectsPost200Response pushObject(
+    Result<ObjectUploadResult> pushObject(
             String owner, String repo, ObjectUploadRequest objectUploadRequest);
 
     /**
@@ -20,42 +26,42 @@ public interface RemoteService {
      * @param repo  (required) 当前仓库的名称
      * @param branch  (required) 分支名（如 master）
      * @param refUpdateRequest  (required) push 的内容
-     * @return ApiReposOwnerRepoRefsBranchGet200Response
+     * @return 更新后的分支指向
      */
-    ApiReposOwnerRepoRefsBranchGet200Response pushUpdateBranch(
+    Result<RefView> pushUpdateBranch(
             String owner, String repo, String branch, RefUpdateRequest refUpdateRequest);
 
     /**
      * 创建当前用户的远程仓库
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
-     * @return ApiReposOwnerRepoObjectsPost200Response
+     * @return 创建结果
      */
-    ApiReposOwnerRepoObjectsPost200Response createRemoteRepository(String owner, String repo);
+    Result<ObjectUploadResult> createRemoteRepository(String owner, String repo);
 
     /**
      * 读取分支指向
       * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param branch  (required) 分支名（如 master）
-     * @return ApiReposOwnerRepoRefsBranchGet200Response
+     * @return 分支信息
      */
-    ApiReposOwnerRepoRefsBranchGet200Response getBranchInformation(String owner, String repo, String branch);
+    Result<RefView> getBranchInformation(String owner, String repo, String branch);
 
     /**
      * 拉取远程仓库
       * @param owner  (required) 当前仓库的所有者
-      * @param repo  (required) 当前仓库的名称
-      * @param since  (required) 从哪个提交开始拉取
-     * @return ApiReposOwnerRepoObjectsGet200Response
+     * @param repo  (required) 当前仓库的名称
+     * @param since  (required) 从哪个提交开始拉取
+     * @return 拉取的对象列表
      */
-    ApiReposOwnerRepoObjectsGet200Response pull(String owner, String repo, String since);
+    Result<ObjectBundle> pull(String owner, String repo, String since);
 
     /**
      * 克隆远程仓库
       * @param owner  (required) 当前仓库的所有者
-      * @param repo  (required) 当前仓库的名称
-      * @return ApiReposOwnerRepoObjectsGet200Response
+     * @param repo  (required) 当前仓库的名称
+     * @return 仓库的全部对象
      */
-    ApiReposOwnerRepoObjectsGet200Response cloneRepository(String owner, String repo);
+    Result<ObjectBundle> cloneRepository(String owner, String repo);
 }

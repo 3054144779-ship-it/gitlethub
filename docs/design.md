@@ -213,6 +213,18 @@ npx @redocly/cli lint docs/openapi.yaml
 openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 ```
 
+**user-service:**
+
+| 方法 | 路径                 | 用途             |
+| ---- | -------------------- | ---------------- |
+| POST | `/user/registration` | 用户注册         |
+| GET  | `/user/{user_id}`    | 获取用户详细信息 |
+| POST | `/user/login`        | 用户登录         |
+
+
+
+
+
 **spec 覆盖的（实现方 `remote-gitlet`）**
 
 | 方法 | 路径 | 用途 |

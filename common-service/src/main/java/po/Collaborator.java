@@ -1,4 +1,4 @@
-package org.openapitools.model.po;
+package po;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -9,28 +9,25 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * SubmissionRecord 表对应的实体类
+ * Collaborator 表对应的实体类
  */
 @Data
-@TableName("submission_record")
-public class SubmissionRecord {
+@TableName("collaborator")
+public class Collaborator {
     @TableId
     private Long id;
 
     @TableField("repository_id")
     private Long repositoryId;
 
-    @TableField("commit_sha")
-    private String commitSha;
-
     @TableField("user_id")
     private Long userId;
 
-    @TableField("branch_name")
-    private String branchName;
+    @TableField("level")
+    private Integer level;
 
-    @TableField("submit_time")
-    private LocalDateTime submitTime;
+    @TableField("create_time")
+    private LocalDateTime createTime;
 
     @TableField("is_deleted")
     @TableLogic

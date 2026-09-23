@@ -39,7 +39,18 @@
       "Bash(mvn -B package -DskipTests)",
       "Bash(git reset *)",
       "Bash(python *)",
-      "Bash(grep '\\\\.java$')"
+      "Bash(grep '\\\\.java$')",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q -pl common-service,remote-gitlet -am compile)",
+      "Bash(awk '/^    ApiResponse:/,/^    [A-Za-z_].*:$/' remote-gitlet/src/main/resources/openapi.yaml)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q -pl common-service compile -Duser.language=en -Duser.country=US)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q -pl common-service,remote-gitlet -am compile -Duser.language=en -Duser.country=US)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -pl common-service install -DskipTests -Duser.language=en -Duser.country=US)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q -pl remote-gitlet dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt -Duser.language=en)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -pl remote-gitlet dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt -Duser.language=en -Duser.country=US)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -N install -Duser.language=en -Duser.country=US)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B compile -Duser.language=en -Duser.country=US)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B clean compile -pl common-service,remote-gitlet -am -Duser.language=en -Duser.country=US)"
     ]
   }
 }

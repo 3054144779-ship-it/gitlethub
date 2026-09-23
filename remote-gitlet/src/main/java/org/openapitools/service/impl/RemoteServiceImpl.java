@@ -1,17 +1,19 @@
 package org.openapitools.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import common.Result;
+import common.ResultCode;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
-import org.openapitools.model.po.Repository;
 import org.openapitools.service.RemoteService;
 import org.openapitools.utils.Utils;
 import org.openapitools.verification.BranchVerification;
 import org.openapitools.verification.RepositoryVerification;
+import po.Repository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ public class RemoteServiceImpl implements RemoteService {
     // 远程仓库Mapper
     @Autowired
     private RemoteRepositoryMapper remoteRepositoryMapper;
+
     /**
      * push 到远程仓库
      * 第一步：上传对象
@@ -45,13 +48,12 @@ public class RemoteServiceImpl implements RemoteService {
      * @param objectUploadRequest  (required) push 的内容
      */
     @Override
-    public ApiReposOwnerRepoObjectsPost200Response pushObject(
+    public Result<ObjectUploadResult> pushObject(
             String owner, String repo, ObjectUploadRequest objectUploadRequest) {
 
         if (objectUploadRequest == null) {
-            return new ApiReposOwnerRepoObjectsPost200Response()
-                    .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_30002)
-                    .message(MsgConstant.THE_SUBMITTED_FILE_CANNOT_BE_EMPTY);
+            // 沿用原 Post200Response 枚举里标注为「提交的文件不能为空」的 30002
+            return Result.fail(ResultCode.BRANCH_NOT_FOUND, MsgConstant.THE_SUBMITTED_FILE_CANNOT_BE_EMPTY);
         }
 
         // 创建仓库路径对象
@@ -59,9 +61,7 @@ public class RemoteServiceImpl implements RemoteService {
 
         // 检查仓库是否存在(不存在则报错)
         if (!RepositoryVerification.repositoryExists(repositoryPaths)) {
-            return new ApiReposOwnerRepoObjectsPost200Response()
-                    .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_30001)
-                    .message(MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
 
         // 获取当前所有对象
@@ -101,8 +101,7 @@ public class RemoteServiceImpl implements RemoteService {
             Utils.writeContents(target, (Object) object.getContent());
             log.debug("写入对象: type={}, sha1={}", object.getType(), object.getSha1());
         }
-        return new ApiReposOwnerRepoObjectsPost200Response()
-                .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_0).message(MsgConstant.OK);
+        return Result.ok();
     }
 
     /**
@@ -115,7 +114,7 @@ public class RemoteServiceImpl implements RemoteService {
      * @return
      */
     @Override
-    public ApiReposOwnerRepoRefsBranchGet200Response pushUpdateBranch(
+    public Result<RefView> pushUpdateBranch(
             String owner, String repo, String branch, RefUpdateRequest refUpdateRequest) {
 
         log.info("更新分支 {} {}", branch, refUpdateRequest);
@@ -128,8 +127,7 @@ public class RemoteServiceImpl implements RemoteService {
         Utils.writeContents(currentBranch, refUpdateRequest.getSha());
         // 此时不再更新头指针指向的分支，一直指向默认分支即可
 
-        return new ApiReposOwnerRepoRefsBranchGet200Response()
-                .code(ApiReposOwnerRepoRefsBranchGet200Response.CodeEnum.NUMBER_0).message(MsgConstant.OK);
+        return Result.ok();
     }
 
     /**
@@ -139,14 +137,12 @@ public class RemoteServiceImpl implements RemoteService {
      * @return
      */
     @Override
-    public ApiReposOwnerRepoObjectsPost200Response createRemoteRepository(String owner, String repo) {
+    public Result<ObjectUploadResult> createRemoteRepository(String owner, String repo) {
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
         // 校验仓库是否存在
         if (RepositoryVerification.repositoryExists(repositoryPaths)) {
             // 仓库存在则禁止重复创建
-            return new ApiReposOwnerRepoObjectsPost200Response()
-                    .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_30003)
-                    .message(MsgConstant.THE_WAREHOUSE_ALREADY_EXISTS);
+            return Result.fail(ResultCode.REPOSITORY_ALREADY_EXISTS, MsgConstant.THE_WAREHOUSE_ALREADY_EXISTS);
         }
 
         // 如果仓库不存在则创建仓库
@@ -169,8 +165,7 @@ public class RemoteServiceImpl implements RemoteService {
         // 存入到数据库
         remoteRepositoryMapper.insert(repository);
 
-        return new ApiReposOwnerRepoObjectsPost200Response()
-                .code(ApiReposOwnerRepoObjectsPost200Response.CodeEnum.NUMBER_0).message(MsgConstant.OK);
+        return Result.ok();
     }
 
     /**
@@ -181,23 +176,18 @@ public class RemoteServiceImpl implements RemoteService {
      * @return 分支信息
      */
     @Override
-    public ApiReposOwnerRepoRefsBranchGet200Response getBranchInformation(String owner, String repo, String branch) {
+    public Result<RefView> getBranchInformation(String owner, String repo, String branch) {
         log.info("获取 {} / {} 的 {} 分支指向", owner, repo, branch);
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
         // 当前分支文件
         File branchFile = Utils.join(repositoryPaths.getBranchDir(), branch);
         // 判断当前分支是否存在，如果不存在则返回错误码30004
         if (!branchFile.exists()) {
-            return new ApiReposOwnerRepoRefsBranchGet200Response()
-                    .code(ApiReposOwnerRepoRefsBranchGet200Response.CodeEnum.NUMBER_30004)
-                    .message(MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
+            return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
         }
 
         // 如果存在则返回 分支所指向的提交
-        return new ApiReposOwnerRepoRefsBranchGet200Response()
-                .code(ApiReposOwnerRepoRefsBranchGet200Response.CodeEnum.NUMBER_0)
-                .message(MsgConstant.OK)
-                .data(new RefView().branch(branch).sha(Utils.readContentsAsString(branchFile)));
+        return Result.ok(new RefView().branch(branch).sha(Utils.readContentsAsString(branchFile)));
     }
 
     /**
@@ -209,15 +199,13 @@ public class RemoteServiceImpl implements RemoteService {
      * @return 拉取的提交列表
      */
     @Override
-    public ApiReposOwnerRepoObjectsGet200Response pull(String owner, String repo, String since) {
+    public Result<ObjectBundle> pull(String owner, String repo, String since) {
         log.info("拉取 {} / {} 从 {} 开始的提交", owner, repo, since);
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
 
         // 检查仓库是否存在(不存在则报错)
         if (!RepositoryVerification.repositoryExists(repositoryPaths)) {
-            return new ApiReposOwnerRepoObjectsGet200Response()
-                    .code(ApiReposOwnerRepoObjectsGet200Response.CodeEnum.NUMBER_30001)
-                    .message(MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
 
         // 读取仓库中所有的提交(存的是提交SHA1值)
@@ -227,9 +215,7 @@ public class RemoteServiceImpl implements RemoteService {
         // 提交不能为空
         if (CollUtil.isEmpty(commitNames) || CollUtil.isEmpty(blobNames)) {
             log.info("仓库 {} / {} 中没有提交", owner, repo);
-            return new ApiReposOwnerRepoObjectsGet200Response()
-                    .code(ApiReposOwnerRepoObjectsGet200Response.CodeEnum.NUMBER_30005)
-                    .message(MsgConstant.PULL_FAILED);
+            return Result.fail(ResultCode.EMPTY_REPOSITORY, MsgConstant.PULL_FAILED);
         }
 
         // 提交列表
@@ -259,10 +245,7 @@ public class RemoteServiceImpl implements RemoteService {
 
         log.info("拉取的文件列表 {}", fileList);
 
-        return new ApiReposOwnerRepoObjectsGet200Response()
-                .code(ApiReposOwnerRepoObjectsGet200Response.CodeEnum.NUMBER_0)
-                .message(MsgConstant.OK)
-                .data(new ObjectBundle().objects(fileList));
+        return Result.ok(new ObjectBundle().objects(fileList));
     }
 
     /**
@@ -272,7 +255,7 @@ public class RemoteServiceImpl implements RemoteService {
      * @return
      */
     @Override
-    public ApiReposOwnerRepoObjectsGet200Response cloneRepository(String owner, String repo) {
+    public Result<ObjectBundle> cloneRepository(String owner, String repo) {
         log.info("克隆 {} / {}", owner, repo);
         // TODO：后续将这里（since）改为第一个提交
         return this.pull(owner, repo, null);

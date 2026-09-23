@@ -1,4 +1,4 @@
-package org.openapitools.model.po;
+package po;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -9,25 +9,28 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Collaborator 表对应的实体类
+ * User 表对应的实体类
  */
 @Data
-@TableName("collaborator")
-public class Collaborator {
+@TableName("user")
+public class User {
     @TableId
     private Long id;
 
-    @TableField("repository_id")
-    private Long repositoryId;
+    @TableField("username")
+    private String username;
 
-    @TableField("user_id")
-    private Long userId;
+    @TableField("password")
+    private String password;
 
-    @TableField("level")
-    private Integer level;
+    @TableField("email")
+    private String email;
 
     @TableField("create_time")
     private LocalDateTime createTime;
+
+    @TableField("update_time")
+    private LocalDateTime updateTime;
 
     @TableField("is_deleted")
     @TableLogic

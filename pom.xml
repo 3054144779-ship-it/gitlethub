@@ -26,6 +26,8 @@
         <module>gitlet_core</module>
         <module>gateway-service</module>
         <module>remote-gitlet</module>
+        <module>user-service</module>
+        <module>common-service</module>
     </modules>
 
     <scm>

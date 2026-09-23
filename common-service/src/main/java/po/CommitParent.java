@@ -1,4 +1,4 @@
-package org.openapitools.model.po;
+package po;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
