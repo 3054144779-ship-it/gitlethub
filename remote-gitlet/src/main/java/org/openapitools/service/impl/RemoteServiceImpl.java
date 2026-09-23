@@ -1,8 +1,10 @@
 package org.openapitools.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import common.Result;
 import common.ResultCode;
+import dto.RepositoryCreateDTO;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.mapper.RemoteRepositoryMapper;
@@ -132,12 +134,14 @@ public class RemoteServiceImpl implements RemoteService {
 
     /**
      * 创建远程仓库
-     * @param owner  (required) 当前仓库的所有者
-     * @param repo  (required) 当前仓库的名称
-     * @return
+     * @param repositoryCreateDTO  (required) 创建仓库的DTO
+     * @return 创建仓库的结果
      */
     @Override
-    public Result<ObjectUploadResult> createRemoteRepository(String owner, String repo) {
+    public Result<ObjectUploadResult> createRemoteRepository(RepositoryCreateDTO repositoryCreateDTO) {
+        String owner = repositoryCreateDTO.getOwner();
+        String repo = repositoryCreateDTO.getRepo();
+
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
         // 校验仓库是否存在
         if (RepositoryVerification.repositoryExists(repositoryPaths)) {
@@ -150,12 +154,12 @@ public class RemoteServiceImpl implements RemoteService {
 
         // 获取当前用户ID(根据用户名字查)
         Long ownerId = remoteUserMapper.getUserId(owner);
-
+        log.info("当前仓库 {} 的所有者ID为 {}", repo, ownerId);
         // 创建仓库对象
         Repository repository = Repository.builder()
                 .ownerId(ownerId)
                 .name(repo)
-                .description("")
+                .description(repositoryCreateDTO.getDescription())
                 .visibility(0)
                 .defaultBranch(MsgConstant.MAIN_BRANCH)
                 .createTime(LocalDateTime.now())

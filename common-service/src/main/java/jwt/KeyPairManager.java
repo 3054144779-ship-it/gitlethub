@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.security.KeyPair;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 

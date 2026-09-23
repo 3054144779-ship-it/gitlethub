@@ -8,3 +8,30 @@ spring:
     date-format: org.openapitools.RFC3339DateFormat
     serialization:
       WRITE_DATES_AS_TIMESTAMPS: false
+  data:
+    redis:
+          port: 6379
+          host: 192.168.12.168
+          database: 1
+
+# 开启驼峰命名
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+hm:
+  db:
+    database: gitlethub
+  swagger:
+    title: 远程仓库接口文档
+    package: com.huahuo.controller
+
+
+
+# jwt 密钥配置
+com:
+  hanabi:
+    jwt:
+      key: RSA
+      expires-time: 604800 # 一周过期
+      key-size: 2048

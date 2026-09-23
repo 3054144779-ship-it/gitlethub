@@ -1,6 +1,8 @@
 package org.openapitools.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
 import common.Result;
+import dto.RepositoryCreateDTO;
 import org.openapitools.model.ObjectBundle;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
@@ -37,7 +39,7 @@ public interface RemoteService {
      * @param repo  (required) 当前仓库的名称
      * @return 创建结果
      */
-    Result<ObjectUploadResult> createRemoteRepository(String owner, String repo);
+    Result<ObjectUploadResult> createRemoteRepository(RepositoryCreateDTO repositoryCreateDTO);
 
     /**
      * 读取分支指向

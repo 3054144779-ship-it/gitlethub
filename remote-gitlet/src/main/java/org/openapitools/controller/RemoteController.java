@@ -1,6 +1,7 @@
 package org.openapitools.controller;
 
 import common.Result;
+import dto.RepositoryCreateDTO;
 import org.openapitools.model.ObjectBundle;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
@@ -82,7 +83,8 @@ public class RemoteController {
     @PostMapping("/refs/{branch}")
     public ResponseEntity<Result<RefView>> pushUpdateBranch(
                                                     @PathVariable String owner, @PathVariable String repo,
-                                                    @PathVariable String branch, @RequestBody RefUpdateRequest refUpdateRequest) {
+                                                    @PathVariable String branch,
+                                                    @RequestBody RefUpdateRequest refUpdateRequest) {
         Result<RefView> response =
                 remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest);
         return ResponseEntity.ok(response);
@@ -90,17 +92,16 @@ public class RemoteController {
 
     /**
      * 创建当前用户的远程仓库
-     * @param owner  (required) 当前仓库的所有者
-     * @param repo  (required) 当前仓库的名称
+      * @param repositoryCreateDTO  (required) 创建仓库的DTO
      * @return 创建结果
      */
-    @PostMapping("/repo")
-    public ResponseEntity<Result<ObjectUploadResult>> createRemoteRepository(
-            @PathVariable String owner, @PathVariable String repo) {
-
-        Result<ObjectUploadResult> response = remoteService.createRemoteRepository(owner, repo);
-        return ResponseEntity.ok(response);
-    }
+//    @PostMapping("/repo")
+//    public ResponseEntity<Result<ObjectUploadResult>> createRemoteRepository(
+//            @RequestBody RepositoryCreateDTO repositoryCreateDTO) {
+//
+//        Result<ObjectUploadResult> response = remoteService.createRemoteRepository(repositoryCreateDTO);
+//        return ResponseEntity.ok(response);
+//    }
 
     /**
      * clone 远程仓库
