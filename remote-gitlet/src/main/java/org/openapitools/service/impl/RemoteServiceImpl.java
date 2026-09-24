@@ -1,12 +1,13 @@
 package org.openapitools.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import common.Result;
 import common.ResultCode;
 import dto.RepositoryCreateDTO;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.openapitools.mapper.RemoteBranchPointerMapper;
+import org.openapitools.mapper.RemoteCollaboratorMapper;
 import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
@@ -14,7 +15,10 @@ import org.openapitools.model.*;
 import org.openapitools.service.RemoteService;
 import org.openapitools.utils.Utils;
 import org.openapitools.verification.BranchVerification;
+import org.openapitools.verification.PermissionValidation;
 import org.openapitools.verification.RepositoryVerification;
+import po.BranchPointer;
+import po.Collaborator;
 import po.Repository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +27,7 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 
@@ -42,9 +47,16 @@ public class RemoteServiceImpl implements RemoteService {
     @Autowired
     private RemoteRepositoryMapper remoteRepositoryMapper;
 
+    // 远程分支指针
+    @Autowired
+    private RemoteBranchPointerMapper remoteBranchPointer;
+
+    @Autowired
+    private RemoteCollaboratorMapper remoteCollaborator;
+
     /**
      * push 到远程仓库
-     * 第一步：上传对象
+     * 第二步：上传对象
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param objectUploadRequest  (required) push 的内容
@@ -108,7 +120,7 @@ public class RemoteServiceImpl implements RemoteService {
 
     /**
      * push 到远程仓库
-     * 第二步：更新分支信息
+     * 第一步：更新分支信息
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param branch  (required) 分支名（如 master）
@@ -120,18 +132,65 @@ public class RemoteServiceImpl implements RemoteService {
             String owner, String repo, String branch, RefUpdateRequest refUpdateRequest) {
 
         log.info("更新分支 {} {}", branch, refUpdateRequest);
-        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
 
-        // 检查分支是否存在, 如果不存在则创建
-        File currentBranch = BranchVerification.branchExists(repositoryPaths, branch);
+        String sha1 = refUpdateRequest.getSha();
 
-        // 更新当前分支指向的提交
-        Utils.writeContents(currentBranch, refUpdateRequest.getSha());
-        // 此时不再更新头指针指向的分支，一直指向默认分支即可
+        // 获取仓库id
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(owner, repo);
+        // 获取用户id
+        Long userId = remoteUserMapper.getUserId(owner);
+        // 获取分支指针
+        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
+        // 获取提交者信息
+        Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
+
+        // 检查用户权限
+        if (PermissionValidation.identityVerification(collaborator)) {
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+
+        // 检查分支是否受保护
+        if (BranchVerification.isProtectedBranch(branchPointer)) {
+            return Result.fail(ResultCode.BRANCH_PROTECTED, MsgConstant.THE_BRANCH_IS_PROTECTED);
+        }
+
+        // 用户权限通过，分支不受保护，更新分支指向提交
+        remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1);
+
+        // TODO：创建提交记录
+        // TODO：创建提交图谱索引
+
 
         return Result.ok();
     }
 
+
+    /**
+     * 强制更新分支
+      * @param owner  (required) 当前仓库的所有者
+      * @param repo  (required) 当前仓库的名称
+      * @param branch  (required) 分支名（如 master）
+      * @param refUpdateRequest  (required) 提交之后远程 commit 的SHA1值
+     * @return 强制更新分支的结果
+     */
+    @Override
+    public Result<RefView> pushForceUpdateBranch(String owner, String repo,
+                                                 String branch, RefUpdateRequest refUpdateRequest) {
+        // 获取仓库id
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(owner, repo);
+        // 获取分支指针
+        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
+        // 检查是否允许强制推送
+        if (!BranchVerification.isForcePushAllowed(branchPointer)) {
+            // 不允许强制推送
+            return Result.fail(ResultCode.FORBIDDEN, MsgConstant.FORBIDDEN_FORCE_PUSH);
+        }
+
+        log.info("强制更新分支 {} {}", branch, refUpdateRequest);
+        remoteBranchPointer.updateBranchPointer(branchPointer.getId(), refUpdateRequest.getSha());
+
+        return Result.ok();
+    }
     /**
      * 创建远程仓库
      * @param repositoryCreateDTO  (required) 创建仓库的DTO
@@ -168,6 +227,22 @@ public class RemoteServiceImpl implements RemoteService {
                 .build();
         // 存入到数据库
         remoteRepositoryMapper.insert(repository);
+
+        // 创建默认分支指针对象
+        BranchPointer branchPointer = BranchPointer.builder()
+                .repositoryId(repository.getId())        // 仓库ID
+                .branchName(MsgConstant.MAIN_BRANCH)     // 默认分支名为 master
+                .commitSha(UUID.randomUUID().toString()) // 随机生成的SHA1值，作为初始提交的SHA1值，防止报错
+                .isDefault(1)                            // 1 表示默认分支，0 表示非默认分支
+                .isProtected(1)                          // 1 表示受保护的分支，0 表示非受保护的分支
+                .version(0)                              // 版本号初始为0
+                .updateTime(LocalDateTime.now())         // 更新时间初始为当前时间
+                .isDeleted(0)                            // 0 表示未删除
+                .isForcePush(0)                          // 1 表示允许强制推送，0 表示不允许强制推送
+                .build();
+
+        // 插入分支指针
+        remoteBranchPointer.insert(branchPointer);
 
         return Result.ok();
     }

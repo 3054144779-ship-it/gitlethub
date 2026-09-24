@@ -30,6 +30,9 @@ public final class ResultCode {
     /** 已认证但不是仓库的 owner */
     public static final int FORBIDDEN = 20002;
 
+    /** 分支被保护 */
+    public static final int BRANCH_PROTECTED = 20003;
+
     /** 仓库不存在 */
     public static final int REPOSITORY_NOT_FOUND = 30001;
 

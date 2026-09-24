@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import enums.CollaboratorLevelEnum;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -24,7 +25,7 @@ public class Collaborator {
     private Long userId;
 
     @TableField("level")
-    private Integer level;
+    private CollaboratorLevelEnum level;
 
     @TableField("create_time")
     private LocalDateTime createTime;

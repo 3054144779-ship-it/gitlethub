@@ -234,9 +234,10 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| POST | `/api/repos/{owner}/{repo}/objects` | push 第一步：上传对象 |
+| POST | `/api/repos/{owner}/{repo}/refs/{branch}` | push 第一步：更新分支（乐观锁） |
+| POST | `/api/repos/{owner}/{repo}/refs/{branch}/force` | push 第一步（特殊）：强制更新分支（乐观锁） |
+| POST | `/api/repos/{owner}/{repo}/objects` | push 第二步：上传对象 |
 | GET | `/api/repos/{owner}/{repo}/objects?since=` | pull 拉取对象 |
-| POST | `/api/repos/{owner}/{repo}/refs/{branch}` | push 第二步：更新分支（乐观锁） |
 | GET | `/api/repos/{owner}/{repo}/refs/{branch}` | 读取分支指向 |
 | POST | `/api/repos/{owner}/{repo}/repo` | 创建仓库 |
 | GET | `/api/repos/{owner}/{repo}/clone` | clone 拉取对象 |
@@ -309,8 +310,8 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 协作者权限（collaborator）    | id, level(权限等级), user_id(协作者的用户id), repository_id(属于哪个仓库), create_time, is_deleted(逻辑删除) |                                                              |
 | 提交记录（submission_record） | id, submit_time, commit_sha1(关联对象存储中真实的 SHA-1), user_id(提交的用户id), repository_id(仓库id), branch_name(提交到了哪个分支) | 在 Git 的世界里，没有 `branch_id` 这个概念，用branch_name更合理 |
 | 提交图谱索引(commit_parent)   | id, repository_id, commit_sha, parent_sha                    | 记录 commit 之间的父子关系，git log 遍历提交历史时需要，否则每次都要去对象存储读文件解析 |
-| tag                           | id, repository_id, tag_name, commit_sha, user_id, create_time, is_deleted | 标签功能                                                     |
-| pull_request                  | id, repository_id, title, description, source_branch, target_branch, status, author_id, create_time, update_time, is_deleted | PR 机制（合并请求）                                          |
+| 标签（tag）                   | id, repository_id, tag_name, commit_sha, user_id, create_time, is_deleted | 标签功能                                                     |
+| PR机制表（pull_request）      | id, repository_id, title, description, source_branch, target_branch, status, author_id, create_time, update_time, is_deleted | PR 机制（合并请求）                                          |
 
 
 

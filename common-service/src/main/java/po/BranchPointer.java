@@ -5,7 +5,10 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.Version;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
@@ -13,6 +16,9 @@ import java.time.LocalDateTime;
  * BranchPointer 表对应的实体类
  */
 @Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
 @TableName("branch_pointer")
 public class BranchPointer {
     @TableId
@@ -43,4 +49,7 @@ public class BranchPointer {
     @TableField("is_deleted")
     @TableLogic
     private Integer isDeleted;
+
+    @TableField("is_force_push")
+    private Integer isForcePush;
 }

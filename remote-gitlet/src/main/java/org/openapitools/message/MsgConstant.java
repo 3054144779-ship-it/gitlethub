@@ -7,4 +7,7 @@ public class MsgConstant {
     public static final String THE_BRANCH_DOES_NOT_EXIST = "分支不存在";
     public static final String PULL_FAILED = "拉取失败，因为远程仓库提交为空";
     public static final String MAIN_BRANCH = "master";
+    public static final String THE_BRANCH_IS_PROTECTED = "当前分支受保护，需要管理员授权";
+    public static final String UNAUTHORIZED = "未经授权";
+    public static final String FORBIDDEN_FORCE_PUSH = "禁止强制推送";
 }

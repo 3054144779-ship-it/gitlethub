@@ -42,7 +42,45 @@ public class RemoteController {
 
     /**
      * push 到远程仓库
-     * 第一步：上传对象
+     * 第一步（特殊）：强制更新分支信息（TODO：加乐观锁）
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param branch  (required) 分支名（如 master）
+     * @param refUpdateRequest  (required)  分支更新请求
+     * @return 上传结果
+     */
+    @PostMapping("/refs/{branch}/force")
+    public ResponseEntity<Result<RefView>> pushForceUpdateBranch(
+            @PathVariable String owner, @PathVariable String repo,
+            @PathVariable String branch,
+            @RequestBody RefUpdateRequest refUpdateRequest) {
+        Result<RefView> response =
+                remoteService.pushForceUpdateBranch(owner, repo, branch, refUpdateRequest);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * push 到远程仓库
+     * 第一步：更新分支信息（TODO：加乐观锁）
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param branch 分支名（如 master） (required)
+     * @param refUpdateRequest  (required)
+     * @return 更新后的分支指向
+     */
+    @PostMapping("/refs/{branch}")
+    public ResponseEntity<Result<RefView>> pushUpdateBranch(
+            @PathVariable String owner, @PathVariable String repo,
+            @PathVariable String branch,
+            @RequestBody RefUpdateRequest refUpdateRequest) {
+        Result<RefView> response =
+                remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * push 到远程仓库
+     * 第二步：上传对象
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param objectUploadRequest  (required) push 的内容
@@ -71,24 +109,6 @@ public class RemoteController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * push 到远程仓库
-     * 第二步：更新分支信息（TODO：加乐观锁）
-     * @param owner  (required) 当前仓库的所有者
-     * @param repo  (required) 当前仓库的名称
-     * @param branch 分支名（如 master） (required)
-     * @param refUpdateRequest  (required)
-     * @return 更新后的分支指向
-     */
-    @PostMapping("/refs/{branch}")
-    public ResponseEntity<Result<RefView>> pushUpdateBranch(
-                                                    @PathVariable String owner, @PathVariable String repo,
-                                                    @PathVariable String branch,
-                                                    @RequestBody RefUpdateRequest refUpdateRequest) {
-        Result<RefView> response =
-                remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest);
-        return ResponseEntity.ok(response);
-    }
 
     /**
      * 创建当前用户的远程仓库
@@ -116,6 +136,5 @@ public class RemoteController {
         Result<ObjectBundle> response = remoteService.cloneRepository(owner, repo);
         return ResponseEntity.ok(response);
     }
-
 
 }
