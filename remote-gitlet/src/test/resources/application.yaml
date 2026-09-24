@@ -1,0 +1,23 @@
+# D:\Job_project\gitlethub\remote-gitlet\src\test\resources\application.yaml
+spring:
+  cloud:
+    config:
+      enabled: false
+    nacos:
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;NON_KEYWORDS=USER
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true

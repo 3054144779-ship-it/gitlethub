@@ -145,15 +145,18 @@ public class RemoteServiceImpl implements RemoteService {
         Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
 
         // 检查用户权限
-        if (PermissionValidation.identityVerification(collaborator)) {
+        if (!PermissionValidation.identityVerification(collaborator)) {
+            log.warn("用户 {} 没有权限更新分支 {}", owner, branch);
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
 
         // 检查分支是否受保护
         if (BranchVerification.isProtectedBranch(branchPointer)) {
+            log.warn("分支 {} 是受保护的", branch);
             return Result.fail(ResultCode.BRANCH_PROTECTED, MsgConstant.THE_BRANCH_IS_PROTECTED);
         }
 
+        log.info("用户 {} 允许更新分支 {}", owner, branch);
         // 用户权限通过，分支不受保护，更新分支指向提交
         remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1);
 
@@ -163,7 +166,6 @@ public class RemoteServiceImpl implements RemoteService {
 
         return Result.ok();
     }
-
 
     /**
      * 强制更新分支

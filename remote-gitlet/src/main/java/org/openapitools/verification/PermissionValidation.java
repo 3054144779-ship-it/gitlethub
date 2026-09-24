@@ -9,7 +9,7 @@ public class PermissionValidation {
     /**
      * 身份验证
      * @param collaborator 协作者
-     * @return 是否验证通过
+     * @return 通过验证返回true，否则返回false
      */
     public static boolean identityVerification(Collaborator collaborator) {
         return collaborator != null
