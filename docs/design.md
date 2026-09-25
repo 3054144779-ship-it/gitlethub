@@ -364,6 +364,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 用户服务用 HS256 | 密钥的对称性，如果泄露会被伪造 |
 | HEAD放入磁盘 | HEAD是可变的，磁盘放入不变的对象，基于“读写与数据生米周期”进行判断 |
 | 创建仓库的时候生成一份init空提交，保证分支存在至少一份存在 | 如果远程创建的时候存在init commit在本地push的时候会出现冲突，需要先pull下来marge在合并，体验会差 |
+| 检验提交不能为空时，任意一方为空则为空仓库 | 可能有commit但是没有blob（创建commit的时候会init一个空提交），但是不可能有blob但是没有commit，Blob是只增不删 |
 
 > 这一节比「做什么」更值得维护：半年后你不会记得为什么当时没选 JGit。
 

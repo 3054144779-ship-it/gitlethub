@@ -369,3 +369,91 @@ spring:
 ```
 
 **简单说**：H2 就是个测试用的临时数据库，不用也行，看你方便。
+
+这段是「**非快进校验**」，我用大白话 + 场景讲清楚。
+
+问题：
+
+## 先说这段代码在干嘛
+
+```java
+JsonNullable<String> expectedOldSha = refUpdateRequest.getExpectedOldSha();
+if (expectedOldSha != null && expectedOldSha.isPresent()
+        && !Objects.equals(expectedOldSha.get(), branchPointer.getCommitSha())) {
+    return Result.fail(ResultCode.VERSION_CONFLICT, ...);
+}
+```
+
+翻译成人话：
+
+> 客户端 push 时会带一句话：**「我以为远程分支现在还指向 X」**（这个 X 就是 `expectedOldSha`）。
+> 服务端就核对：**远程分支当前实际指向的**（`branchPointer.getCommitSha()`）**是不是 X？**
+> - 是 → 说明没人动过，放行。
+> - 不是 → 说明在你 push 之前，**别人已经推了新东西**，你这份是过时的，拒绝（返回冲突）。
+
+---
+
+## 三个条件逐个拆
+
+| 条件                              | 含义                                                         |
+| --------------------------------- | ------------------------------------------------------------ |
+| `expectedOldSha != null`          | 字段对象本身存在（防御性判空）                               |
+| `expectedOldSha.isPresent()`      | 客户端**确实传了**这个值（没传就跳过校验，比如第一次建分支） |
+| `!Objects.equals(期望值, 实际值)` | 期望的旧指向 ≠ 服务端当前指向 → 冲突                         |
+
+三个都成立才拒绝。
+
+---
+
+## 为什么要这么做？举个真实场景
+
+```
+初始：远程 master 指向 commit C1
+
+你（客户端A）：
+  1. pull 下来，看到 master = C1
+  2. 本地基于 C1 提交，做出 C2
+  3. 准备 push，带上 expectedOldSha = "C1"（我看到的是 C1）
+
+但在你 push 之前，同事（客户端B）抢先推了：
+  远程 master 已经变成 C3 了
+
+你 push 到达服务端：
+  expectedOldSha.get()          = "C1"   ← 你以为的
+  branchPointer.getCommitSha()  = "C3"   ← 实际的
+  两者不相等 → 拒绝！返回 VERSION_CONFLICT
+```
+
+**如果不做这个校验**：你的 C2 会直接把 master 从 C3 覆盖回 C2，**同事的 C3 就凭空消失了**（这叫「丢失更新」）。
+
+---
+
+## `JsonNullable` 是什么？为什么不用普通 String？
+
+普通 `String` 分不清这两种情况：
+- 客户端**没传**这个字段
+- 客户端传了但值是 **null**
+
+`JsonNullable` 是 OpenAPI 生成的包装类，能区分：
+- `isPresent() == false` → 客户端压根没传（比如**新建分支**，此时远程还没有任何指向，没得比）
+- `isPresent() == true` → 客户端传了，用 `.get()` 取出真实值来比
+
+所以「第一次推送新分支」时客户端不传 `expectedOldSha`，这段校验自动跳过，不会误拦。
+
+---
+
+## 和乐观锁（version）的区别
+
+你之前不是已经加了 `version` 乐观锁吗？两者不重复，是**两道关卡**：
+
+```
+expectedOldSha（业务语义层）：
+  比的是「commit 指向」，客户端主动声明，语义清晰
+  → 拦截「我 pull 之后、push 之前」这段时间别人插队的情况
+
+version（数据库层）：
+  比的是「行版本号」，数据库自动维护，客户端看不到
+  → 兜底拦截「两个请求几乎同时到达」的极限并发
+```
+
+一句话：**`expectedOldSha` 是给用户看的语义校验，`version` 是给数据库兜底的最终防线。** 正常情况下前者就能拦住，后者是保险。

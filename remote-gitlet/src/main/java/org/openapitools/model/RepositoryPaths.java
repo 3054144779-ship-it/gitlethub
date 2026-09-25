@@ -23,7 +23,7 @@ public class RepositoryPaths {
     private final File branchDir;
     /** 储存 HEAD 指针  */
     private final File headFile;
-    /** 储存 commit 的文件  */
+    /** 储存 commit 的文件夹  */
     private final File commits;
     /** 储存仓库的标识。 */
     private final File repositoryId;

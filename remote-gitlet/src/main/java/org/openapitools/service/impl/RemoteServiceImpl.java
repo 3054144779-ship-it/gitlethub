@@ -7,6 +7,7 @@ import dto.RepositoryCreateDTO;
 import enums.CollaboratorLevelEnum;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.openapitools.mapper.*;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
@@ -15,6 +16,7 @@ import org.openapitools.utils.Utils;
 import org.openapitools.verification.BranchVerification;
 import org.openapitools.verification.PermissionValidation;
 import org.openapitools.verification.RepositoryVerification;
+import org.openapitools.verification.VersionStatusVerification;
 import org.springframework.transaction.annotation.Transactional;
 import po.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -73,7 +76,7 @@ public class RemoteServiceImpl implements RemoteService {
 
         if (objectUploadRequest == null) {
             // 沿用原 Post200Response 枚举里标注为「提交的文件不能为空」的 30002
-            return Result.fail(ResultCode.BRANCH_NOT_FOUND, MsgConstant.THE_SUBMITTED_FILE_CANNOT_BE_EMPTY);
+            return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_SUBMITTED_FILE_CANNOT_BE_EMPTY);
         }
 
         // 创建仓库路径对象
@@ -142,6 +145,15 @@ public class RemoteServiceImpl implements RemoteService {
 
         String sha1 = refUpdateRequest.getSha();
 
+        // 检查该 commit 是否已存在于对象存储（防止分支指向一个未上传的对象）
+        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
+        List<String> commits = Utils.plainFilenamesIn(repositoryPaths.getCommits());
+        // 检查当前SHA1是否已存在在对象中
+        if (commits == null || !commits.contains(sha1)) {
+            log.warn("提交 {} 不存在于对象储存", sha1);
+            return Result.fail(ResultCode.SHA1_MISMATCH, MsgConstant.THIS_SUBMISSION_DOES_NOT_EXIST);
+        }
+
         // 获取用户id
         Long userId = remoteUserMapper.getUserId(owner);
         // 获取仓库id
@@ -151,11 +163,17 @@ public class RemoteServiceImpl implements RemoteService {
         // 获取提交者信息
         Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
         log.info("userId:{}, repositoryId:{}", userId, repositoryId);
+
         // 检查用户权限
         if (!PermissionValidation.identityVerification(collaborator)) {
             log.warn("用户 {} 没有权限更新分支 {}", owner, branch);
 //            log.info("协作者信息：{}", collaborator.toString());
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+
+        // 客户端非快进校验：若传了期望的旧指向，必须与服务端当前指向一致
+        if (!VersionStatusVerification.nonFastForwardCheck(refUpdateRequest, branchPointer)) {
+            return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
         }
 
         // 检查分支是否受保护，且当前分支有提交记录
@@ -167,8 +185,12 @@ public class RemoteServiceImpl implements RemoteService {
 
         // 如果没有提交记录就不会进入保护状态，不需要拉取
         log.info("用户 {} 允许更新分支 {}", owner, branch);
+
         // 用户权限通过，分支不受保护，更新分支指向提交
-        pushWrite(branchPointer, sha1, repositoryId, collaborator, branch);
+        if (!pushWrite(branchPointer, sha1, repositoryId, collaborator, branch)) {
+            // 更新失败，返回版本冲突
+            return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
+        }
 
         return Result.ok();
     }
@@ -225,9 +247,11 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.REPOSITORY_ALREADY_EXISTS, MsgConstant.THE_WAREHOUSE_ALREADY_EXISTS);
         }
 
-
         // 获取当前用户ID(根据用户名字查)
         Long ownerId = remoteUserMapper.getUserId(owner);
+        if (ownerId == null) {
+            return Result.fail(ResultCode.USER_NOT_FOUND, MsgConstant.THE_USER_DOES_NOT_EXIST);
+        }
         log.info("当前仓库 {} 的所有者ID为 {}", repo, ownerId);
         // 创建仓库对象
         Repository repository = Repository.builder()
@@ -251,7 +275,7 @@ public class RemoteServiceImpl implements RemoteService {
                 .commitSha(null)                         // 随机生成的SHA1值，作为初始提交的SHA1值，防止报错
                 .isDefault(1)                            // 1 表示默认分支，0 表示非默认分支
                 .isProtected(1)                          // 1 表示受保护的分支，0 表示非受保护的分支
-                .version(0)                              // 版本号初始为0
+                .version(0)                              // 版本号初始为 0
                 .updateTime(LocalDateTime.now())         // 更新时间初始为当前时间
                 .isDeleted(0)                            // 0 表示未删除
                 .isForcePush(0)                          // 1 表示允许强制推送，0 表示不允许强制推送
@@ -287,16 +311,21 @@ public class RemoteServiceImpl implements RemoteService {
     @Override
     public Result<RefView> getBranchInformation(String owner, String repo, String branch) {
         log.info("获取 {} / {} 的 {} 分支指向", owner, repo, branch);
-        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
-        // 当前分支文件
-        File branchFile = Utils.join(repositoryPaths.getBranchDir(), branch);
+//        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
+//        // 当前分支文件
+//        File branchFile = Utils.join(repositoryPaths.getBranchDir(), branch);
+
+        Long ownerId = remoteUserMapper.getUserId(owner);
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
+        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
+
         // 判断当前分支是否存在，如果不存在则返回错误码30004
-        if (!branchFile.exists()) {
+        if (branchPointer == null) {
             return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
         }
 
         // 如果存在则返回 分支所指向的提交
-        return Result.ok(new RefView().branch(branch).sha(Utils.readContentsAsString(branchFile)));
+        return Result.ok(new RefView().branch(branch).sha(branchPointer.getCommitSha()));
     }
 
     /**
@@ -323,8 +352,8 @@ public class RemoteServiceImpl implements RemoteService {
         List<String> commitNames = Utils.plainFilenamesIn(repositoryPaths.getCommits());
         // 读取仓库中所有的Blobs(存的是BlobHA1值)
         List<String> blobNames = Utils.plainFilenamesIn(repositoryPaths.getObject());
-        // 提交不能为空
-        if (CollUtil.isEmpty(commitNames) || CollUtil.isEmpty(blobNames)) {
+        // 提交不能为空（可能有commit但是没有blob，但是不可能有blob但是没有commit，Blob是只增不删）
+        if (CollUtil.isEmpty(commitNames) && CollUtil.isEmpty(blobNames)) {
             log.info("仓库 {} / {} 中没有提交", owner, repo);
             return Result.fail(ResultCode.EMPTY_REPOSITORY, MsgConstant.PULL_FAILED);
         }
@@ -380,11 +409,14 @@ public class RemoteServiceImpl implements RemoteService {
      * @param collaborator 提交者
      * @param branch 分支名
      */
-    private void pushWrite(BranchPointer branchPointer, String sha1, Long repositoryId,
+    private boolean pushWrite(BranchPointer branchPointer, String sha1, Long repositoryId,
                            Collaborator collaborator, String branch) {
         // 用户权限通过，分支不受保护，更新分支指向提交
-        remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1, branchPointer.getVersion());
-
+        int link = remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1, branchPointer.getVersion());
+        if (link == 0) {
+            log.warn("分支 {} 乐观锁冲突，期望 version={}", branch, branchPointer.getVersion());
+            return false;
+        }
         // 创建提交记录
         SubmissionRecord submissionRecord = SubmissionRecord.builder()
                 .repositoryId(repositoryId)              // 仓库ID
@@ -406,6 +438,7 @@ public class RemoteServiceImpl implements RemoteService {
 
         // 插入提交图谱索引
         remoteCommitPointer.insert(commitParent);
+        return true;
     }
 
 

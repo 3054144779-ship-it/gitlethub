@@ -54,6 +54,9 @@ public final class ResultCode {
     /** 服务端错误 */
     public static final int INTERNAL_ERROR = 90001;
 
+    /** 用户不存在 */
+    public static final int USER_NOT_FOUND = 1006;
+
     private ResultCode() {
     }
 }
