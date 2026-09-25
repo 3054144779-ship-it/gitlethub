@@ -5,7 +5,7 @@
 | 状态 | draft |
 | Owner | 花火 |
 | Reviewer | 待指派 |
-| 最后更新 | 2026-09-21 |
+| 最后更新 | 2026-09-25 |
 | 接口冻结 | 未冻结（`docs/openapi.yaml` 定稿后填日期） |
 | 取代 | `gitlethub 设计文档.md`（无状态草稿，保留作参考） |
 
@@ -128,8 +128,6 @@ gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
         │   │   └── def456...
         │   ├── sha_a1            ← type=BLOB 的写这里
         │   └── sha_b2
-        ├── refs/heads/
-        └── HEAD
 ```
 
 **职责与依赖方向（单向，不可逆）**
@@ -239,7 +237,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | POST | `/api/repos/{owner}/{repo}/objects` | push 第二步：上传对象 |
 | GET | `/api/repos/{owner}/{repo}/objects?since=` | pull 拉取对象 |
 | GET | `/api/repos/{owner}/{repo}/refs/{branch}` | 读取分支指向 |
-| POST | `/api/repos/{owner}/{repo}/repo` | 创建仓库 |
+| POST | `/api/repos` | 创建仓库（**不在 `openapi.yaml` 里，是手写端点** `RepositoryController`；owner/repo 走 body 的 `RepositoryCreateDTO`。建仓的唯一入口 → D27） |
 | GET | `/api/repos/{owner}/{repo}/clone` | clone 拉取对象 |
 
 **不在 spec 里的**
@@ -292,7 +290,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 数据 | 存放位置 `(临时)` | 说明 |
 | --- | --- | --- |
 | object 内容（blob + commit） | 磁盘 `.gitlet/Objects/` | 本地与远端一致；远端根路径 → D3 |
-| 分支引用（refs） | 磁盘，与本地结构一致 | → D10 |
+| 分支引用（refs）/ HEAD | 数据库（可变对象；磁盘只存不变对象） | → D10，已定 |
 | 用户 / 仓库名 / owner | 数据库（r2dbc） | → D11 |
 | 权限 | 数据库 | → D11 |
 | 每个 remote 的同步进度 | 数据库 | push 增量计算依赖它 |
@@ -319,19 +317,36 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 ![image-20260921234640396](D:\Job_project\gitlethub\docs\design.assets\image-20260921234640396.png)
 
+### 客户端 CLI 远程命令
+
+`gitlet_core/Main.java` 的 switch 现在只有 13 个命令，全是本地操作：
+`init` / `add` / `commit` / `rm` / `log` / `global-log` / `find` / `status` /
+`checkout` / `branch` / `rm-branch` / `reset` / `merge`/`remote add`。
+按 D5，其中只有下面 3 个走远程，其余全部本地；
+
+| 命令 | 参数语法 | 对应接口 | 本地状态 |
+| --- | --- | --- | --- |
+| `push` | → D23 | `POST /refs/{branch}` → `POST /objects` | → D24 |
+| `pull` | → D23 | `GET /refs/{branch}` → `GET /objects?since=` | → D24 |
+| `clone` | → D23 | `GET /clone` | → D24 |
+
+- 本地 remote 地址、上次同步的 sha 记在哪（push 第 1 步要用）→ D24
+- CLI 调 HTTP 的 client 放哪：`gitlet_core` 是纯库、除 Lombok 无依赖（§3）→ D25
+- 失败与 `50001` 冲突在 CLI 侧怎么表现（退出码、是否自动 pull 重试）→ D26
+
 ### push
 
 ```
 1. 客户端对比 remote 记录的 sha 与本地 refs，算出服务端缺失的 object 集合
-2. POST /objects            → 幂等；仓库不存在则自动创建
-3. POST /refs/{branch}      → 带 expectedOldSha 做乐观锁；分支不存在则新建
-4. 服务端校验并更新引用
+2. POST /refs/{branch}      → 带 expectedOldSha 做乐观锁；分支不存在则新建
+3. POST /objects            → 幂等；把对象写入磁盘
 ```
 
-- **没有单独的开仓接口**：第 2 步是唯一会建仓库的地方（含至少一个对象才建）。
-  第 3 步要求仓库已存在，否则返回 `30001`。
+- 顺序是**先更新分支引用、再把对象落盘**（与 `remote-gitlet` 的实现一致；§6 的接口表也是 refs 排在前）。
+- `POST /objects` 要求仓库已存在，否则返回 `30001`。**没有自动建仓**：
+  仓库只能由用户手动调 `POST /api/repos` 建立，push 的两步都不建仓、失败也不补建 → D27，已定
 - 第 2 步成功、第 3 步失败的处理 → D14
-- 自动建仓的滥用风险 → D21
+- 建仓的滥用风险（任何认证用户都能无限建仓）→ D21
 - 建仓要**同时写数据库（仓库元数据）和磁盘目录**，中间失败会留半状态 → D22
 
 ### pull / clone
@@ -344,11 +359,11 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 ### 并发
 
-| 场景 | 处理方式 `(临时)` | ID |
+| 场景 | 处理方式 | ID |
 | --- | --- | --- |
 | 两个客户端同时 push 同一分支 | 乐观锁（`expectedOldSha`），`50001` 后 pull 重试 | — |
-| 同一仓库的并发读写 | 按 `repoId` 加锁 | → D12 |
-| 服务端 `Repository` 实例是否复用 | 不缓存，每请求新建 | → D13 |
+| 同一仓库的并发读写 | 按 `repoId` 加锁，省掉反复合并仓库的开销 | → D12，已定 |
+| 服务端 `Repository` 实例是否复用 | 可缓存，但**只缓存磁盘对象访问能力**，不缓存分支 sha 状态 | → D13，已定 |
 
 ---
 
@@ -362,9 +377,13 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 把 refs 也放进数据库 | 查询方便，但会让远端和本地的存储结构分叉，同一个核心代码要维护两种 refs 读取路径。放磁盘能直接复用 `BranchManager`。 |
 | 用 REST 之外的自定义二进制协议 | 省流量，但丢掉 OpenAPI 带来的代码生成、文档、调试（curl / Postman）全部便利。 |
 | 用户服务用 HS256 | 密钥的对称性，如果泄露会被伪造 |
-| HEAD放入磁盘 | HEAD是可变的，磁盘放入不变的对象，基于“读写与数据生米周期”进行判断 |
+| 远程仓库的HEAD放入磁盘 | HEAD是可变的，磁盘放入不变的对象，基于“读写与数据生米周期”进行判断。详细见D13附 |
 | 创建仓库的时候生成一份init空提交，保证分支存在至少一份存在 | 如果远程创建的时候存在init commit在本地push的时候会出现冲突，需要先pull下来marge在合并，体验会差 |
 | 检验提交不能为空时，任意一方为空则为空仓库 | 可能有commit但是没有blob（创建commit的时候会init一个空提交），但是不可能有blob但是没有commit，Blob是只增不删 |
+| 服务间用 OpenFeign 访问 | 改用JDK11+的HttpClient访问，CLI不应该被Spring容器管理，保证服务启动的速度 |
+| 存储远程链接信息的话我是序列化一个hashMap对象好还是用远程别名命名文件好？ | 选用别名命名文件。序列化 HashMap：实现简单二进制不可读、难调试、Java 专用、结构变更会兼容性问题。别名命名文件（文本）：可读、易调试、符合 Git 惯例、可手动编辑，稍微多写几行解析代码 |
+| push两步，先更新分支再先上传对象，因为更新分支是数据库操作可以回滚性能开销比回滚IO开销小 | 「DB 优先 IO 优先」原则适用于单个事务内部，不适用于跨 HTTP 请求。应该先 IO 后 DB，对象文件在磁盘上，但是孤立的无害，如果说相同文件再推送只会跳过这些文件新建立commit，而不同文件推送也只是新的SHA值之前的不影响，但是如果说先DB再IO如果说就会出现远程 master 指向一个不存在的 commit |
+| 为什么不用Seata做回滚保证事务一致性？ | 不用 Seata，理由：<br/>失败后果可接受：推送失败最多产生几个孤立对象文件，像 Git 的 dangling object，下次 GC 清理就行<br/>Git 本身也不保证原子性：真实 Git 推送时也是先传对象再更新引用，中间失败会留下孤立对象<br/>复杂度不值得：Seata 的基础设施成本远高于这个场景的需求<br/>如果将来业务变复杂（比如推送要计费、要触发 CI/CD 流水线），再考虑 Seata 不迟。而且 Seata 不知道怎么回滚文件写入。你需要自己实现 TCC 模式（Try-Confirm-Cancel） |
 
 > 这一节比「做什么」更值得维护：半年后你不会记得为什么当时没选 JGit。
 
@@ -391,9 +410,9 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 6 | `gateway-service` 的 `application.yaml` 空的，一条路由都没配 | 所有请求无处转发 |
 | 7 | `gateway-service` 用包名 `com.hanabi`，与父 groupId `com.huahuo` 不一致 | 坐标混乱 |
 | 8 | gateway 的鉴权 / 限流 / 日志过滤都还没实现 | 安全 → D9、D19 |
-| 9 | 自动创建仓库意味着任何认证用户都能无限建仓，配额 / 频率限制没定 | 滥用风险 → D21 |
+| 9 | 建仓是显式接口（手动建仓，push 不建仓 → D27），但任何认证用户仍能无限建仓，配额 / 频率限制没定 | 滥用风险 → D21 |
 | 10 | `remote-gitlet` 只有 pom，`/api/repos/**` 一个接口都没实现 | 见 §11 的 M2 / M3 |
-| 11 | `Repository` 的 `Staging` 内存缓存只在单线程下成立 | 并发正确性 → D12 |
+| 11 | `Repository` 的 `Staging` 内存缓存只在单线程下成立 | 并发正确性 → D12，已定（按 `repoId` 加锁后该缓存受锁保护） |
 | 12 | 模块命名 `gitlet_core` vs `gitlet-core` 未统一 | 可读性 → D4 |
 | 13 | `gitlet/dump/`（`DumpObj`、`Dumpable`）疑似死代码 | 待确认后删除 |
 
@@ -411,7 +430,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 ### M1 验收标准
 
-- **Given** 一个已初始化的仓库，**When** 依次执行 `init` / `add` / `commit` / `log` / `status` / `checkout` / `branch` / `merge` / `reset`，**Then** stdout 与改造前逐字节一致，且 `make check` 21/21 全绿。
+- **Given** 一个已初始化的仓库，**When** 依次执行 `init` / `add` / `commit` / `rm` / `log` / `global-log` / `find` / `status` / `checkout` / `branch` / `rm-branch` / `reset` / `merge`，**Then** stdout 与改造前逐字节一致，且 `make check` 21/21 全绿。
 - **Given** 服务端调用同一套核心，**When** 执行任意命令，**Then** 进程不退出（无 `System.exit`）。
 
 ### M2 验收标准
@@ -421,7 +440,8 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
   **Then** 返回 `200 {code:0, message:"ok", data:{received:[], missing:[]}}` 而不是 500。
 - **Given** 请求不带 token，**When** 打 `/api/repos/**`，**Then** gateway 直接返回 `401` / `code 20001`，且后端日志里看不到这次请求。
 - **Given** 请求带合法 token 但访问别人的仓库，**Then** `403` 且 `code` 为 `20002`（由 remote-gitlet 判定）。
-- **Given** 一个从未 push 过的 owner/repo，**When** 第一次 `POST /objects`，**Then** 自动创建仓库并返回 `200`。
+- **Given** 一个已认证用户，**When** `POST /api/repos` 建仓，**Then** 返回 `200`，数据库里有仓库 / `master` 分支指针 / owner 协作者三条记录，磁盘上有仓库目录。
+- **Given** 一个不存在的 owner/repo，**When** 直接 `POST /objects`，**Then** `code 30001`，且**不会**顺手把仓库建出来（无自动建仓 → D27）。
 
 ### M3 验收标准
 
@@ -465,25 +485,136 @@ make check       # 21/21 必须全绿
 
 | ID | 待决策 | 建议 `(临时)` | 你的决定 |
 | --- | --- | --- | --- |
-| D1 | 非目标清单是否就这 6 条 | 见 §2，删改随意 | |
-| D2 | 规模数字（仓库/文件/超时/用户数/部署形态） | 见 §3 表格 | |
-| D3 | 服务端仓库落盘路径 | `$REPOS_ROOT/<owner>/<repo>` | |
-| D4 | 模块命名：`gitlet_core` 还是 `gitlet-core` | 改成 `gitlet-core`，与同级一致 | |
-| D5 | 哪些命令走远程（`push`/`pull`/`clone`/`remote add`？） | 就这四个，其余全本地 | |
-| D6 | 核心的错误表达：抛异常还是返回 `Result` | 抛异常，`GitletException` 已存在 | |
-| D7 | `System.exit` 归谁 | 只留在 `Main`，核心一律不调 | |
-| D8 | 渲染方式：接口注入还是返回字符串 | 返回结果对象，字符串由 CLI 拼 | |
-| D9 | 鉴权：token 怎么签发和校验 | Bearer JWT，先硬编码一个走通链路 | |
-| D10 | refs 存磁盘还是数据库 | 磁盘，复用 `BranchManager` | |
-| D11 | 用户 / 权限 / 同步进度存哪 | r2dbc 数据库 | |
-| D12 | 同一仓库并发：加锁还是每请求新建 | 每请求新建 `Repository`，不加锁 | |
-| D13 | 服务端是否缓存 `Repository` 实例 | 不缓存 | |
-| D14 | push 第 2 步失败（对象已传、refs 没更新）怎么恢复 | 无害，重试即可，objects 上传幂等 | |
-| D15 | AI 服务形态：进程模型；流式 / 非流式；喂 diff / 整份文件 | 独立 project `gitlet_ai_helper`（**已定**）；其余建议同进程外的独立服务、非流式、先喂 diff | |
-| D16 | `gateway-service` 的依赖冲突怎么解 | 去掉 `spring-boot-starter-web`，补 spring-cloud BOM | |
-| D17 | `remote-gitlet` 负责什么 | 实现 `/api/repos/**`，服务端仓库存储 + 对象传输（**已定**） | |
-| D18 | `code` 的取值语义 | 业务码段（**已定**）：`0` 成功，`1xxxx` 请求内容，`2xxxx` 认证授权，`3xxxx` 仓库分支，`5xxxx` 并发冲突，`9xxxx` 系统 | |
-| D19 | 限流阈值与维度 | 先按 token 维度，60 req/min；超了 `10005` | |
-| D20 | `/health` 是否也包统一信封 | 不包，探针只需要 `200`；业务接口一律包 | |
-| D21 | 自动创建仓库的配额 / 频率限制 | 先按 owner 限 50 个仓库，超了走 `20002` 或另开 `30003` | |
-| D22 | 自动建仓时数据库与磁盘的一致性 | 先建目录后写库，库里没记录就当仓库不存在（可被下次 push 覆盖） | |
+| D1 | 非目标清单是否就这 6 条 | 见 §2，删改随意 | 暂时这样 |
+| D2 | 规模数字（仓库/文件/超时/用户数/部署形态） | 见 §3 表格 | 暂时这样 |
+| D3 | 服务端仓库落盘路径 | `$REPOS_ROOT/<owner>/<repo>` | 同建议 |
+| D4 | 模块命名：`gitlet_core` 还是 `gitlet-core` | 改成 `gitlet-core`，与同级一致 | 同建议 |
+| D5 | 哪些命令走远程（`push`/`pull`/`clone`/`remote add`？） | 就这四个，其余全本地 | 目前仅有这些后续可能新增 |
+| D6 | 核心的错误表达：抛异常还是返回 `Result` | 抛异常，`GitletException` 已存在 | 部分走异常部分走Result |
+| D7 | `System.exit` 归谁 | 只留在 `Main`，核心一律不调 | 删除exit |
+| D8 | 渲染方式：接口注入还是返回字符串 | 返回结果对象，字符串由 CLI 拼 | 同建议 |
+| D9 | 鉴权：token 怎么签发和校验 | Bearer JWT，先硬编码一个走通链路 | 采用RSA256，公私钥存储到Redis中，保证数据一致性 |
+| D10 | refs 存磁盘还是数据库 | 磁盘，复用 `BranchManager` | HAND存入数据库中，可变对象，磁盘只存不变对象 |
+| D11 | 用户 / 权限 / 同步进度存哪 | r2dbc 数据库 | 暂时先用同步数据库，后续接入AI服务可优化为异步数据库 |
+| D12 | 同一仓库并发：加锁还是每请求新建 | 每请求新建 `Repository`，不加锁 | 加锁，可以大幅度减少合并仓库带来的性能开销 |
+| D13 | 服务端是否缓存 `Repository` 实例 | 不缓存 | Repository 实例**可以缓存，但只能缓存磁盘对象访问能力，不能缓存分支 sha 状态**。 |
+| D14 | push 先更新 refs、后落对象，中途失败（refs 已更新、对象没落盘，refs 指向服务端没有的 commit）怎么恢复 | 无害，重试即可，objects 上传幂等 | 同建议 |
+| D15 | AI 服务形态：进程模型；流式 / 非流式；喂 diff / 整份文件 | 独立 project `gitlet_ai_helper`（**已定**）；其余建议同进程外的独立服务、非流式、先喂 diff | 后续再议 |
+| D16 | `gateway-service` 的依赖冲突怎么解 | 去掉 `spring-boot-starter-web`，补 spring-cloud BOM | 同建议 |
+| D17 | `remote-gitlet` 负责什么 | 实现 `/api/repos/**`，服务端仓库存储 + 对象传输（**已定**） | 同建议 |
+| D18 | `code` 的取值语义 | 业务码段（**已定**）：`0` 成功，`1xxxx` 请求内容，`2xxxx` 认证授权，`3xxxx` 仓库分支，`5xxxx` 并发冲突，`9xxxx` 系统 | 同建议 |
+| D19 | 限流阈值与维度 | 先按 token 维度，60 req/min；超了 `10005` | 后续再议 |
+| D20 | `/health` 是否也包统一信封 | 不包，探针只需要 `200`；业务接口一律包 | 同建议 |
+| D21 | 建仓接口的配额 / 频率限制 | 先按 owner 限 50 个仓库，超了走 `20002` 或另开 `30003` | 同建议 |
+| D22 | 建仓时数据库与磁盘的一致性 | 先建目录后写库，库里没记录就当仓库不存在 | 同建议 |
+| D23 | 四个远程命令的参数语法（是否省略 remote 名、`clone` 的目标目录怎么给） | | |
+| D24 | 本地在哪记 remote 地址与上次同步的 sha（`.gitlet/` 下的哪个文件） | | |
+| D25 | CLI 调 HTTP 的 client 放哪个模块、依赖怎么进 | | |
+| D26 | push / pull 失败与 `50001` 冲突在 CLI 侧的表现（退出码 / 是否自动 pull 重试） | | |
+| D27 | 顺序改成 refs 在先之后，「自动建仓」挂在哪一步（refs 步自动建，还是保留 `POST /repo` 单独开仓） | 保留 `POST /repo` 单独建仓 | 不做自动建仓：仓库只能手动建，push 两步都不建仓（否则任何认证用户 push 任意 owner/repo 就能凭空开仓） |
+
+### D12附：
+
+方案 1：加锁（最像真实 Git 服务器，简单常用）
+
+> 同一仓库一把锁。
+
+- 规则：只要有一个请求正在操作这个仓库（push、写 refs、写对象），**锁住这个仓库**；其他针对同一个仓库的请求进来：要么等待，要么返回「仓库忙，请稍后重试」。
+- 粒度：**按仓库锁**（仓库 A 上锁，不影响仓库 B）
+- 优点：
+  - 实现简单，不会出现同时写 refs / 对象导致仓库数据损坏
+  - 冲突直观：同一仓库不能并行写
+- 缺点：
+  - 长耗时请求会把仓库卡住，后面请求排队
+  - 读请求如果也拿锁，读多的时候容易堵（可以读写分离：读不加锁，写加排他锁）
+
+真实 Git 服务（GitLab/Gitea）底层就是**仓库级锁**，防止并发 push 把仓库 refs 搞坏。
+
+方案 2：每请求新建副本（快照 / 拷贝仓库，类似 MVCC）
+
+> 每次收到请求，**先复制一份当前仓库数据给这个请求单独使用**，请求在自己这份副本上做修改，做完尝试把修改合并回主仓库。
+
+- 规则：所有请求并行跑，互不阻塞；提交修改阶段才检查冲突。
+- 优点：请求之间不互相阻塞，高并发体验好
+- 缺点：
+  - 开销巨大：复制仓库（对象、refs）很耗 IO / 内存，仓库大的时候完全不可行
+  - 合并逻辑复杂：多个副本同时改完，要判断谁覆盖谁，处理写冲突
+  - Git 对象库本身不适合这种写法
+
+> 这里 “每请求新建” 不是新建一个完整仓库文件夹，广义指**每个请求基于独立数据快照操作，而不是共享同一份可变仓库状态**。数据库 MVCC 就是这个思路，但套在简易 Git 仓库上成本很高。
+
+### D13附：
+
+#### 如果说是HEAD文件存储在磁盘的话：
+
+方案 A：缓存 Repository 实例（复用，单实例 / 池化）
+
+> 服务端维护一个 Map：`repoName → Repository 实例`，第一次访问仓库时 new 一次，之后所有请求**共用这同一个对象**。
+
+特点
+
+1. 内存里一直放着这个实例，不用每次请求重新加载对象、扫描 refs、打开文件。性能更好。
+2. **最大坑：Repository 内部有可变状态的话，多线程并发请求会炸**。
+   - 如果 Repository 里面存了临时状态、打开的文件句柄、非线程安全集合；多个 HTTP 线程同时调用，就会出现竞态 bug（refs 读脏、数据错乱）。
+3. 搭配方案：**仓库级锁** 同一个仓库共用一个 Repository 实例 + 同一仓库一把锁。 锁保证同一时刻只有一个线程操作这个 Repository 实例，规避多线程并发修改问题。
+
+> 适合：仓库数量不多、简化项目，就是咱们这个 61B Gitlethub 场景。
+
+方案 B：**不缓存，每请求新建 Repository**
+
+> 每次 HTTP 请求过来，根据仓库名字，**new 一个全新 Repository 实例**，用完请求结束就丢弃。
+
+特点
+
+1. 每个请求的 Repository 互相独立，对象之间完全不共享可变状态。天然线程安全，**不用锁对象本身**。
+
+2. 代价：每次请求都要重新从磁盘加载 refs、读取配置，IO 开销更大。
+
+3. 但**磁盘文件依然会并发竞争**！
+
+   > 就算每次 new 新对象，两个请求同时写磁盘上的`refs/main`文件，照样文件覆盖、数据损坏。 👉 所以：**对象不共享 ≠ 磁盘数据安全**。你依然要做并发控制：要么文件锁，要么 CAS。
+
+同一仓库并发：加锁还是每请求新建？
+
+- 缓存 Repository 实例 → 复用对象，靠**锁**串行操作
+- 不缓存、每请求 new Repository 实例 → 对象隔离，但磁盘层仍然要处理并发写 refs
+
+#### 如果说是HEAD文件存储在数据库的话：
+
+对【是否缓存 Repository 实例】的影响
+
+Repository 里面一般会包含两类东西：
+
+1. 访问磁盘对象库（读 commit/blob/tree）的工具
+2. 当前仓库的引用状态（HEAD、分支 refs）
+
+因为**refs/HEAD 不在磁盘，在 DB**：
+
+- Repository 实例**本地内存里的 refs/HEAD 只是瞬时查询出来的快照，不是权威源；权威源永远是数据库** 👉 **Repository 实例可以安全缓存（复用），但绝对不能信任实例内存里缓存的分支 sha！** 每次业务操作（push、pull）**必须重新查数据库拿最新 refs**，不能拿 Repository 对象里缓存的旧 sha。
+
+> 两种可选方案： 
+>
+> 方案 1：缓存 Repository 实例（只复用磁盘对象访问层，对象库路径、读取工具），refs 每次实时查 DB。推荐。
+>
+> - 好处：不用每次请求重新初始化对象库、打开目录；减少 IO 初始化开销。
+> - 约束：实例里**不缓存 refs/HEAD 的值**，内存里不存可变引用状态。
+>
+> 方案 2：不缓存，每请求新建 Repository
+>
+> - 更简单，不会误使用过期内存快照；代价是每次请求初始化对象库。
+
+对【并发：加锁还是每请求新建】的影响
+
+因为可变状态迁移到数据库，**并发保护可以交给数据库能力，而不是自己写文件锁**。 两个主流路线：
+
+1. **数据库乐观锁（CAS）** push 更新分支 refs 时： `update ref_table set sha = new_sha where repo_id=? and branch=? and sha = old_sha`
+
+- 先读当前分支 sha（old_sha）
+- 执行 update，只有数据库里当前 sha 等于 old_sha 才更新成功
+- 返回 0 行 = 已经被别人抢先修改 → push 冲突，返回客户端拒绝
+
+> 不需要在服务端对 Repository 加仓库锁！多个请求可以并行跑对象上传（blob/commit 是不可变，写磁盘互不冲突），只在最后一步更新 refs 做 CAS 校验。
+
+1. **数据库悲观锁** 事务 `select ... for update` 锁住这条分支记录，同一仓库分支串行更新。 实现简单，但吞吐低。
+
+> 重点： blob/commit/tree 写入磁盘**完全不需要锁**！ 因为不可变 + sha 命名：就算并发两个请求写同一个 blob，只是写同一个文件，内容完全一样，覆盖也无害。

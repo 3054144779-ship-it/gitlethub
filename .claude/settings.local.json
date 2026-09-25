@@ -51,7 +51,12 @@
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -N install -Duser.language=en -Duser.country=US)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B compile -Duser.language=en -Duser.country=US)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B clean compile -pl common-service,remote-gitlet -am -Duser.language=en -Duser.country=US)",
-      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q clean compile -pl common-service,remote-gitlet -am -Duser.language=en -Duser.country=US)"
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q clean compile -pl common-service,remote-gitlet -am -Duser.language=en -Duser.country=US)",
+      "Bash(sed -n '1,12p')",
+      "Bash(sed -n '1,12p' docs/design.md)",
+      "Bash(git diff *)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" /d/maven/apache-maven-3.9.15/bin/mvn -q -o -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8 -DskipTests clean compile -pl common-service,remote-gitlet -am)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" /d/maven/apache-maven-3.9.15/bin/mvn -q -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8 -DskipTests clean compile -pl common-service,remote-gitlet -am)"
     ]
   }
 }

@@ -457,3 +457,10 @@ version（数据库层）：
 ```
 
 一句话：**`expectedOldSha` 是给用户看的语义校验，`version` 是给数据库兜底的最终防线。** 正常情况下前者就能拦住，后者是保险。
+
+问题：
+
+HttpClient 需要完整 URL（包括网关地址），不像 OpenFeign 那样只写相对路径。为什么
+
+OpenFeign 依赖 Spring Cloud 的服务发现（Nacos），它知道 remote-gitlet 服务在哪台机器、哪个端口，所以自动拼接完整 URL。
+HttpClient 是裸 HTTP 客户端，没有服务发现能力，你必须告诉它完整地址。

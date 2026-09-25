@@ -1,7 +1,6 @@
 package org.openapitools.controller;
 
 import common.Result;
-import dto.RepositoryCreateDTO;
 import org.openapitools.model.ObjectBundle;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
@@ -42,7 +41,7 @@ public class RemoteController {
 
     /**
      * push 到远程仓库
-     * 第一步（特殊）：强制更新分支信息（TODO：加乐观锁）
+     * 第一步（特殊）：强制更新分支信息（乐观锁）
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param branch  (required) 分支名（如 master）
@@ -61,7 +60,7 @@ public class RemoteController {
 
     /**
      * push 到远程仓库
-     * 第一步：更新分支信息（TODO：加乐观锁）
+     * 第一步：更新分支信息（乐观锁）
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param branch 分支名（如 master） (required)
@@ -110,18 +109,7 @@ public class RemoteController {
     }
 
 
-    /**
-     * 创建当前用户的远程仓库
-      * @param repositoryCreateDTO  (required) 创建仓库的DTO
-     * @return 创建结果
-     */
-//    @PostMapping("/repo")
-//    public ResponseEntity<Result<ObjectUploadResult>> createRemoteRepository(
-//            @RequestBody RepositoryCreateDTO repositoryCreateDTO) {
-//
-//        Result<ObjectUploadResult> response = remoteService.createRemoteRepository(repositoryCreateDTO);
-//        return ResponseEntity.ok(response);
-//    }
+    // 建仓入口已独立到 RepositoryController（POST /api/repos），不在这里重复挂
 
     /**
      * clone 远程仓库

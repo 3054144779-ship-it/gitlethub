@@ -1,8 +1,10 @@
 package gitlet.repository;
 
+import gitlet.utils.Utils;
 import lombok.Getter;
 
 import java.io.File;
+import java.util.Map;
 
 import static gitlet.utils.Utils.join;
 
@@ -29,6 +31,10 @@ public class RepositoryPaths {
     private final File commits;
     /** 存储暂存区文件信息。 */
     private final File stagingFile;
+    /** 存储远程仓库路径信息。 */
+    private final File remoteFile;
+    /** 存储远程仓库推送分支信息。(上一次提交时候的 commit SHA) */
+    private final File remotePushBranchDir;
 
     public RepositoryPaths(String repoId, File cwd) {
         this.repoId = repoId;
@@ -39,5 +45,34 @@ public class RepositoryPaths {
         this.headFile = join(gitletDir, "HEAD");
         this.commits = join(object, "commits");
         this.stagingFile = join(gitletDir, "staging");
+        this.remoteFile = join(gitletDir, "remotes");
+        this.remotePushBranchDir = join(gitletDir, "refs", "remotes");
+    }
+
+    /**
+     * 解析远程仓库的配置
+     * @param remoteFile 远程仓库文件
+     * @return 仓库路径信息
+     */
+    public static Map<String, String> parseRemoteFile(File remoteFile) {
+        /*
+         * 构建内容字符串 "url=%s\nowner=%s\nrepo=%s\ndefaultBranch=master\n"
+         * url = {baseUrl}
+         * owner = {ownerName}
+         * repo = {repoName}
+         * defaultBranch = master
+         * */
+        String content = Utils.readContentsAsString(remoteFile);
+        String[] lines = content.split("\n");
+        String baseUrl = lines[0].split("=")[1];
+        String ownerName = lines[1].split("=")[1];
+        String repoName = lines[2].split("=")[1];
+        String defaultBranch = lines[3].split("=")[1];
+        return Map.of(
+                "baseUrl", baseUrl,
+                "owner", ownerName,
+                "repo", repoName,
+                "defaultBranch", defaultBranch
+        );
     }
 }

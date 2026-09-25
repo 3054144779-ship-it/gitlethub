@@ -108,12 +108,19 @@ public class Utils {
     /** 将 CONTENTS 中的字节串接到 FILE 的结果写入，
      * 根据需要创建或覆盖。 CONTENTS 中的每个对象可以是
      * 字符串或字节数组。 Throws IllegalArgumentException
-     * 以防出现问题。 */
+     * 以防出现问题。
+     * 添加自动创建父目录
+     * */
     public static void writeContents(File file, Object... contents) {
         try {
             if (file.isDirectory()) {
                 throw
                     new IllegalArgumentException("cannot overwrite directory");
+            }
+            // 自动创建父目录
+            File parent = file.getParentFile();
+            if (parent != null) {
+                parent.mkdirs();
             }
             BufferedOutputStream str =
                 new BufferedOutputStream(Files.newOutputStream(file.toPath()));
