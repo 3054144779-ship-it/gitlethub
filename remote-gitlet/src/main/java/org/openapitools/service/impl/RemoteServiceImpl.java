@@ -166,29 +166,7 @@ public class RemoteServiceImpl implements RemoteService {
         // 如果没有提交记录就不会进入保护状态，不需要拉取
         log.info("用户 {} 允许更新分支 {}", owner, branch);
         // 用户权限通过，分支不受保护，更新分支指向提交
-        remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1);
-
-        // 创建提交记录
-        SubmissionRecord submissionRecord = SubmissionRecord.builder()
-                .repositoryId(repositoryId)              // 仓库ID
-                .commitSha(sha1)                         // 提交SHA1值
-                .userId(collaborator.getUserId())        // 提交者ID
-                .branchName(branch)                      // 分支名
-                .submitTime(LocalDateTime.now())         // 提交时间
-                .build();
-
-        // 插入提交记录
-        remoteSubmissionRecordMapper.insert(submissionRecord);
-
-        // 创建提交图谱索引
-        CommitParent commitParent = CommitParent.builder()
-                .repositoryId(repositoryId)              // 仓库ID
-                .commitSha(sha1)                         // 提交SHA1值
-                .parentSha(branchPointer.getCommitSha()) // 父提交SHA1值
-                .build();
-
-        // 插入提交图谱索引
-        remoteCommitPointer.insert(commitParent);
+        pushWrite(branchPointer, sha1, repositoryId, collaborator, branch);
 
         return Result.ok();
     }
@@ -207,8 +185,13 @@ public class RemoteServiceImpl implements RemoteService {
                                                  String branch, RefUpdateRequest refUpdateRequest) {
         // 获取仓库id
         Long repositoryId = remoteRepositoryMapper.getRepositoryId(owner, repo);
+        // 获取用户id
+        Long userId = remoteUserMapper.getUserId(owner);
         // 获取分支指针
         BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
+        // 获取提交者信息
+        Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
+
         // 检查是否允许强制推送
         if (!BranchVerification.isForcePushAllowed(branchPointer)) {
             // 不允许强制推送
@@ -216,7 +199,7 @@ public class RemoteServiceImpl implements RemoteService {
         }
 
         log.info("强制更新分支 {} {}", branch, refUpdateRequest);
-        remoteBranchPointer.updateBranchPointer(branchPointer.getId(), refUpdateRequest.getSha());
+        pushWrite(branchPointer, refUpdateRequest.getSha(), repositoryId, collaborator, branch);
 
         return Result.ok();
     }
@@ -312,7 +295,7 @@ public class RemoteServiceImpl implements RemoteService {
         log.info("拉取 {} / {} 从 {} 开始的提交", owner, repo, since);
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
 
-        // TODO: pull：分支 commit_sha 为 null → 空仓库，返回空。后续更新为数据库操作
+        // TODO: pull：分支 commit_sha 为 null → 空仓库，返回空。后续更新为数据库操作（可能不需要）
 
         // 检查仓库是否存在(不存在则报错)
         if (!RepositoryVerification.repositoryExists(repositoryPaths)) {
@@ -371,4 +354,42 @@ public class RemoteServiceImpl implements RemoteService {
         // TODO：后续将这里（since）改为第一个提交
         return this.pull(owner, repo, null);
     }
+
+    /**
+     * 推送写入
+     * @param branchPointer 分支指针
+     * @param sha1 提交SHA1值
+     * @param repositoryId 仓库ID
+     * @param collaborator 提交者
+     * @param branch 分支名
+     */
+    private void pushWrite(BranchPointer branchPointer, String sha1, Long repositoryId,
+                           Collaborator collaborator, String branch) {
+        // 用户权限通过，分支不受保护，更新分支指向提交
+        remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1);
+
+        // 创建提交记录
+        SubmissionRecord submissionRecord = SubmissionRecord.builder()
+                .repositoryId(repositoryId)              // 仓库ID
+                .commitSha(sha1)                         // 提交SHA1值
+                .userId(collaborator.getUserId())        // 提交者ID
+                .branchName(branch)                      // 分支名
+                .submitTime(LocalDateTime.now())         // 提交时间
+                .build();
+
+        // 插入提交记录
+        remoteSubmissionRecordMapper.insert(submissionRecord);
+
+        // 创建提交图谱索引
+        CommitParent commitParent = CommitParent.builder()
+                .repositoryId(repositoryId)              // 仓库ID
+                .commitSha(sha1)                         // 提交SHA1值
+                .parentSha(branchPointer.getCommitSha()) // 父提交SHA1值
+                .build();
+
+        // 插入提交图谱索引
+        remoteCommitPointer.insert(commitParent);
+    }
+
+
 }
