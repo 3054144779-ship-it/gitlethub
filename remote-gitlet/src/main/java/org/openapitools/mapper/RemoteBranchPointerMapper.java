@@ -20,5 +20,5 @@ public interface RemoteBranchPointerMapper extends BaseMapper<BranchPointer> {
       * @param id 分支指针id
       * @param sha1 分支指针指向的新的commit的sha1
      */
-    void updateBranchPointer(Long id, String sha1);
+    void updateBranchPointer(Long id, String sha1, Integer version);
 }

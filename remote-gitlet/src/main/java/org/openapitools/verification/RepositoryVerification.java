@@ -32,6 +32,6 @@ public class RepositoryVerification {
         repositoryPaths.getObject().mkdirs();
         repositoryPaths.getCommits().mkdirs();
         repositoryPaths.getBranchDir().mkdirs();
-        Utils.writeContents(repositoryPaths.getHeadFile(), "master");
+//        Utils.writeContents(repositoryPaths.getHeadFile(), "master");
     }
 }

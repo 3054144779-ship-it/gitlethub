@@ -101,7 +101,7 @@ public class FirstStepPushTest {
      * @param collab 协作者
      */
     private void mockCommonDependencies(BranchPointer bp, Collaborator collab) {
-        when(remoteRepositoryMapper.getRepositoryId("alice", "test-repo")).thenReturn(1L);
+        when(remoteRepositoryMapper.getRepositoryId(1L, "test-repo")).thenReturn(1L);
         when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
         when(remoteBranchPointerMapper.getBranchPointer("alice", 1L, "feature")).thenReturn(bp);
         when(remoteCollaboratorMapper.getCollaborator(1L, 1L)).thenReturn(collab);
@@ -120,7 +120,7 @@ public class FirstStepPushTest {
         Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
 
         assertEquals(ResultCode.OK, result.getCode());
-        verify(remoteBranchPointerMapper, times(1)).updateBranchPointer(1L, SHA1);
+        verify(remoteBranchPointerMapper, times(1)).updateBranchPointer(1L, SHA1, 0);
         verify(remoteSubmissionRecordMapper, times(1)).insert(any(SubmissionRecord.class));
         verify(remoteCommitPointerMapper, times(1)).insert(any(CommitParent.class));
     }
@@ -138,7 +138,7 @@ public class FirstStepPushTest {
         Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
 
         assertEquals(ResultCode.BRANCH_PROTECTED, result.getCode());
-        verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString());
+        verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString(), anyInt());
         verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
         verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }
@@ -156,7 +156,7 @@ public class FirstStepPushTest {
         Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
 
         assertEquals(ResultCode.UNAUTHORIZED, result.getCode());
-        verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString());
+        verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString(), anyInt());
         verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
         verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }
@@ -166,7 +166,7 @@ public class FirstStepPushTest {
      */
     @Test
     void pushUpdateBranch_nullCollaborator_returnsUnauthorized() {
-        when(remoteRepositoryMapper.getRepositoryId("alice", "test-repo")).thenReturn(1L);
+        when(remoteRepositoryMapper.getRepositoryId(1L, "test-repo")).thenReturn(1L);
         when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
         BranchPointer bp = buildBranchPointer(false);
         when(remoteBranchPointerMapper.getBranchPointer("alice", 1L, "feature")).thenReturn(bp);
@@ -176,7 +176,7 @@ public class FirstStepPushTest {
         Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
 
         assertEquals(ResultCode.UNAUTHORIZED, result.getCode());
-        verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString());
+        verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString(), anyInt());
         verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
         verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }

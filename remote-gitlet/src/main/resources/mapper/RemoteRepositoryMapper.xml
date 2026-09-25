@@ -4,7 +4,7 @@
     <select id="getRepositoryId" resultType="java.lang.Long">
         SELECT id
         FROM repository
-        WHERE owner = #{owner}
-          AND repo = #{repo}
+        WHERE owner_id = #{ownerId}
+          AND name = #{repo}
     </select>
 </mapper>

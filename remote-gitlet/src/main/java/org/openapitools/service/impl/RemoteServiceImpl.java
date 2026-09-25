@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import common.Result;
 import common.ResultCode;
 import dto.RepositoryCreateDTO;
+import enums.CollaboratorLevelEnum;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.mapper.*;
@@ -141,18 +142,19 @@ public class RemoteServiceImpl implements RemoteService {
 
         String sha1 = refUpdateRequest.getSha();
 
-        // 获取仓库id
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(owner, repo);
         // 获取用户id
         Long userId = remoteUserMapper.getUserId(owner);
+        // 获取仓库id
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
         // 获取分支指针
         BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
         // 获取提交者信息
         Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
-
+        log.info("userId:{}, repositoryId:{}", userId, repositoryId);
         // 检查用户权限
         if (!PermissionValidation.identityVerification(collaborator)) {
             log.warn("用户 {} 没有权限更新分支 {}", owner, branch);
+//            log.info("协作者信息：{}", collaborator.toString());
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
 
@@ -181,12 +183,13 @@ public class RemoteServiceImpl implements RemoteService {
      * @return 强制更新分支的结果
      */
     @Override
+    @Transactional
     public Result<RefView> pushForceUpdateBranch(String owner, String repo,
                                                  String branch, RefUpdateRequest refUpdateRequest) {
-        // 获取仓库id
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(owner, repo);
         // 获取用户id
         Long userId = remoteUserMapper.getUserId(owner);
+        // 获取仓库id
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
         // 获取分支指针
         BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
         // 获取提交者信息
@@ -210,6 +213,7 @@ public class RemoteServiceImpl implements RemoteService {
      * @return 创建仓库的结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Result<ObjectUploadResult> createRemoteRepository(RepositoryCreateDTO repositoryCreateDTO) {
         String owner = repositoryCreateDTO.getOwner();
         String repo = repositoryCreateDTO.getRepo();
@@ -221,8 +225,6 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.REPOSITORY_ALREADY_EXISTS, MsgConstant.THE_WAREHOUSE_ALREADY_EXISTS);
         }
 
-        // 如果仓库不存在则创建仓库
-        RepositoryVerification.createRepository(repositoryPaths);
 
         // 获取当前用户ID(根据用户名字查)
         Long ownerId = remoteUserMapper.getUserId(owner);
@@ -238,6 +240,7 @@ public class RemoteServiceImpl implements RemoteService {
                 .updateTime(LocalDateTime.now())
                 .isDeleted(0)
                 .build();
+
         // 存入到数据库
         remoteRepositoryMapper.insert(repository);
 
@@ -256,6 +259,20 @@ public class RemoteServiceImpl implements RemoteService {
 
         // 插入分支指针
         remoteBranchPointer.insert(branchPointer);
+
+        // 更新用户权限
+        Collaborator collaborator = Collaborator.builder()
+                .repositoryId(repository.getId())
+                .userId(ownerId)
+                .level(CollaboratorLevelEnum.OWNER)
+                .createTime(LocalDateTime.now())
+                .isDeleted(0)
+                .build();
+
+        remoteCollaborator.insert(collaborator);
+
+        // 如果仓库不存在则创建仓库（前边报错则不去创建）
+        RepositoryVerification.createRepository(repositoryPaths);
 
         return Result.ok();
     }
@@ -366,7 +383,7 @@ public class RemoteServiceImpl implements RemoteService {
     private void pushWrite(BranchPointer branchPointer, String sha1, Long repositoryId,
                            Collaborator collaborator, String branch) {
         // 用户权限通过，分支不受保护，更新分支指向提交
-        remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1);
+        remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1, branchPointer.getVersion());
 
         // 创建提交记录
         SubmissionRecord submissionRecord = SubmissionRecord.builder()
