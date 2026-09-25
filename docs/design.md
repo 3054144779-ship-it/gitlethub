@@ -361,6 +361,9 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | objects 存对象存储（S3 / MinIO） | 更易扩容、天然多副本，但本地调试要先起 MinIO，且 `ObjectStore` 现在全是本地文件 API，抽象一层要动整个核心。单机磁盘够用。 |
 | 把 refs 也放进数据库 | 查询方便，但会让远端和本地的存储结构分叉，同一个核心代码要维护两种 refs 读取路径。放磁盘能直接复用 `BranchManager`。 |
 | 用 REST 之外的自定义二进制协议 | 省流量，但丢掉 OpenAPI 带来的代码生成、文档、调试（curl / Postman）全部便利。 |
+| 用户服务用 HS256 | 密钥的对称性，如果泄露会被伪造 |
+| HEAD放入磁盘 | HEAD是可变的，磁盘放入不变的对象，基于“读写与数据生米周期”进行判断 |
+| 创建仓库的时候生成一份init空提交，保证分支存在至少一份存在 | 如果远程创建的时候存在init commit在本地push的时候会出现冲突，需要先pull下来marge在合并，体验会差 |
 
 > 这一节比「做什么」更值得维护：半年后你不会记得为什么当时没选 JGit。
 

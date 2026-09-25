@@ -6,10 +6,7 @@ import common.ResultCode;
 import dto.RepositoryCreateDTO;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.openapitools.mapper.RemoteBranchPointerMapper;
-import org.openapitools.mapper.RemoteCollaboratorMapper;
-import org.openapitools.mapper.RemoteRepositoryMapper;
-import org.openapitools.mapper.RemoteUserMapper;
+import org.openapitools.mapper.*;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
 import org.openapitools.service.RemoteService;
@@ -17,9 +14,8 @@ import org.openapitools.utils.Utils;
 import org.openapitools.verification.BranchVerification;
 import org.openapitools.verification.PermissionValidation;
 import org.openapitools.verification.RepositoryVerification;
-import po.BranchPointer;
-import po.Collaborator;
-import po.Repository;
+import org.springframework.transaction.annotation.Transactional;
+import po.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -51,8 +47,17 @@ public class RemoteServiceImpl implements RemoteService {
     @Autowired
     private RemoteBranchPointerMapper remoteBranchPointer;
 
+    // 远程仓库协作者
     @Autowired
     private RemoteCollaboratorMapper remoteCollaborator;
+
+    // 远程提交指针
+    @Autowired
+    private RemoteCommitPointerMapper remoteCommitPointer;
+
+    // 远程提交记录
+    @Autowired
+    private RemoteSubmissionRecordMapper remoteSubmissionRecordMapper;
 
     /**
      * push 到远程仓库
@@ -128,6 +133,7 @@ public class RemoteServiceImpl implements RemoteService {
      * @return
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Result<RefView> pushUpdateBranch(
             String owner, String repo, String branch, RefUpdateRequest refUpdateRequest) {
 
@@ -150,29 +156,50 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
 
-        // 检查分支是否受保护
-        if (BranchVerification.isProtectedBranch(branchPointer)) {
+        // 检查分支是否受保护，且当前分支有提交记录
+        if (BranchVerification.isProtectedBranch(branchPointer)
+                && branchPointer.getCommitSha() != null) {
             log.warn("分支 {} 是受保护的", branch);
             return Result.fail(ResultCode.BRANCH_PROTECTED, MsgConstant.THE_BRANCH_IS_PROTECTED);
         }
 
+        // 如果没有提交记录就不会进入保护状态，不需要拉取
         log.info("用户 {} 允许更新分支 {}", owner, branch);
         // 用户权限通过，分支不受保护，更新分支指向提交
         remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1);
 
-        // TODO：创建提交记录
-        // TODO：创建提交图谱索引
+        // 创建提交记录
+        SubmissionRecord submissionRecord = SubmissionRecord.builder()
+                .repositoryId(repositoryId)              // 仓库ID
+                .commitSha(sha1)                         // 提交SHA1值
+                .userId(collaborator.getUserId())        // 提交者ID
+                .branchName(branch)                      // 分支名
+                .submitTime(LocalDateTime.now())         // 提交时间
+                .build();
 
+        // 插入提交记录
+        remoteSubmissionRecordMapper.insert(submissionRecord);
+
+        // 创建提交图谱索引
+        CommitParent commitParent = CommitParent.builder()
+                .repositoryId(repositoryId)              // 仓库ID
+                .commitSha(sha1)                         // 提交SHA1值
+                .parentSha(branchPointer.getCommitSha()) // 父提交SHA1值
+                .build();
+
+        // 插入提交图谱索引
+        remoteCommitPointer.insert(commitParent);
 
         return Result.ok();
     }
 
     /**
-     * 强制更新分支
-      * @param owner  (required) 当前仓库的所有者
-      * @param repo  (required) 当前仓库的名称
-      * @param branch  (required) 分支名（如 master）
-      * @param refUpdateRequest  (required) 提交之后远程 commit 的SHA1值
+     * push 到远程仓库
+     * 第一步：强制更新分支
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param branch  (required) 分支名（如 master）
+     * @param refUpdateRequest  (required) 提交之后远程 commit 的SHA1值
      * @return 强制更新分支的结果
      */
     @Override
@@ -193,6 +220,7 @@ public class RemoteServiceImpl implements RemoteService {
 
         return Result.ok();
     }
+
     /**
      * 创建远程仓库
      * @param repositoryCreateDTO  (required) 创建仓库的DTO
@@ -234,7 +262,7 @@ public class RemoteServiceImpl implements RemoteService {
         BranchPointer branchPointer = BranchPointer.builder()
                 .repositoryId(repository.getId())        // 仓库ID
                 .branchName(MsgConstant.MAIN_BRANCH)     // 默认分支名为 master
-                .commitSha(UUID.randomUUID().toString()) // 随机生成的SHA1值，作为初始提交的SHA1值，防止报错
+                .commitSha(null)                         // 随机生成的SHA1值，作为初始提交的SHA1值，防止报错
                 .isDefault(1)                            // 1 表示默认分支，0 表示非默认分支
                 .isProtected(1)                          // 1 表示受保护的分支，0 表示非受保护的分支
                 .version(0)                              // 版本号初始为0
@@ -283,6 +311,8 @@ public class RemoteServiceImpl implements RemoteService {
     public Result<ObjectBundle> pull(String owner, String repo, String since) {
         log.info("拉取 {} / {} 从 {} 开始的提交", owner, repo, since);
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
+
+        // TODO: pull：分支 commit_sha 为 null → 空仓库，返回空。后续更新为数据库操作
 
         // 检查仓库是否存在(不存在则报错)
         if (!RepositoryVerification.repositoryExists(repositoryPaths)) {

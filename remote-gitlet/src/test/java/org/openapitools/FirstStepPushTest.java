@@ -8,7 +8,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.openapitools.mapper.RemoteBranchPointerMapper;
 import org.openapitools.mapper.RemoteCollaboratorMapper;
+import org.openapitools.mapper.RemoteCommitPointerMapper;
 import org.openapitools.mapper.RemoteRepositoryMapper;
+import org.openapitools.mapper.RemoteSubmissionRecordMapper;
 import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.model.RefUpdateRequest;
 import org.openapitools.model.RefView;
@@ -25,6 +27,8 @@ import static org.mockito.Mockito.*;
 
 import po.BranchPointer;
 import po.Collaborator;
+import po.CommitParent;
+import po.SubmissionRecord;
 
 @SpringBootTest
 public class FirstStepPushTest {
@@ -40,6 +44,12 @@ public class FirstStepPushTest {
 
     @MockBean
     private RemoteCollaboratorMapper remoteCollaboratorMapper;
+
+    @MockBean
+    private RemoteSubmissionRecordMapper remoteSubmissionRecordMapper;
+
+    @MockBean
+    private RemoteCommitPointerMapper remoteCommitPointerMapper;
 
     @Autowired
     private RemoteServiceImpl remoteService;
@@ -108,9 +118,11 @@ public class FirstStepPushTest {
 
         RefUpdateRequest req = new RefUpdateRequest(SHA1);
         Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
-//        System.out.println(result);
+
         assertEquals(ResultCode.OK, result.getCode());
         verify(remoteBranchPointerMapper, times(1)).updateBranchPointer(1L, SHA1);
+        verify(remoteSubmissionRecordMapper, times(1)).insert(any(SubmissionRecord.class));
+        verify(remoteCommitPointerMapper, times(1)).insert(any(CommitParent.class));
     }
 
     /**
@@ -127,6 +139,8 @@ public class FirstStepPushTest {
 
         assertEquals(ResultCode.BRANCH_PROTECTED, result.getCode());
         verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString());
+        verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
+        verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }
 
     /**
@@ -143,6 +157,8 @@ public class FirstStepPushTest {
 
         assertEquals(ResultCode.UNAUTHORIZED, result.getCode());
         verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString());
+        verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
+        verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }
 
     /**
@@ -161,5 +177,7 @@ public class FirstStepPushTest {
 
         assertEquals(ResultCode.UNAUTHORIZED, result.getCode());
         verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString());
+        verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
+        verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }
 }

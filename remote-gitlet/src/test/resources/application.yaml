@@ -1,5 +1,6 @@
-# D:\Job_project\gitlethub\remote-gitlet\src\test\resources\application.yaml
 spring:
+  profiles:
+    active: test
   cloud:
     config:
       enabled: false
