@@ -12,8 +12,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 远程 API 客户端：纯 POJO，不依赖 Spring。
@@ -127,6 +130,42 @@ public class RemoteApiClient {
     }
 
     /**
+     * 读取远程分支指向的 SHA 值。
+     * @param owner 远程仓库所有者
+     * @param repo 远程仓库名
+     * @param branch 远程分支名
+     * @return 远程分支指向的 SHA 值，如果读取失败则返回 null
+     */
+    public String getBranchSha(String owner, String repo, String branch) {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/refs/" + branch))
+                .header("Content-Type", "application/json")
+                .GET()
+                .build();
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                /*
+                解析
+                {
+                    "code": 200,
+                    "data": {
+                        "branch": "xxx",
+                        "commitSha": "abc123..."
+                    }
+                }
+                 */
+                String body = response.body();
+                // 提取 commitSha 返回
+                return parseBranchSha(body);
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * 构建对象上传的 JSON（对象中不存在转义，选择手写 JSON 字符串，保证轻量纯库）
      * @param objects 要上传的对象列表
      * @return JSON 字符串
@@ -182,9 +221,81 @@ public class RemoteApiClient {
         if (response.statusCode() != 200) {
             return new PullResult(false, "拉取失败: HTTP " + response.statusCode(), null);
         }
-        // TODO: 解析远程返回的 ObjectBundle（blob/commit 列表）
-        // 这里需要根据远程返回的 JSON 结构反序列化出 Commit 对象
-        return new PullResult(true, "拉取成功", List.of()); // 占位
+
+        String body = response.body();
+
+        // 提取 objects 数组内容
+        String objectsArrayContent = extractJsonArray(body, "objects");
+        if (objectsArrayContent == null) {
+            return new PullResult(true, "远程仓库为空", List.of());
+        }
+
+        // 逐个提取 object：{ "sha1":"...", "type":"...", "content":"..." }
+        List<GitletObject> gitletObjects = new ArrayList<>();
+        Pattern pattern = Pattern.compile(
+                "\"sha1\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"type\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"content\"\\s*:\\s*\"([^\"]+)\""
+        );
+        Matcher matcher = pattern.matcher(objectsArrayContent);
+
+        while (matcher.find()) {
+            String sha1 = matcher.group(1);
+            String type = matcher.group(2);
+            byte[] content = Base64.getDecoder().decode(matcher.group(3));
+
+            GitletObject obj = new GitletObject()
+                    .sha1(sha1)
+                    .type("commit".equals(type) ? GitletObject.TypeEnum.COMMIT : GitletObject.TypeEnum.BLOB)
+                    .content(content);
+            gitletObjects.add(obj);
+        }
+
+        ObjectBundle bundle = new ObjectBundle().objects(gitletObjects);
+        return new PullResult(true, "拉取成功，获取 " + gitletObjects.size() + " 个对象", List.of(bundle));
+    }
+
+    private String extractJsonString(String json, String key) {
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                "\"" + key + "\"\\s*:\\s*\"([^\"]+)\""
+        );
+        java.util.regex.Matcher m = p.matcher(json);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private String extractJsonArray(String json, String key) {
+        int keyIdx = json.indexOf("\"" + key + "\"");
+        if (keyIdx == -1) return null;
+        int bracketStart = json.indexOf("[", keyIdx);
+        if (bracketStart == -1) return null;
+
+        int depth = 0;
+        for (int i = bracketStart; i < json.length(); i++) {
+            if (json.charAt(i) == '[') depth++;
+            else if (json.charAt(i) == ']') {
+                depth--;
+                if (depth == 0) return json.substring(bracketStart, i + 1);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 解析远程返回的远程分支指向 JSON 结果
+     * @param body 远程返回的 JSON 字符串
+     * @return 远程分支指向的 SHA 值
+     * {
+     *     "code": 200,
+     *     "data": {
+     *         "branch": "xxx",
+     *         "commitSha": "abc123..."
+     *     }
+     * }
+     */
+    private String parseBranchSha(String body) {
+        Pattern p = Pattern.compile(
+            "\"commitSha\"\\s*:\\s*\"([^\"]+)\""
+        );
+        Matcher m = p.matcher(body);
+        return m.find() ? m.group(1) : null;
     }
 
 }

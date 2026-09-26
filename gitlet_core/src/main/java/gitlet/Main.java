@@ -9,10 +9,13 @@ import gitlet.handler.CommandHandler;
 import gitlet.handler.MergeHandler;
 import gitlet.handler.StatusHandler;
 import gitlet.remote.RemoteApiClient;
+import gitlet.remote.result.PullResult;
 import gitlet.remote.result.PushResult;
+import gitlet.repository.ObjectStore;
 import gitlet.repository.Repository;
 import gitlet.repository.RepositoryPaths;
 import gitlet.utils.Utils;
+import jakarta.validation.Valid;
 
 import java.io.File;
 import java.net.URI;
@@ -20,9 +23,12 @@ import java.net.URISyntaxException;
 import java.util.*;
 
 /** Gitlet（Git版本控制系统的一个子集）的驱动程序类。
+ *
+ * TODO:仅实现基础功能，高级功能完成后将添加更多功能。
+ *
  */
 public class Main {
-    private static final String baseUrl = "http://127.0.0.1:8081";
+//    private static final String baseUrl = "http://127.0.0.1:8081";
 //    private static final String baseUrl = "http://192.168.12.168:8081";
 
     /** 使用方式：Java gitlet。主ARGS，其中ARGS包含
@@ -121,8 +127,7 @@ public class Main {
                 // 检查仓库是否初始化
                 checkGitLet(repo.getPaths());
 
-                // push 推送的时候需要网关地址
-                RemoteApiClient remoteApiClient = new RemoteApiClient(baseUrl);
+
                 // 获取远程仓库仓库路径
                 // gitlet push origin main => origin = 远程仓库别名
 
@@ -132,6 +137,9 @@ public class Main {
                 String currentOwnerName = remoteConfig.get("owner");
                 String currentRepoName = remoteConfig.get("repo");
                 String branch = Utils.readContentsAsString(repo.getPaths().getHeadFile());
+                String baseUrl = remoteConfig.get("url");
+                // push 推送的时候需要网关地址
+                RemoteApiClient remoteApiClient = new RemoteApiClient(baseUrl);
                 // 获取当前用户在当前仓库的当前分支的 SHA-1 值
                 String currentBranchSha = Utils.readContentsAsString(
                         Utils.join(repo.getPaths().getBranchDir(), branch));
@@ -170,7 +178,7 @@ public class Main {
                 PushResult pushResult2 = remoteApiClient.updateBranch(
                         currentOwnerName, currentRepoName, branch, currentBranchSha, remoteTackingSha);
 
-                // 获取网关返回结果，判断推送成功或失败
+                // 获取网关返回结果，判断推送成功或失败。TODO：此处没能正常执行
                 if (pushResult1.isSuccess() && pushResult2.isSuccess()) {
                     // 更新 remote tracing ref:记录本次推送的SHA
                     File tracking = Utils.join(repo.getPaths().getRemotePushBranchDir(), currentOwnerName, branch);
@@ -181,6 +189,8 @@ public class Main {
                 }
                 break;
             case "remote":
+                // 检测仓库是否初始化
+                checkGitLet(repo.getPaths());
                 // gitlet remote add [远程仓库地址]（http://192.168.12.168:8080/api/repos/{owner}/{repo}）
                 // TODO:后续要加远程仓库地址的判断，比如发请求是否返回请求之类的
                 if (args.length == 3) {
@@ -197,9 +207,9 @@ public class Main {
 
                         // 示例：http://192.168.12.168:8080 or http://www.gitlethub.com
                         // 构建基础 URL（不含 owner/repo）
-                        String baseUrl = uri.getScheme() + "://" + uri.getHost();
+                        String remoteBaseUrl = uri.getScheme() + "://" + uri.getHost();
                         if (uri.getPort() != -1) {
-                            baseUrl += ":" + uri.getPort();
+                            remoteBaseUrl += ":" + uri.getPort();
                         }
 
                         /*
@@ -210,7 +220,7 @@ public class Main {
                         * defaultBranch = master
                         * */
                         String content = String.format("url=%s\nowner=%s\nrepo=%s\ndefaultBranch=master\n",
-                                baseUrl, ownerName, repoName);
+                                remoteBaseUrl, ownerName, repoName);
                         // 写入远程仓库配置文件
                         Utils.writeContents(Utils.join(repoPaths.getRemoteFile(), "origin"), content);
 
@@ -239,9 +249,9 @@ public class Main {
 
                         // 示例：http://192.168.12.168:8080 or http://www.gitlethub.com
                         // 构建基础 URL（不含 owner/repo）
-                        String baseUrl = uri.getScheme() + "://" + uri.getHost();
+                        String remoteBaseUrl = uri.getScheme() + "://" + uri.getHost();
                         if (uri.getPort() != -1) {
-                            baseUrl += ":" + uri.getPort();
+                            remoteBaseUrl += ":" + uri.getPort();
                         }
 
                         /*
@@ -252,7 +262,7 @@ public class Main {
                          * defaultBranch = master
                          * */
                         String content = String.format("url=%s\nowner=%s\nrepo=%s\ndefaultBranch=master\n",
-                                baseUrl, ownerName, repoName);
+                                remoteBaseUrl, ownerName, repoName);
                         // 写入远程仓库配置文件
                         Utils.writeContents(repoPaths.getRemoteFile(), remoteName, content);
 
@@ -263,6 +273,87 @@ public class Main {
                 } else {
                     validateNumArgs("remote", args, 0);
                 }
+                break;
+            case "pull":
+                // 检测仓库是否初始化
+                checkGitLet(repo.getPaths());
+
+                // gitlet pull
+                // gitlet pull [远程仓库别名] [远程分支名称]
+                String pullRemote = args.length >= 2 ? args[1] : "origin";
+                String pullBranch = args.length >= 3 ? args[2]
+                        : Utils.readContentsAsString(repo.getPaths().getHeadFile());
+                Map<String, String> config = RepositoryPaths.parseRemoteFile(
+                        Utils.join(repo.getPaths().getRemoteFile(), pullRemote));
+
+                String pullOwner = config.get("owner");
+                String pullRepo = config.get("repo");
+                String pullBase = config.get("url");
+                RemoteApiClient remoteClient = new RemoteApiClient(pullBase);
+
+                // 2. 获取远程分支当前 SHA
+                String remoteBranchSha = remoteClient.getBranchSha(pullOwner, pullRepo, pullBranch);
+                if (remoteBranchSha == null) {
+                    Utils.message("Remote branch not found or repository is empty.");
+                    throw new RuntimeException("Remote branch not found or repository is empty.");
+                }
+
+                // 3. 对比本地，决定是否拉取
+                File branchFileToCommit = Utils.join(repo.getPaths().getBranchDir(),
+                        Utils.readContentsAsString(repo.getPaths().getHeadFile()));
+                String currentBranchSha1 = Utils.readContentsAsString(branchFileToCommit);
+                if (remoteBranchSha.equals(currentBranchSha1)) {
+                    // 已经是最新的
+                    Utils.message("Already up to date.");
+                    break;
+                }
+
+                // 4. 拉对象并写入本地
+                PullResult pullResult = remoteClient.pullObjects(pullOwner, pullRepo, currentBranchSha1);
+                if (!pullResult.isSuccess()) {
+                    // 拉取失败
+                    Utils.message("Pull failed.");
+                    throw new RuntimeException("Pull failed.");
+                }
+
+                // 拉取成功
+                List<ObjectBundle> commits = pullResult.getCommits();
+                commits.forEach(object -> {
+                    List<@Valid GitletObject> objects = object.getObjects();
+                    objects.forEach(gitletObject -> {
+                        if (gitletObject.getType().equals(GitletObject.TypeEnum.COMMIT)) {
+                            // 如果是提交的话则写入
+                            File commit = Utils.join(repo.getPaths().getCommits(), gitletObject.getSha1());
+                            // 只有文件不存在的时候才写入
+                            if (!commit.exists()) {
+                                Utils.writeContents(commit, (Object) gitletObject.getContent());
+                            }
+                        } else {
+                            // 如果是Blob的话则写入
+                            File blob = Utils.join(repo.getPaths().getObject(), gitletObject.getSha1());
+                            // 只有文件不存在的时候才写入
+                            if (!blob.exists()) {
+                                Utils.writeContents(blob, (Object) gitletObject.getContent());
+                            }
+                        }
+                    });
+                });
+
+                // 5. 更新本地分支指针 + tracking ref(远程跟踪分支)
+                Utils.writeContents(branchFileToCommit, remoteBranchSha);
+                // 更新远程跟踪分支指针
+                File tracking = Utils.join(repo.getPaths().getRemotePushBranchDir(), pullRemote, pullBranch);
+                Utils.writeContents(tracking, remoteBranchSha);
+
+                // 6. 如果是当前分支，更新工作目录
+                String currentBranch = Utils.readContentsAsString(repo.getPaths().getHeadFile());
+                if (currentBranch.equals(pullBranch)) {
+                    Commit headCommit = Utils.readObject(
+                            Utils.join(repo.getPaths().getCommits(), remoteBranchSha), Commit.class);
+                    ObjectStore objects = repo.getObjects();
+                    headCommit.getTrackedFiles().forEach(objects::overwriteFile);
+                }
+
                 break;
             default:
                 // 不存在的指令
