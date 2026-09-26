@@ -1,7 +1,6 @@
 package gitlet;
 
 
-import cn.hutool.core.collection.CollUtil;
 import gitlet.bo.GitletObject;
 import gitlet.bo.ObjectBundle;
 import gitlet.commit.Commit;
@@ -14,15 +13,10 @@ import gitlet.remote.result.PushResult;
 import gitlet.repository.Repository;
 import gitlet.repository.RepositoryPaths;
 import gitlet.utils.Utils;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import java.io.File;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URL;
-import java.sql.Blob;
 import java.util.*;
 
 /** Gitlet（Git版本控制系统的一个子集）的驱动程序类。
