@@ -20,6 +20,17 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /** 合并逻辑：三路合并、最近公共祖先（LCA）查找、冲突生成。 */
+// TODO(后续更新，待 AI 服务 + PR 逻辑打通后一起做)：
+//  当前 merge/getLCA 均以「本地具名分支名」为入参，只能合并 branchDir 里已存在的分支。
+//  而 pull(fetch+merge) 与 PR 需要合并的是一个「游离的 commit SHA」
+//  （远程 tracking ref / PR 源分支），它在本地并非具名分支。
+//  计划改造：抽出按 SHA 合并的内核 ——
+//    mergeBySha(String givenSha, String givenLabel)  // 三路合并 + 冲突 + 生成合并提交
+//    getLcaBySha(String givenSha)                    // LCA 也提供 SHA 重载
+//  让现有 merge(branchName) 委托到 mergeBySha，从而：
+//    1) pull 分叉时自动 merge 远程 SHA（而非现在的直接拒绝）；
+//    2) PR 合并源分支 SHA 到目标分支，复用同一套冲突处理。
+//  一次改造，pull 与 PR 共用，避免重复实现三路合并。
 public class MergeHandler {
     /** 本次操作针对的仓库 */
     private final Repository repo;

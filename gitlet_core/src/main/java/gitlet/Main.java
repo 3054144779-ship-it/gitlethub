@@ -342,6 +342,8 @@ public class Main {
                     });
                 });
 
+                // TODO: 后续将此处修改为 merge 逻辑, 此时是默认远程比当前分支新
+
                 // 5. 更新本地分支指针 + tracking ref(远程跟踪分支)
                 Utils.writeContents(branchFileToCommit, remoteBranchSha);
                 // 更新远程跟踪分支指针
