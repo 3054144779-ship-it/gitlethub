@@ -2,18 +2,16 @@ package gitlet.remote;
 
 import gitlet.bo.GitletObject;
 import gitlet.bo.ObjectBundle;
+import gitlet.remote.result.PullResult;
+import gitlet.remote.result.PushResult;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import gitlet.utils.Utils;
-import gitlet.commit.Commit;
-import gitlet.remote.result.PushResult;
-import gitlet.remote.result.PullResult;
 
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.net.http.HttpClient;
 import java.util.Base64;
 import java.util.List;
 
@@ -37,7 +35,7 @@ public class RemoteApiClient {
 
     /**
      * 推送对象（blobs + commits）到远程。
-     * POST /api/remote/{owner}/{repo}/objects
+     * POST /api/repos/{owner}/{repo}/objects
      */
     public PushResult pushObjects(String owner, String repo, ObjectBundle objects) {
         // 构造JSON：把每个commit的SHA + 内容（base64）打包\
@@ -58,7 +56,7 @@ public class RemoteApiClient {
         String json = buildObjectUploadJson(objects);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/remote/" + owner + "/" + repo + "/objects"))
+                .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/objects"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
@@ -69,7 +67,7 @@ public class RemoteApiClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             return parsePushResult(response);
         } catch (Exception e) {
-            log.info("推送失败: {}", e.getMessage());
+            log.error("推送失败", e);
             return new PushResult(false, "推送失败: " + e.getMessage());
         }
     }
@@ -77,7 +75,7 @@ public class RemoteApiClient {
 
     /**
      * 更新远程分支指向。
-     * POST /api/remote/{owner}/{repo}/refs/heads/{branch}
+     * POST /api/repos/{owner}/{repo}/refs/heads/{branch}
      * @param expectedOldSha：本地认为远程现在指向哪
      */
     public PushResult updateBranch(String owner, String repo, String branch,
@@ -90,7 +88,7 @@ public class RemoteApiClient {
         );
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/remote/" + owner + "/" + repo + "/refs/heads/" + branch))
+                .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/refs/heads/" + branch))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
@@ -105,10 +103,10 @@ public class RemoteApiClient {
 
     /**
      * 从远程拉取对象（全量或增量）。
-     * GET /api/remote/{owner}/{repo}/pull?since={commitSha}
+     * GET /api/repos/{owner}/{repo}/pull?since={commitSha}
      */
     public PullResult pullObjects(String owner, String repo, String sinceCommitSha) {
-        String url = baseUrl + "/api/remote/" + owner + "/" + repo + "/pull";
+        String url = baseUrl + "/api/repos/" + owner + "/" + repo + "/pull";
         if (sinceCommitSha != null && !sinceCommitSha.isEmpty()) {
             url += "?since=" + sinceCommitSha;
         }
@@ -144,6 +142,10 @@ public class RemoteApiClient {
             // 确保 gitletObject 的内容是 byte[] 类型
             byte[] bytes = gitletObject.getContent();
             String sha = gitletObject.getSha1();
+            if (bytes == null) {
+                log.warn("对象 {} 的内容为 null，跳过", sha);
+                continue;
+            }
             String base64 = Base64.getEncoder().encodeToString(bytes);
             GitletObject.TypeEnum type = gitletObject.getType();
             sb.append(String.format(

@@ -22,7 +22,8 @@ import java.util.*;
 /** Gitlet（Git版本控制系统的一个子集）的驱动程序类。
  */
 public class Main {
-    private static final String baseUrl = "http://192.168.12.168:8080";
+    private static final String baseUrl = "http://127.0.0.1:8081";
+//    private static final String baseUrl = "http://192.168.12.168:8081";
 
     /** 使用方式：Java gitlet。主ARGS，其中ARGS包含
      *  <COMMAND> <OPERAND1> <OPERAND2> ...
@@ -125,7 +126,7 @@ public class Main {
                 // 获取远程仓库仓库路径
                 // gitlet push origin main => origin = 远程仓库别名
 
-                File remoteFile = repo.getPaths().getRemoteFile();
+                File remoteFile = Utils.join(repo.getPaths().getRemoteFile(), args[1]);
                 // 解析remoteFile
                 Map<String, String> remoteConfig = RepositoryPaths.parseRemoteFile(remoteFile);
                 String currentOwnerName = remoteConfig.get("owner");
@@ -147,7 +148,7 @@ public class Main {
 
                 // 创建 commit GitletObject 列表
                 List<GitletObject> commitGitletObjects = commitsToPush.stream()
-                        .map(commit -> new GitletObject().sha1(Utils.sha1(commit))
+                        .map(commit -> new GitletObject().sha1(Utils.sha1((Object) Utils.serialize(commit)))
                                 .type(GitletObject.TypeEnum.COMMIT).content(Utils.serialize(commit))).toList();
 
                 // 创建 blob GitletObject 列表
@@ -182,12 +183,12 @@ public class Main {
             case "remote":
                 // gitlet remote add [远程仓库地址]（http://192.168.12.168:8080/api/repos/{owner}/{repo}）
                 // TODO:后续要加远程仓库地址的判断，比如发请求是否返回请求之类的
-                if (args.length == 4) {
+                if (args.length == 3) {
                     // gitlet remote add [远程仓库地址]（http://192.168.12.168:8080/api/repos/{owner}/{repo}）
                     // 默认别名是origin
                     try {
                         RepositoryPaths repoPaths = repo.getPaths();
-                        URI uri = new URI(args[3]);
+                        URI uri = new URI(args[2]);
                         String path = uri.getPath();
                         String[] parts = path.split("/");
 
@@ -211,18 +212,18 @@ public class Main {
                         String content = String.format("url=%s\nowner=%s\nrepo=%s\ndefaultBranch=master\n",
                                 baseUrl, ownerName, repoName);
                         // 写入远程仓库配置文件
-                        Utils.writeContents(repoPaths.getRemoteFile(), "origin", content);
+                        Utils.writeContents(Utils.join(repoPaths.getRemoteFile(), "origin"), content);
 
                     } catch (URISyntaxException e) {
                         Utils.message("Invalid URL.");
                         throw new RuntimeException(e);
                     }
-                } else if (args.length == 5) {
+                } else if (args.length == 4) {
                     // gitlet remote add [远程仓库别名] [远程仓库地址]（http://192.168.12.168:8080/api/repos/{owner}/{repo}）
                     try {
                         RepositoryPaths repoPaths = repo.getPaths();
-                        URI uri = new URI(args[4]);
-                        String remoteName = args[3];
+                        URI uri = new URI(args[3]);
+                        String remoteName = args[2];
 
                         // 检查远程仓库名称是否已存在
                         if (new File(repoPaths.getRemoteFile(), remoteName).exists()) {
