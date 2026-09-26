@@ -78,7 +78,6 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_SUBMITTED_FILE_CANNOT_BE_EMPTY);
         }
 
-        // ---------------------------- 新增 ----------------------------
         // 获取用户id
         Long userId = remoteUserMapper.getUserId(owner);
         // 获取仓库id
@@ -91,7 +90,6 @@ public class RemoteServiceImpl implements RemoteService {
             log.warn("用户 {} 没有权限更新分支", owner);
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
-        // -------------------------------------------------------------
 
         // 创建仓库路径对象
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
@@ -185,6 +183,24 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
 
+        // 分支不存在则创建：支持推送到新分支（如 dev/feature），不再只限于建库时的 master。
+        // 放在权限校验之后（无权用户不能建分支）、非快进校验之前（保证 branchPointer 非 null）。
+        if (branchPointer == null) {
+            branchPointer = BranchPointer.builder()
+                    .repositoryId(repositoryId)
+                    .branchName(branch)
+                    .commitSha(null)              // 新分支暂无指向，随后 pushWrite 会写入本次 sha
+                    .isDefault(0)                 // 非默认分支
+                    .isProtected(0)               // 新分支默认不受保护，可直推
+                    .version(0)                   // 乐观锁版本从 0 开始
+                    .updateTime(LocalDateTime.now())
+                    .isDeleted(0)
+                    .isForcePush(0)
+                    .build();
+            remoteBranchPointer.insert(branchPointer);   // insert 后 MyBatis-Plus 回填自增 id
+            log.info("分支 {} 不存在，已创建新分支指针 id={}", branch, branchPointer.getId());
+        }
+
         // 客户端非快进校验：若传了期望的旧指向，必须与服务端当前指向一致
         if (!VersionStatusVerification.nonFastForwardCheck(refUpdateRequest, branchPointer)) {
             return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
@@ -234,14 +250,18 @@ public class RemoteServiceImpl implements RemoteService {
         // 获取提交者信息
         Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
 
-        // ---------------------------- 新增 ----------------------------
+        // 强制推送只针对已存在的分支；分支不存在直接报错（新分支请用普通 push 创建）
+        if (branchPointer == null) {
+            log.warn("强制推送失败：分支 {} 不存在", branch);
+            return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
+        }
+
         // 检查用户权限
         if (!PermissionValidation.identityVerification(collaborator)) {
             log.warn("用户 {} 没有权限更新分支 {}", owner, branch);
 //            log.info("协作者信息：{}", collaborator.toString());
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
-        // -------------------------------------------------------------
         // 检查是否允许强制推送
         if (!BranchVerification.isForcePushAllowed(branchPointer)) {
             // 不允许强制推送
@@ -367,8 +387,6 @@ public class RemoteServiceImpl implements RemoteService {
     public Result<ObjectBundle> pull(String owner, String repo, String since) {
         log.info("拉取 {} / {} 从 {} 开始的提交", owner, repo, since);
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
-
-        // TODO: pull：分支 commit_sha 为 null → 空仓库，返回空。后续更新为数据库操作（可能不需要）
 
         // 检查仓库是否存在(不存在则报错)
         if (!RepositoryVerification.repositoryExists(repositoryPaths)) {
