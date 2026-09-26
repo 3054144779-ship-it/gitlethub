@@ -190,15 +190,17 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
         }
 
-        // 检查分支是否受保护，且当前分支有提交记录
-        if (BranchVerification.isProtectedBranch(branchPointer)
-                && branchPointer.getCommitSha() != null) {
-            log.warn("分支 {} 是受保护的", branch);
-            return Result.fail(ResultCode.BRANCH_PROTECTED, MsgConstant.THE_BRANCH_IS_PROTECTED);
-        }
-
         // 如果没有提交记录就不会进入保护状态，不需要拉取
         log.info("用户 {} 允许更新分支 {}", owner, branch);
+
+        // 分支保护：受保护分支且已有历史时，禁止直接 push（须走 PR 流程）。
+        // 例外：仓库 OWNER 可绕过（对应设计中的 bypass 白名单）。
+        if (!collaborator.getLevel().equals(CollaboratorLevelEnum.OWNER)
+                && BranchVerification.isProtectedBranch(branchPointer)
+                && branchPointer.getCommitSha() != null) {
+            log.warn("分支 {} 受保护，且用户 {} 非 OWNER，拒绝直接推送", branch, owner);
+            return Result.fail(ResultCode.BRANCH_PROTECTED, MsgConstant.THE_BRANCH_IS_PROTECTED);
+        }
 
         // 用户权限通过，分支不受保护，更新分支指向提交
         if (!pushWrite(branchPointer, sha1, repositoryId, collaborator, branch)) {
