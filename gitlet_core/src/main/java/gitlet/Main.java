@@ -16,6 +16,7 @@ import gitlet.repository.Repository;
 import gitlet.repository.RepositoryPaths;
 import gitlet.utils.Utils;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.net.URI;
@@ -27,6 +28,7 @@ import java.util.*;
  * TODO:仅实现基础功能，高级功能完成后将添加更多功能。
  *
  */
+@Slf4j
 public class Main {
 //    private static final String baseUrl = "http://127.0.0.1:8081";
 //    private static final String baseUrl = "http://192.168.12.168:8081";
@@ -137,7 +139,7 @@ public class Main {
                 String currentOwnerName = remoteConfig.get("owner");
                 String currentRepoName = remoteConfig.get("repo");
                 String branch = Utils.readContentsAsString(repo.getPaths().getHeadFile());
-                String baseUrl = remoteConfig.get("url");
+                String baseUrl = remoteConfig.get("baseUrl");
                 // push 推送的时候需要网关地址
                 RemoteApiClient remoteApiClient = new RemoteApiClient(baseUrl);
                 // 获取当前用户在当前仓库的当前分支的 SHA-1 值
@@ -171,6 +173,7 @@ public class Main {
 
                 // 创建 ObjectBundle 对象
                 ObjectBundle objectBundle = new ObjectBundle().objects(fileList);
+                log.info("objectBundle: {}", objectBundle);
 
                 // 发起请求，申请文件存储
                 PushResult pushResult1 = remoteApiClient.pushObjects(currentOwnerName, currentRepoName, objectBundle);
@@ -288,7 +291,7 @@ public class Main {
 
                 String pullOwner = config.get("owner");
                 String pullRepo = config.get("repo");
-                String pullBase = config.get("url");
+                String pullBase = config.get("baseUrl");
                 RemoteApiClient remoteClient = new RemoteApiClient(pullBase);
 
                 // 2. 获取远程分支当前 SHA
@@ -389,18 +392,19 @@ public class Main {
                 Utils.readContentsAsString(repo.getPaths().getHeadFile()));
         String currentCommitSha = Utils.readContentsAsString(headBranchFile);
         // 获取当前 commit
-        Commit commit = Utils.readObject(Utils.join(commits, currentCommitSha), Commit.class);
         // 创建一个列表来存储 commit
         List<Commit> commitObjects = new ArrayList<>();
 
         // 遍历 commit，直到遇到远程已有的 commit
-        while (commit != null
-                && (remoteTackingSha == null || !commit.getParent().equals(remoteTackingSha))) {
-            commitObjects.add(commit);
-            if (commit.getParent() == null) {
+        while (currentCommitSha != null && !currentCommitSha.equals(remoteTackingSha)) {
+            Commit commit = Utils.readObject(Utils.join(commits, currentCommitSha), Commit.class);
+
+            if (commit== null) {
                 break;
             }
-            commit = Utils.readObject(Utils.join(commits, commit.getParent()), Commit.class);
+
+            commitObjects.add(commit);
+            currentCommitSha = commit.getParent();
         }
 
         return commitObjects;

@@ -84,11 +84,12 @@ public class RemoteApiClient {
     public PushResult updateBranch(String owner, String repo, String branch,
                                    String newSha, String expectedOldSha) {
         // 构造 JSON：{ "sha": "xxx", "expectedOldSha": "yyy" }
-        String json = String.format(
-                "{\"sha\":\"%s\",\"expectedOldSha\":\"%s\"}",
-                newSha,
-                expectedOldSha != null ? expectedOldSha : ""
-        );
+        // 有 tracking 才带 expectedOldSha（做非快进校验）；首次推送省略该字段，让服务端放行。
+        // 不然如果, expectedOldSha 为 null 会被非快进校验进行校验, 导致找不到null这个提交。
+
+        String json = expectedOldSha != null
+                ? String.format("{\"sha\":\"%s\",\"expectedOldSha\":\"%s\"}", newSha, expectedOldSha)
+                : String.format("{\"sha\":\"%s\"}", newSha);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/refs/" + branch))
@@ -207,13 +208,31 @@ public class RemoteApiClient {
     private PushResult parsePushResult(HttpResponse<String> response) {
         // 解析远程返回的 JSON：{"code":200,"message":"ok"} 或 {"code":50001,"message":"冲突"}
         // 简化版：只看 HTTP 状态码
-        if (response.statusCode() == 200) {
-            return new PushResult(true, "推送成功");
-        } else {
-            return new PushResult(false, "推送失败: HTTP " + response.statusCode() + " - " + response.body());
+        if (response.statusCode() != 200) {
+            return new PushResult(false,
+                    "推送失败: HTTP " + response.statusCode() + " - " + response.body());
         }
+
+        String body= response.body();
+        Integer code = extractJsonInt(body, "code");
+        if (code != null && code == 0) {
+            return new PushResult(true, "推送成功");
+        }
+
+        return new PushResult(false, "推送失败: code=" + code + ", " +
+                "message=" + extractJsonString(body, "message"));
     }
 
+    /**
+     * 从 JSON 中提取状态码
+     * @param json JSON 字符串
+     * @param key JSON 中的键
+     * @return 提取的整数值，如果未找到则返回 null
+     */
+    private Integer extractJsonInt(String json, String key) {
+        Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+)").matcher(json);
+        return m.find() ? Integer.parseInt(m.group(1)) : null;
+    }
     /**
      * 解析远程返回的拉取结果
      * @param response 远程返回的响应

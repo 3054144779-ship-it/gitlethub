@@ -499,3 +499,155 @@ pull操作获取远程仓库指向的SHA1值为null
 ​	猜测：初始的master分支默认指向commit为null，因为远程0提交。
 
 ​	实际：请求路径写错了
+
+问题：
+
+服务端当前 null 为什么我第一次push会告诉我提交 59681dde65ac4b9f2c3d0508a789217bcc5e3bfd 不存在于对象储存，文件不会上传但是第二次push告诉我非快进推送被拒绝：期望旧指向 59681dde65ac4b9f2c3d0508a789217bcc5e3bfd，服务端当前 null，文件正常上传？正常流程应该是直接上传不会报错的
+
+解决：
+
+这两次 push 的日志信息量很大,而且暴露了两个不同的问题。在下结论前,我要先看两段真实代码——`collectCommitsToPush`(为什么第一次收集到空对象)和 `nonFastForwardCheck`(为什么第二次判成非快进)。不猜,直接看。
+
+全部代码到手,根因清楚了。你这两次报错其实是**两个不同的 bug 叠加**,而且第二次是第一次的"后遗症"。让我先确认一个关键值——服务端 `Result` 成功时的 code 到底是几,这决定第二个修复怎么写。
+
+`ResultCode.OK = 0` 确认了——成功是 `{"code":0,...}`,失败是 `{"code":10002,...}`,但**两种情况 HTTP 状态码都是 200**(服务端用 `ResponseEntity.ok` 包装)。这正是第二个 bug 的关键。
+
+我把两次 push 的完整链路还原出来了,你的直觉"分支没更新"是对的,但真相比这更精彩——**两个 bug 串在一起,第二次的错是第一次埋的雷**。
+
+## 第一次 push:为什么"提交不存在于对象储存"
+
+看日志第一行:`上传对象 []` —— **客户端一个对象都没传**。根因在 `collectCommitsToPush`(Main.java L386):
+
+```java
+while (commit != null
+        && (remoteTackingSha == null || !commit.getParent().equals(remoteTackingSha))) {
+    commitObjects.add(commit);
+    ...
+}
+```
+
+它拿**当前 commit 的父提交**去和 tracking 比,而不是拿**当前 commit 自己**比。你的状态是:
+- HEAD = `59681dde`,它的 parent = `5dceb81d`
+- tracking(远程已有)= `5dceb81d`
+
+循环第一步就判断 `!59681dde.getParent().equals(5dceb81d)` → parent 正好等于 tracking → `!true` = false → **循环一次都没进,直接返回空列表**。
+
+于是服务端收到空对象,`59681dde` 从没被上传。接着 `updateBranch` 让 master 指向 `59681dde`,服务端的守卫检查"这个 commit 在我对象库里吗?"→ 不在 → **SHA1_MISMATCH「提交不存在于对象储存」**。
+
+## 第二次 push:为什么"非快进被拒绝",但文件却传上去了
+
+关键问题:**两次 push 之间,tracking ref 被悄悄改成了 `59681dde`**(第二次日志里 `expectedOldSha: 59681dde`,和 newSha 一样)。谁改的?—— 第一次 push 改的,因为它**误判成功了**。
+
+看 `parsePushResult`(RemoteApiClient L205):
+
+```java
+if (response.statusCode() == 200) {
+    return new PushResult(true, "推送成功");   // 只看 HTTP 状态码!
+}
+```
+
+服务端就算业务失败(`Result.fail(10002)`),也是用 `ResponseEntity.ok(...)` 返回,**HTTP 状态码依然是 200**。所以客户端把"SHA1_MISMATCH 失败"当成了"成功",于是:
+
+```java
+if (pushResult1.isSuccess() && pushResult2.isSuccess()) {   // 两个都误判为 true
+    Utils.writeContents(tracking, currentBranchSha);        // 把 tracking 写成 59681dde
+    Utils.message("Push successful.");                       // 还打印了"成功"(假的)
+}
+```
+
+**tracking 被污染成 `59681dde`**,而服务端的 `commit_sha` 其实还是 null(第一次更新根本没成功)。
+
+第二次 push 时:
+1. tracking = `59681dde` = HEAD。`collectCommitsToPush(since=59681dde)`:因为**没有任何 commit 的 parent 是 `59681dde`**(它是最顶端),那个"比父提交"的条件永远为真 → **一路收集到初始提交,全量上传**(所以这次 6 个 commit + 5 个 blob 全传了,只有 `59681dde` 是新的,其余"已存在跳过")。
+2. `updateBranch(newSha=59681dde, expectedOldSha=59681dde)`。服务端 `nonFastForwardCheck`:期望旧指向 `59681dde`,但服务端当前是 `null` → 不相等 → **非快进拒绝**。
+
+一句话总结:**第一次的"假成功"污染了 tracking,导致第二次带着错误的 expectedOldSha 去撞服务端真实的 null。**
+
+## 三个修复
+
+### 修复 A:`collectCommitsToPush` 应该比"自己的 sha",不是"父提交"
+
+正确语义:从 HEAD 往回收集,**遇到远程已有的那个 commit(tracking)就停,且不包含它**。
+
+```java|CODE_EDIT_BLOCK|D:\Job_project\gitlethub\gitlet_core\src\main\java\gitlet\Main.java
+    private static List<Commit> collectCommitsToPush(Repository repo, String remoteTackingSha) {
+        File commits = repo.getPaths().getCommits();
+        File headBranchFile = Utils.join(repo.getPaths().getBranchDir(),
+                Utils.readContentsAsString(repo.getPaths().getHeadFile()));
+        String currentCommitSha = Utils.readContentsAsString(headBranchFile);
+
+        List<Commit> commitObjects = new ArrayList<>();
+        String sha = currentCommitSha;
+        // 从 HEAD 往回走：只要当前 commit 不是"远程已有的那个"就收集它，再移到父提交。
+        // remoteTackingSha 为 null（首次推送）时会一直收集到初始提交（parent 为 null 时 sha 变 null，循环自然结束）。
+        while (sha != null && !sha.equals(remoteTackingSha)) {
+            Commit commit = Utils.readObject(Utils.join(commits, sha), Commit.class);
+            if (commit == null) {
+                break;
+            }
+            commitObjects.add(commit);
+            sha = commit.getParent();
+        }
+        return commitObjects;
+    }
+```
+
+改完后第一次 push:`sha=59681dde != 5dceb81d` → 收集它 → `sha=parent=5dceb81d == tracking` → 停。返回 `[59681dde]`,只传这一个新提交。✅
+
+### 修复 B:`parsePushResult` 必须看业务 code,不能只看 HTTP 状态码
+
+```java|CODE_EDIT_BLOCK|D:\Job_project\gitlethub\gitlet_core\src\main\java\gitlet\remote\RemoteApiClient.java
+    private PushResult parsePushResult(HttpResponse<String> response) {
+        // HTTP 非 200：网络/路由层就失败了
+        if (response.statusCode() != 200) {
+            return new PushResult(false, "推送失败: HTTP " + response.statusCode() + " - " + response.body());
+        }
+        // HTTP 200 只代表请求送达，业务成功与否要看 body 里的 code（ResultCode.OK = 0）
+        String body = response.body();
+        Integer code = extractJsonInt(body, "code");
+        if (code != null && code == 0) {
+            return new PushResult(true, "推送成功");
+        }
+        return new PushResult(false, "推送失败: code=" + code + ", message=" + extractJsonString(body, "message"));
+    }
+
+    private Integer extractJsonInt(String json, String key) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"" + key + "\"\\s*:\\s*(-?\\d+)").matcher(json);
+        return m.find() ? Integer.parseInt(m.group(1)) : null;
+    }
+```
+
+（`extractJsonString` 你文件里已经有了,直接复用。）这样第一次 push 的 `updateBranch` 会如实返回 `success=false` → **不再写 tracking、不再假报"Push successful"** → 雷不会被埋下。
+
+### 修复 C:首次推送时不要发空的 `expectedOldSha`
+
+现在的代码在 tracking 为 null 时会发 `"expectedOldSha":""`。服务端 `nonFastForwardCheck` 里 `"".equals(null)` 为 false → 会把"真·首次推送到空分支"也判成冲突。应该在没有 tracking 时**直接省略这个字段**,让服务端 `JsonNullable` 处于 undefined,校验自然放行:
+
+```java|CODE_EDIT_BLOCK|D:\Job_project\gitlethub\gitlet_core\src\main\java\gitlet\remote\RemoteApiClient.java
+    public PushResult updateBranch(String owner, String repo, String branch,
+                                   String newSha, String expectedOldSha) {
+        // 有 tracking 才带 expectedOldSha（做非快进校验）；首次推送省略该字段，让服务端放行
+        String json = expectedOldSha != null
+                ? String.format("{\"sha\":\"%s\",\"expectedOldSha\":\"%s\"}", newSha, expectedOldSha)
+                : String.format("{\"sha\":\"%s\"}", newSha);
+        // ... existing code ...
+    }
+```
+
+## 你现在的仓库状态已经"脏"了,要先修数据
+
+代码改完还不够,因为你当前:本地 tracking = `59681dde`(错的),服务端 `commit_sha` = null(但对象已上传)。直接再 push 还是会非快进拒绝。恢复步骤:
+
+1. **删掉本地 tracking 文件**:`.gitlet/refs/remotes/{owner}/master`(让它回到 null)。
+2. 重新 `push`:
+   - 修复 A → tracking=null,全量收集,对象都已存在会跳过;
+   - 修复 C → 省略 expectedOldSha → 服务端 null 分支放行 → `commit_sha` 终于被设成 `59681dde`;
+   - 修复 B → 真成功才写 tracking = `59681dde`,这次是真的对上了。
+3. 之后 `pull`,`getBranchSha` 就能读到 `59681dde` 而不是 null 了。
+
+---
+
+回到你上一个问题的主题——**这次日志就是最好的 debug 教材**。你如果只盯着"非快进被拒绝"那一行去改 `nonFastForwardCheck`,就修错地方了(那个校验本身没错,是喂给它的数据被污染了)。真正的线索藏在**第一次 push 的 `上传对象 []` 和那句 WARN** 里。所以下次遇到"第二次才爆的错",记得往前翻**上一次操作的日志**——很多"莫名其妙的冲突",都是上一步的静默失败埋的。
+
+要不要我把这三处修复涉及的方法,连同"服务端 HTTP 200 包装业务错误码"这个坑,一起补进你那份 Markdown 文档?
