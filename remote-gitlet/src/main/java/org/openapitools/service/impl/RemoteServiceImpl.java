@@ -347,6 +347,8 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
         }
 
+        log.info("分支 {} 的指向为 {}", branch, branchPointer.getCommitSha());
+
         // 如果存在则返回 分支所指向的提交
         return Result.ok(new RefView().branch(branch).sha(branchPointer.getCommitSha()));
     }

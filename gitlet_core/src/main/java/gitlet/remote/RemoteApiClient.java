@@ -91,7 +91,7 @@ public class RemoteApiClient {
         );
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/refs/heads/" + branch))
+                .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/refs/" + branch))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
@@ -109,7 +109,7 @@ public class RemoteApiClient {
      * GET /api/repos/{owner}/{repo}/pull?since={commitSha}
      */
     public PullResult pullObjects(String owner, String repo, String sinceCommitSha) {
-        String url = baseUrl + "/api/repos/" + owner + "/" + repo + "/pull";
+        String url = baseUrl + "/api/repos/" + owner + "/" + repo + "/objects";
         if (sinceCommitSha != null && !sinceCommitSha.isEmpty()) {
             url += "?since=" + sinceCommitSha;
         }
@@ -159,8 +159,10 @@ public class RemoteApiClient {
                 // 提取 commitSha 返回
                 return parseBranchSha(body);
             }
+
             return null;
         } catch (Exception e) {
+//            throw new RuntimeException("读取远程分支 SHA 值失败: " + e.getMessage());
             return null;
         }
     }
@@ -254,10 +256,10 @@ public class RemoteApiClient {
     }
 
     private String extractJsonString(String json, String key) {
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+        Pattern p = Pattern.compile(
                 "\"" + key + "\"\\s*:\\s*\"([^\"]+)\""
         );
-        java.util.regex.Matcher m = p.matcher(json);
+        Matcher m = p.matcher(json);
         return m.find() ? m.group(1) : null;
     }
 
@@ -286,13 +288,13 @@ public class RemoteApiClient {
      *     "code": 200,
      *     "data": {
      *         "branch": "xxx",
-     *         "commitSha": "abc123..."
+     *         "sha": "abc123..."
      *     }
      * }
      */
     private String parseBranchSha(String body) {
         Pattern p = Pattern.compile(
-            "\"commitSha\"\\s*:\\s*\"([^\"]+)\""
+            "\"sha\"\\s*:\\s*\"([^\"]+)\""
         );
         Matcher m = p.matcher(body);
         return m.find() ? m.group(1) : null;
