@@ -5,7 +5,7 @@ import common.ResultCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.openapitools.model.GitletObject;
+import bo.GitletObject;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.service.impl.RemoteServiceImpl;

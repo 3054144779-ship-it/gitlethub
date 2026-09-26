@@ -1,7 +1,7 @@
 package org.openapitools.controller;
 
 import common.Result;
-import org.openapitools.model.ObjectBundle;
+import bo.ObjectBundle;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.model.RefUpdateRequest;

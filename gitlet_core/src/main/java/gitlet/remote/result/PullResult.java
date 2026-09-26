@@ -1,8 +1,8 @@
 package gitlet.remote.result;
 
+import gitlet.bo.ObjectBundle;
 import lombok.AllArgsConstructor;
 import lombok.Data;
-import org.openapitools.model.ObjectBundle;
 
 import java.util.List;
 

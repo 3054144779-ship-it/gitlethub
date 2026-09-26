@@ -86,11 +86,11 @@ class RemoteFlowIntegrationTest {
         verify(remoteCollaborator, times(1)).insert(any(Collaborator.class));
 
         // ===== 2. push 上传对象（文件 IO）=====
-        GitletObject blob = new GitletObject().sha1(BLOB_SHA)
-                .type(GitletObject.TypeEnum.BLOB)
+        bo.GitletObject blob = new bo.GitletObject().sha1(BLOB_SHA)
+                .type(bo.GitletObject.TypeEnum.BLOB)
                 .content("hello".getBytes(StandardCharsets.UTF_8));
-        GitletObject commit = new GitletObject().sha1(COMMIT_SHA)
-                .type(GitletObject.TypeEnum.COMMIT)
+        bo.GitletObject commit = new bo.GitletObject().sha1(COMMIT_SHA)
+                .type(bo.GitletObject.TypeEnum.COMMIT)
                 .content("commit-data".getBytes(StandardCharsets.UTF_8));
 
         Result<ObjectUploadResult> pushObjResult =
@@ -115,12 +115,12 @@ class RemoteFlowIntegrationTest {
         verify(remoteBranchPointer, times(1)).updateBranchPointer(1L, COMMIT_SHA, 0);
 
         // ===== 4. pull（文件 IO，全量）=====
-        Result<ObjectBundle> pullResult = remoteService.pull(OWNER, REPO, null);
+        Result<bo.ObjectBundle> pullResult = remoteService.pull(OWNER, REPO, null);
         assertEquals(ResultCode.OK, pullResult.getCode());
         assertEquals(2, pullResult.getData().getObjects().size());
 
         // ===== 5. clone 复用 pull =====
-        Result<ObjectBundle> cloneResult = remoteService.cloneRepository(OWNER, REPO);
+        Result<bo.ObjectBundle> cloneResult = remoteService.cloneRepository(OWNER, REPO);
         assertEquals(ResultCode.OK, cloneResult.getCode());
         assertEquals(2, cloneResult.getData().getObjects().size());
     }

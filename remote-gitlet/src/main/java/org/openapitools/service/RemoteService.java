@@ -1,9 +1,8 @@
 package org.openapitools.service;
 
-import com.baomidou.mybatisplus.extension.service.IService;
 import common.Result;
 import dto.RepositoryCreateDTO;
-import org.openapitools.model.ObjectBundle;
+import bo.ObjectBundle;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.model.RefUpdateRequest;

@@ -1,23 +1,15 @@
-package org.openapitools.model;
+package gitlet.bo;
 
-import java.net.URI;
-import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import org.openapitools.model.GitletObject;
-import org.springframework.lang.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
 import io.swagger.v3.oas.annotations.media.Schema;
-
-
-import java.util.*;
 import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.lang.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * ObjectBundle
@@ -56,7 +48,8 @@ public class ObjectBundle {
    * Get objects
    * @return objects
    */
-  @NotNull @Valid 
+  @NotNull
+  @Valid
   @Schema(name = "objects", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("objects")
   public List<@Valid GitletObject> getObjects() {

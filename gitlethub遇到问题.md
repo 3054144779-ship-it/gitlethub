@@ -464,3 +464,29 @@ HttpClient 需要完整 URL（包括网关地址），不像 OpenFeign 那样只
 
 OpenFeign 依赖 Spring Cloud 的服务发现（Nacos），它知道 remote-gitlet 服务在哪台机器、哪个端口，所以自动拼接完整 URL。
 HttpClient 是裸 HTTP 客户端，没有服务发现能力，你必须告诉它完整地址。
+
+问题：
+
+客户端手写JSON的话，“需要反序列化（JSON → 对象），手写解析器容易出 bug。”这个传到远程不还是得解析吗？
+
+对，但**解析是服务端的事，不是客户端的事**。
+
+```
+gitlet_core (客户端)                    remote-gitlet (服务端)
+┌─────────────────┐                  ┌──────────────────────┐
+│ 手写 JSON 字符串 │ ──── HTTP ────→  │ Jackson 反序列化      │
+│ 不需要 Jackson   │                  │ 已有 Jackson（Spring 自带）│
+│ 零依赖           │                  │ 解析成 GitletObject   │
+└─────────────────┘                  └──────────────────────┘
+```
+
+**服务端**是 Spring Boot，天然有 Jackson，收到 JSON 字符串后 `@RequestBody ObjectUploadRequest` 自动反序列化——这是服务端的事，跟你客户端怎么生成 JSON 没关系。
+
+**客户端**只需要保证发出去的是**合法 JSON 字符串**就行。服务端不在乎你是手写的、StringBuilder 拼的、还是用库序列化的——只要格式对，Jackson 都能解析。
+
+所以：
+- 客户端手写 JSON → 零依赖 ✅
+- 服务端用 Jackson 反序列化 → 现成的 ✅
+
+**两边各用各的方式，互不影响。** 这就是 HTTP + JSON 的好处——协议是通用的，实现是自由的。
+

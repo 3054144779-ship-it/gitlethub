@@ -2,6 +2,8 @@ package gitlet;
 
 
 import cn.hutool.core.collection.CollUtil;
+import gitlet.bo.GitletObject;
+import gitlet.bo.ObjectBundle;
 import gitlet.commit.Commit;
 import gitlet.handler.BranchManager;
 import gitlet.handler.CommandHandler;
@@ -20,6 +22,7 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.sql.Blob;
 import java.util.*;
 
 /** Gitlet（Git版本控制系统的一个子集）的驱动程序类。
@@ -148,10 +151,26 @@ public class Main {
                     blobShas.addAll(c.getTrackedFiles().values());
                 }
 
-                // TODO: 把 blobShas 对应的 blob 文件也打包推送
+                // 创建 commit GitletObject 列表
+                List<GitletObject> commitGitletObjects = commitsToPush.stream()
+                        .map(commit -> new GitletObject().sha1(Utils.sha1(commit))
+                                .type(GitletObject.TypeEnum.COMMIT).content(Utils.serialize(commit))).toList();
+
+                // 创建 blob GitletObject 列表
+                List<GitletObject> blobGitletObjects = blobShas.stream()
+                        .map(blob -> new GitletObject().sha1(blob).type(GitletObject.TypeEnum.BLOB)
+                                .content(Utils.readContents(Utils.join(repo.getPaths().getObject(), blob)))).toList();
+
+                // 创建文件列表
+                List<GitletObject> fileList = new ArrayList<>();
+                fileList.addAll(commitGitletObjects);
+                fileList.addAll(blobGitletObjects);
+
+                // 创建 ObjectBundle 对象
+                ObjectBundle objectBundle = new ObjectBundle().objects(fileList);
 
                 // 发起请求，申请文件存储
-                PushResult pushResult1 = remoteApiClient.pushObjects(currentOwnerName, currentRepoName, commitsToPush);
+                PushResult pushResult1 = remoteApiClient.pushObjects(currentOwnerName, currentRepoName, objectBundle);
                 // 发起请求，申请推送分支更新
                 PushResult pushResult2 = remoteApiClient.updateBranch(
                         currentOwnerName, currentRepoName, branch, currentBranchSha, remoteTackingSha);

@@ -19,7 +19,7 @@ public interface RemoteClient {
      * @return 拉取到的对象列表
      */
     @GetMapping("/objects")
-    public ResponseEntity<Result<ObjectBundle>> pull(
+    public ResponseEntity<Result<bo.ObjectBundle>> pull(
             @PathVariable String owner, @PathVariable String repo, @Nullable @RequestParam("since") String since);
 
     /**
@@ -73,6 +73,6 @@ public interface RemoteClient {
      * @return 仓库的全部对象
      */
     @GetMapping("/clone")
-    public ResponseEntity<Result<ObjectBundle>> cloneRepository(
+    public ResponseEntity<Result<bo.ObjectBundle>> cloneRepository(
             @PathVariable String owner, @PathVariable String repo);
 }

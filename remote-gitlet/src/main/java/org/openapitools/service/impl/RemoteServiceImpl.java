@@ -7,7 +7,6 @@ import dto.RepositoryCreateDTO;
 import enums.CollaboratorLevelEnum;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.openapitools.jackson.nullable.JsonNullable;
 import org.openapitools.mapper.*;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
@@ -22,12 +21,12 @@ import po.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import bo.ObjectBundle;
+import bo.GitletObject;
 
 import java.io.File;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 
@@ -65,7 +64,7 @@ public class RemoteServiceImpl implements RemoteService {
 
     /**
      * push 到远程仓库
-     * 第二步：上传对象
+     * 第一步：上传对象
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param objectUploadRequest  (required) push 的内容
@@ -78,6 +77,21 @@ public class RemoteServiceImpl implements RemoteService {
             // 沿用原 Post200Response 枚举里标注为「提交的文件不能为空」的 30002
             return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_SUBMITTED_FILE_CANNOT_BE_EMPTY);
         }
+
+        // ---------------------------- 新增 ----------------------------
+        // 获取用户id
+        Long userId = remoteUserMapper.getUserId(owner);
+        // 获取仓库id
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
+        // 获取提交者信息
+        Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
+
+        // 检查用户权限
+        if (!PermissionValidation.identityVerification(collaborator)) {
+            log.warn("用户 {} 没有权限更新分支", owner);
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+        // -------------------------------------------------------------
 
         // 创建仓库路径对象
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
@@ -129,7 +143,7 @@ public class RemoteServiceImpl implements RemoteService {
 
     /**
      * push 到远程仓库
-     * 第一步：更新分支信息
+     * 第二步：更新分支信息
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param branch  (required) 分支名（如 master）
@@ -197,7 +211,8 @@ public class RemoteServiceImpl implements RemoteService {
 
     /**
      * push 到远程仓库
-     * 第一步：强制更新分支
+     * 第二步：强制更新分支
+     *
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param branch  (required) 分支名（如 master）
@@ -217,6 +232,14 @@ public class RemoteServiceImpl implements RemoteService {
         // 获取提交者信息
         Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
 
+        // ---------------------------- 新增 ----------------------------
+        // 检查用户权限
+        if (!PermissionValidation.identityVerification(collaborator)) {
+            log.warn("用户 {} 没有权限更新分支 {}", owner, branch);
+//            log.info("协作者信息：{}", collaborator.toString());
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+        // -------------------------------------------------------------
         // 检查是否允许强制推送
         if (!BranchVerification.isForcePushAllowed(branchPointer)) {
             // 不允许强制推送

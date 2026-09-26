@@ -1,5 +1,8 @@
 package gitlet.remote;
 
+import gitlet.bo.GitletObject;
+import gitlet.bo.ObjectBundle;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import gitlet.utils.Utils;
 import gitlet.commit.Commit;
@@ -36,14 +39,31 @@ public class RemoteApiClient {
      * 推送对象（blobs + commits）到远程。
      * POST /api/remote/{owner}/{repo}/objects
      */
-    public PushResult pushObjects(String owner, String repo, List<Commit> commits) {
-        // 构造JSON：把每个commit的SHA + 内容（base64）打包
-        String json = buildObjectUploadJson(commits);
+    public PushResult pushObjects(String owner, String repo, ObjectBundle objects) {
+        // 构造JSON：把每个commit的SHA + 内容（base64）打包\
+        /*
+        {
+            "objects": [
+                {
+                    "sha1": "xxx",
+                    "type": "commit",
+                    "content": "yyy"
+                },
+                ...
+            ]
+        }
+         */
+
+        // 使用 Jackson 库将 ObjectBundle 转换为 JSON 字符串
+        String json = buildObjectUploadJson(objects);
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/remote/" + owner + "/" + repo + "/objects"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
+
+        log.info("推送对象: {}", objects.toString());
 
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -109,23 +129,26 @@ public class RemoteApiClient {
     }
 
     /**
-     * 构建对象上传的 JSON
-     * @param commits 要上传的提交列表
+     * 构建对象上传的 JSON（对象中不存在转义，选择手写 JSON 字符串，保证轻量纯库）
+     * @param objects 要上传的对象列表
      * @return JSON 字符串
      */
-    private String buildObjectUploadJson(List<Commit> commits) {
+    private String buildObjectUploadJson(ObjectBundle objects) {
         // 简化版：把每个 commit 的 SHA + 序列化后的字节（base64）打包成 JSON
         // 实际实现需要把 Commit 序列化成 byte[]（参考 Dumpable 接口）
+        List<@Valid GitletObject> commits = objects.getObjects();
         StringBuilder sb = new StringBuilder();
         sb.append("{\"objects\":[");
         for (int i = 0; i < commits.size(); i++) {
-            Commit c = commits.get(i);
-            byte[] bytes = Utils.serialize(c);
-            String sha = Utils.sha1(bytes);
+            GitletObject gitletObject = commits.get(i);
+            // 确保 gitletObject 的内容是 byte[] 类型
+            byte[] bytes = gitletObject.getContent();
+            String sha = gitletObject.getSha1();
             String base64 = Base64.getEncoder().encodeToString(bytes);
+            GitletObject.TypeEnum type = gitletObject.getType();
             sb.append(String.format(
-                    "{\"sha1\":\"%s\",\"type\":\"commit\",\"content\":\"%s\"}",
-                    sha, base64
+                    "{\"sha1\":\"%s\",\"type\":\"%s\",\"content\":\"%s\"}",
+                    sha, type.getValue(), base64
             ));
             if (i < commits.size() - 1) sb.append(",");
         }
