@@ -216,6 +216,7 @@ public class MergeHandler {
             return;
         }
 
+        // TODO：后续检测改为最长公共子序列
         // 文件处理，返回结果查看是否存在合并冲突
         boolean hasConflict = fileProcessing(remoteBranchSha, nowHeadBranchSha1, lcaSha1);
 
