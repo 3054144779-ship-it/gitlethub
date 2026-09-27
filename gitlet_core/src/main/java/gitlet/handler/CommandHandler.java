@@ -174,7 +174,7 @@ public class CommandHandler {
      */
     private boolean hasConflictMarkers(Staging stage) {
         return stage.getStagingMap().values().stream()
-                .anyMatch(s -> s.contains("<<<<<<< HEAD") && s.contains(">>>>>>>") && s.contains("======="));
+                .anyMatch(s -> s.contains("<<<<<<< HEAD") || s.contains(">>>>>>>") || s.contains("======="));
     }
 
     /** 删除文件，如果在暂存区就删除暂存区的，如果在提交中被追踪，就删除工作目录下的文件，并进行标记。 */
