@@ -20,17 +20,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /** 合并逻辑：三路合并、最近公共祖先（LCA）查找、冲突生成。 */
-// TODO(后续更新，待 AI 服务 + PR 逻辑打通后一起做)：
-//  当前 merge/getLCA 均以「本地具名分支名」为入参，只能合并 branchDir 里已存在的分支。
-//  而 pull(fetch+merge) 与 PR 需要合并的是一个「游离的 commit SHA」
-//  （远程 tracking ref / PR 源分支），它在本地并非具名分支。
-//  计划改造：抽出按 SHA 合并的内核 ——
-//    mergeBySha(String givenSha, String givenLabel)  // 三路合并 + 冲突 + 生成合并提交
-//    getLcaBySha(String givenSha)                    // LCA 也提供 SHA 重载
-//  让现有 merge(branchName) 委托到 mergeBySha，从而：
-//    1) pull 分叉时自动 merge 远程 SHA（而非现在的直接拒绝）；
-//    2) PR 合并源分支 SHA 到目标分支，复用同一套冲突处理。
-//  一次改造，pull 与 PR 共用，避免重复实现三路合并。
+
 public class MergeHandler {
     /** 本次操作针对的仓库 */
     private final Repository repo;
@@ -159,6 +149,155 @@ public class MergeHandler {
         stage.clear();
         // 持久化暂存区
         repo.saveStaging();
+    }
+
+    /**
+     *  TODO(后续更新，PR 逻辑打通后一起做)：
+     *   当前 merge/getLCA 均以「本地具名分支名」为入参，只能合并 branchDir 里已存在的分支。
+     *   而 pull(fetch+merge) 与 PR 需要合并的是一个「游离的 commit SHA」
+     *   （远程 tracking ref / PR 源分支），它在本地并非具名分支。
+     *   计划改造：抽出按 SHA 合并的内核 ——
+     *     mergeBySha(String givenSha, String givenLabel)  // 三路合并 + 冲突 + 生成合并提交
+     *     getLcaBySha(String givenSha)                    // LCA 也提供 SHA 重载
+     *   让现有 merge(branchName) 委托到 mergeBySha，从而：
+     *     1) pull 分叉时自动 merge 远程 SHA（而非现在的直接拒绝）；
+     *     2) PR 合并源分支 SHA 到目标分支，复用同一套冲突处理。
+     *   一次改造，pull 与 PR 共用，避免重复实现三路合并。
+     * 将 remoteBranchSha 合并到 nowHeadBranchSha 所代表的分支
+     * @param remoteBranchSha 远程分支的 SHA-1 值
+     */
+    public void mergeBySha(String remoteBranchSha) {
+        BranchManager branches = new BranchManager(repo);
+
+        // 最近公共祖先的commit的SHA-1值
+        // 必须用 SHA 版本：getLCA(branchName) 会把 SHA 当分支名去 branchDir 读文件，拿到 null
+        String lcaSha1 = getLCABySha(remoteBranchSha);
+        // 兜底：无公共祖先（历史不相关）直接返回，避免下面 objects.getCommit(lcaSha1) 和 lcaSha1.equals(...) NPE
+        if (lcaSha1 == null) {
+            Utils.message("Refusing to merge unrelated histories.");
+            return;
+        }
+        // 当前所在的提交
+        String nowHeadBranchSha1 = branches.getHeadSha1();
+
+        // 工作区中有未追踪文件
+        if (!trackingCheck(objects.getCommit(remoteBranchSha).getTrackedFiles(),
+                objects.getCommit(lcaSha1).getTrackedFiles())) {
+            Utils.message("There is an untracked file in the way"
+                    + "delete it, or add and commit it first.");
+            return;
+        }
+
+        Staging stage = repo.getStaging();
+
+        // 暂存区有未提交的添加或删除
+        if (!stage.isEmpty()) {
+            Utils.message("You have uncommitted changes.");
+            return;
+        }
+
+        // 分割点就是给定分支：什么都不做，合并完成
+        if (lcaSha1.equals(remoteBranchSha)) {
+            Utils.message("Given branch is an ancestor of the current branch.");
+            return;
+        }
+
+        // 分割点就是当前分支效果等同于 “检出”（checkout）给定分支
+        if (lcaSha1.equals(nowHeadBranchSha1)) {
+            // 快进：把「当前分支指针 + 工作目录」推进到远程 SHA。
+            // 不能用 checkoutBranch(sha)——它按分支名查找，SHA 不是分支名，会打印 "No such branch exists" 后直接返回。
+            // reset(sha) 才是「检出该提交所有文件并移动当前分支头指针」，正是快进需要的。
+            new CommandHandler(repo).reset(remoteBranchSha);
+            Utils.message("Current branch fast-forwarded.");
+            return;
+        }
+
+        // 文件处理，返回结果查看是否存在合并冲突
+        boolean hasConflict = fileProcessing(remoteBranchSha, nowHeadBranchSha1, lcaSha1);
+
+        // 如果存在合并冲突
+        if (hasConflict) {
+            Utils.message("Encountered a merge conflict.");
+        }
+
+        // 无论冲突是否解决，创建新的提交对象
+        // Merged [给定分支名] into [当前分支名]。
+        String mes = "Merged " + remoteBranchSha + " into " + branches.getHead() + ".";
+        List<String> mergeFiles = new ArrayList<>();
+        mergeFiles.add(nowHeadBranchSha1.substring(0, 7)); // 第一父提交
+        mergeFiles.add(remoteBranchSha.substring(0, 7)); // 第二父提交
+
+        Map<String, String> newTrackedFiles =
+                new TreeMap<>(branches.getHeadCommitTrackedFilesMap());
+        newTrackedFiles.putAll(stage.getStagingMap());
+        for (String removeFile : stage.getRemoveSet()) {
+            newTrackedFiles.remove(removeFile);
+        }
+
+        // 自动提交
+        Commit newCommit = new Commit(mes, mergeFiles, nowHeadBranchSha1,
+                remoteBranchSha, newTrackedFiles);
+
+        /** 更新当前分支的进度至最新提交 */
+        Utils.writeContents(branches.getHeadBranch(), objects.saveCommit(newCommit));
+        // 清空暂存区文件
+        stage.clear();
+        // 持久化暂存区
+        repo.saveStaging();
+    }
+
+    /** 获取两个分支的最近公共祖先 (LCA) */
+    private String getLCABySha(String remoteBranchSha) {
+        BranchManager branches = new BranchManager(repo);
+
+        // 找出当前分支的所有祖先（包含自己）
+        Set<String> ancestorsOfCurrent = new HashSet<>();
+        Queue<String> queue = new LinkedList<>();
+        queue.add(branches.getHeadSha1());
+
+        while (!queue.isEmpty()) {
+            String p = queue.poll();
+            if (p == null || ancestorsOfCurrent.contains(p)) {
+                continue;
+            }
+            ancestorsOfCurrent.add(p);
+
+            if (objects.getCommit(p).getParent() != null) {
+                queue.add(objects.getCommit(p).getParent());
+            }
+            // 如果是 Merge Commit，也要把第二个父节点加进去
+            if (objects.getCommit(p).getSecondParent() != null) {
+                // parentBranch 存了第二个父节点的 SHA1
+                queue.add(objects.getCommit(p).getSecondParent());
+            }
+        }
+
+        // 从 Given 分支开始 BFS，找到第一个在 ancestorsOfCurrent 中的节点
+        queue.clear();
+        queue.add(remoteBranchSha);
+        // 记录已访问，防止在图里绕圈
+        Set<String> visited = new HashSet<>();
+
+        while (!queue.isEmpty()) {
+            String p = queue.poll();
+            if (p == null || visited.contains(p)) {
+                continue;
+            }
+            visited.add(p);
+
+            if (ancestorsOfCurrent.contains(p)) {
+                return p; // 找到了最近的
+            }
+
+            if (objects.getCommit(p).getParent() != null) {
+                queue.add(objects.getCommit(p).getParent());
+            }
+            if (objects.getCommit(p).getSecondParent() != null) {
+                queue.add(objects.getCommit(p).getSecondParent());
+            }
+        }
+
+        return null; // 理论上不可能，除非两个分支没交集
     }
 
     /** 生成冲突文件内容 */

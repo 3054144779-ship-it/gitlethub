@@ -342,21 +342,18 @@ public class Main {
                     });
                 });
 
-                // TODO: 后续将此处修改为 merge 逻辑, 此时是默认远程比当前分支新
-
-                // 5. 更新本地分支指针 + tracking ref(远程跟踪分支)
-                Utils.writeContents(branchFileToCommit, remoteBranchSha);
-                // 更新远程跟踪分支指针
+                // 5. 只更新远程跟踪分支指针（fetch 语义：记录“远程在哪”，绝不动本地分支指针）
+                //    不要在这里 writeContents(branchFileToCommit, remoteBranchSha)：
+                //    那会让本地指针先于 merge 被硬覆盖，导致 mergeBySha 里 nowHead==remote、
+                //    LCA==remote，在 L200 提前 return 变成空操作，同时丢失本地未推送提交。
                 File tracking = Utils.join(repo.getPaths().getRemotePushBranchDir(), pullRemote, pullBranch);
                 Utils.writeContents(tracking, remoteBranchSha);
 
-                // 6. 如果是当前分支，更新工作目录
+                // 6. 如果拉取的是当前分支，交给 mergeBySha 合并：
+                //    它自己负责移动本地分支指针 + 更新工作目录（快进走 reset，分叉生成合并提交）
                 String currentBranch = Utils.readContentsAsString(repo.getPaths().getHeadFile());
                 if (currentBranch.equals(pullBranch)) {
-                    Commit headCommit = Utils.readObject(
-                            Utils.join(repo.getPaths().getCommits(), remoteBranchSha), Commit.class);
-                    ObjectStore objects = repo.getObjects();
-                    headCommit.getTrackedFiles().forEach(objects::overwriteFile);
+                    merger.mergeBySha(remoteBranchSha);
                 }
 
                 break;
