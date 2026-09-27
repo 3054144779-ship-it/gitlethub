@@ -323,6 +323,7 @@ public class RemoteServiceImpl implements RemoteService {
                 .description(repositoryCreateDTO.getDescription())
                 .visibility(0)
                 .defaultBranch(MsgConstant.MAIN_BRANCH)
+                .allowAutoPr(1)                    // 默认允许自动 PR
                 .createTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
                 .isDeleted(0)
@@ -352,6 +353,7 @@ public class RemoteServiceImpl implements RemoteService {
                 .repositoryId(repository.getId())
                 .userId(ownerId)
                 .level(CollaboratorLevelEnum.OWNER)
+                .autoCreatePr(1)                   // 默认开启自动 PR
                 .createTime(LocalDateTime.now())
                 .isDeleted(0)
                 .build();

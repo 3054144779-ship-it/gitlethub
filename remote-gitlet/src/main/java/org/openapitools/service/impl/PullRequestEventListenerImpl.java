@@ -49,14 +49,14 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
             Collaborator collaborator = remoteCollaboratorMapper.getCollaborator(
                     pushEvent.getUserId(), pushEvent.getRepositoryId());
 
-            // 仓库级开关
-            if (repo.getAllowAutoPr() == 0) {
+            // 仓库级开关（null 视为允许，兼容老数据）
+            if (repo.getAllowAutoPr() != null && repo.getAllowAutoPr() == 0) {
                 log.info("仓库不允许自动 PR，跳过");
                 return;
             }
 
-            // 用户级开关
-            if (collaborator.getAutoCreatePr() == 0) {
+            // 用户级开关（null 视为允许，兼容老数据）
+            if (collaborator.getAutoCreatePr() != null && collaborator.getAutoCreatePr() == 0) {
                 log.info("用户 {} 关闭了自动 PR，跳过", pushEvent.getUserId());
                 return;
             }
