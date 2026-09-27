@@ -126,22 +126,36 @@ public class CommandHandler {
         }
 
         /* 继承父提交中未修改的文件，并更新新的暂存区的提交进去 */
-        // 复制一份老提交的快照作为底稿
         Map<String, String> newTrackedFiles =
                 new TreeMap<>(branches.getHeadCommitTrackedFilesMap());
-        // 然后在这个新底稿上做修改
         newTrackedFiles.putAll(stage.getStagingMap());
 
         for (String removeFile : stage.getRemoveSet()) {
             newTrackedFiles.remove(removeFile);
         }
 
-        // 保存提交，将该提交之前的最新提交赋值给父提交，并将头指针指向该提交(第一个父提交)
-        Commit newCommit = new Commit(message, new ArrayList<>(), branches.getHeadSha1(),
-                                        null, newTrackedFiles);
+        // 若存在 MERGE_HEAD，说明这是「解决合并冲突后的收尾提交」，需要记录第二父，形成真正的合并提交
+        File mergeHead = paths.getMergeHead();
+        String secondParent = null;
+        List<String> mergeFiles = new ArrayList<>();
+        if (mergeHead.exists()) {
+            secondParent = Utils.readContentsAsString(mergeHead);
+            mergeFiles.add(branches.getHeadSha1().substring(0, 7)); // 第一父
+            mergeFiles.add(secondParent.substring(0, 7));           // 第二父
+        }
+
+        // 保存提交，头指针指向该提交(第一个父提交)
+        Commit newCommit = new Commit(message, mergeFiles, branches.getHeadSha1(),
+                                        secondParent, newTrackedFiles);
         /** 更新当前分支的进度至最新提交 */
         Utils.writeContents(branches.getHeadBranch(), objects.saveCommit(newCommit));
-        // 清空暂存区文件
+
+        // 合并已收尾，清除 MERGE_HEAD 状态
+        if (mergeHead.exists()) {
+            Utils.restrictedDelete(mergeHead);
+        }
+
+        // 清空暂存区
         stage.clear();
         // 暂存区持久化
         repo.saveStaging();

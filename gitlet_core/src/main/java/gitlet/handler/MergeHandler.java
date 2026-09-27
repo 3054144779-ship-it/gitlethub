@@ -120,9 +120,13 @@ public class MergeHandler {
         // 文件处理，返回结果查看是否存在合并冲突
         boolean hasConflict = fileProcessing(givenBranchSha1, nowHeadBranchSha1, lcaSha1);
 
-        // 如果存在合并冲突
+        // 有冲突：不提交、不移动分支指针、不清暂存区。
+        // 冲突标记已由 fileProcessing 写入工作区并暂存；记下 MERGE_HEAD，
+        // 等用户解决冲突后 add + commit，由 commit() 生成「双父」合并提交收尾。
         if (hasConflict) {
+            Utils.writeContents(paths.getMergeHead(), givenBranchSha1);
             Utils.message("Encountered a merge conflict.");
+            return;
         }
 
         // 无论冲突是否解决，创建新的提交对象
@@ -215,9 +219,13 @@ public class MergeHandler {
         // 文件处理，返回结果查看是否存在合并冲突
         boolean hasConflict = fileProcessing(remoteBranchSha, nowHeadBranchSha1, lcaSha1);
 
-        // 如果存在合并冲突
+        // 有冲突：不提交、不移动分支指针、不清暂存区。
+        // 冲突标记已由 fileProcessing 写入工作区并暂存；记下 MERGE_HEAD，
+        // 等用户解决冲突后 add + commit，由 commit() 生成「双父」合并提交收尾。
         if (hasConflict) {
+            Utils.writeContents(paths.getMergeHead(), remoteBranchSha);
             Utils.message("Encountered a merge conflict.");
+            return;
         }
 
         // 无论冲突是否解决，创建新的提交对象
