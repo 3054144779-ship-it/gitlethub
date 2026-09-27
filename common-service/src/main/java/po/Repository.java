@@ -45,6 +45,9 @@ public class Repository {
     @TableField("update_time")
     private LocalDateTime updateTime;
 
+    @TableField("allow_auto_pr")
+    private Integer allowAutoPr;  // 1=允许自动PR, 0=不允许（owner 控制）
+
     @TableField("is_deleted")
     @TableLogic
     private Integer isDeleted;

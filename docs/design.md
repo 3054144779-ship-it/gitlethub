@@ -239,6 +239,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | GET | `/api/repos/{owner}/{repo}/refs/{branch}` | 读取分支指向 |
 | POST | `/api/repos` | 创建仓库（**不在 `openapi.yaml` 里，是手写端点** `RepositoryController`；owner/repo 走 body 的 `RepositoryCreateDTO`。建仓的唯一入口 → D27） |
 | GET | `/api/repos/{owner}/{repo}/clone` | clone 拉取对象 |
+| POST | `/api/repos/{owner}/{repo}/pull-request` | 手动创建PR |
 
 **不在 spec 里的**
 

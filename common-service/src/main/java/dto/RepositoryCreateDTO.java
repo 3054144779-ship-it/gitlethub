@@ -12,4 +12,6 @@ public class RepositoryCreateDTO {
     private String description;
     // 仓库可见性
     private Integer visibility;
+    // PR 自动生成是否开启
+    private Integer allowAutoPr;
 }

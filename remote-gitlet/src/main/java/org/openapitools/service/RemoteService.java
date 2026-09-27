@@ -1,6 +1,7 @@
 package org.openapitools.service;
 
 import common.Result;
+import dto.PullRequestDTO;
 import dto.RepositoryCreateDTO;
 import bo.ObjectBundle;
 import org.openapitools.model.ObjectUploadRequest;
@@ -75,4 +76,7 @@ public interface RemoteService {
      */
     Result<RefView> pushForceUpdateBranch(String owner, String repo,
                                                  String branch, RefUpdateRequest refUpdateRequest);
+
+
+
 }

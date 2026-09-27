@@ -57,6 +57,9 @@ public final class ResultCode {
     /** 用户不存在 */
     public static final int USER_NOT_FOUND = 1006;
 
+    /** 远程仓库更新失败 */
+    public static final int REMOTE_REPOSITORY_UPDATE_FAILED = 3004;
+
     private ResultCode() {
     }
 }

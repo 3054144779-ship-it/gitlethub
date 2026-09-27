@@ -2,12 +2,14 @@ package org.openapitools.controller;
 
 import common.Result;
 import bo.ObjectBundle;
+import dto.PullRequestDTO;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.model.RefUpdateRequest;
 import org.openapitools.model.RefView;
 
 
+import org.openapitools.service.PullRequestEventListener;
 import org.openapitools.service.RemoteService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +27,9 @@ public class RemoteController {
 
     @Autowired
     private RemoteService remoteService;
+    @Autowired
+    private PullRequestEventListener pullRequestEventListener;
+
     /**
      * pull 拉取对象
      * @param owner  (required) 当前仓库的所有者
@@ -124,5 +129,19 @@ public class RemoteController {
         Result<ObjectBundle> response = remoteService.cloneRepository(owner, repo);
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * 创建 pull request
+      * @param owner  (required) 当前仓库的所有者
+      * @param repo  (required) 当前仓库的名称
+      * @return  (required) pull request 的 url
+     */
+    @PostMapping("/pull-request")
+    public ResponseEntity<Result<String>> createPullRequest(
+            @PathVariable String owner, @PathVariable String repo, @RequestBody PullRequestDTO pullRequestDTO) {
+        Result<String> response = pullRequestEventListener.createPullRequest(owner, repo, pullRequestDTO);
+        return ResponseEntity.ok(response);
+    }
+
 
 }

@@ -36,6 +36,9 @@ public class Collaborator {
     @TableField("create_time")
     private LocalDateTime createTime;
 
+    @TableField("auto_create_pr")
+    private Integer autoCreatePr;  // 1=开启自动PR, 0=关闭（用户自己控制）
+
     @TableField("is_deleted")
     @TableLogic
     private Integer isDeleted;

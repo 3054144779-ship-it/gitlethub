@@ -1,8 +1,10 @@
 package org.openapitools.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import common.Result;
 import common.ResultCode;
+import dto.PullRequestDTO;
 import dto.RepositoryCreateDTO;
 import enums.CollaboratorLevelEnum;
 import jakarta.validation.Valid;
@@ -16,6 +18,9 @@ import org.openapitools.verification.BranchVerification;
 import org.openapitools.verification.PermissionValidation;
 import org.openapitools.verification.RepositoryVerification;
 import org.openapitools.verification.VersionStatusVerification;
+import org.springframework.beans.BeanUtils;
+import org.springframework.context.ApplicationEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 import po.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +66,13 @@ public class RemoteServiceImpl implements RemoteService {
     // 远程提交记录
     @Autowired
     private RemoteSubmissionRecordMapper remoteSubmissionRecordMapper;
+
+    // 应用程序事件发布器
+    @Autowired
+    private ApplicationEventPublisher applicationEventPublisher;
+
+    @Autowired
+    private RemotePullRequestMapper remotePullRequestMapper;
 
     /**
      * push 到远程仓库
@@ -215,6 +227,8 @@ public class RemoteServiceImpl implements RemoteService {
                 && BranchVerification.isProtectedBranch(branchPointer)
                 && branchPointer.getCommitSha() != null) {
             log.warn("分支 {} 受保护，且用户 {} 非 OWNER，拒绝直接推送", branch, owner);
+            // 发布推送事件(分支被保护)
+            applicationEventPublisher.publishEvent(new PushEvent(this, repositoryId, branch, sha1, userId, true));
             return Result.fail(ResultCode.BRANCH_PROTECTED, MsgConstant.THE_BRANCH_IS_PROTECTED);
         }
 
@@ -223,6 +237,8 @@ public class RemoteServiceImpl implements RemoteService {
             // 更新失败，返回版本冲突
             return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
         }
+        // 发布推送事件(分支更新)
+        applicationEventPublisher.publishEvent(new PushEvent(this, repositoryId, branch, sha1, userId, false));
 
         return Result.ok();
     }
@@ -273,6 +289,8 @@ public class RemoteServiceImpl implements RemoteService {
 
         return Result.ok();
     }
+
+
 
     /**
      * 创建远程仓库
