@@ -6,6 +6,7 @@ import gitlet.repository.Repository;
 import gitlet.repository.RepositoryPaths;
 import gitlet.stag.Staging;
 import gitlet.utils.Utils;
+import jdk.jshell.execution.Util;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -139,6 +140,11 @@ public class CommandHandler {
         String secondParent = null;
         List<String> mergeFiles = new ArrayList<>();
         if (mergeHead.exists()) {
+            if (hasConflictMarkers(stage)) {
+                Utils.message("You still have unresolved merge conflicts. "
+                        + "Fix them, add the files, then commit.");
+                return;
+            }
             secondParent = Utils.readContentsAsString(mergeHead);
             mergeFiles.add(branches.getHeadSha1().substring(0, 7)); // 第一父
             mergeFiles.add(secondParent.substring(0, 7));           // 第二父
@@ -159,6 +165,16 @@ public class CommandHandler {
         stage.clear();
         // 暂存区持久化
         repo.saveStaging();
+    }
+
+    /**
+     * 检查暂存区是否有冲突标记
+     * @param stage 暂存区
+     * @return 暂存区是否有冲突标记
+     */
+    private boolean hasConflictMarkers(Staging stage) {
+        return stage.getStagingMap().values().stream()
+                .anyMatch(s -> s.contains("<<<<<<< HEAD") && s.contains(">>>>>>>") && s.contains("======="));
     }
 
     /** 删除文件，如果在暂存区就删除暂存区的，如果在提交中被追踪，就删除工作目录下的文件，并进行标记。 */
