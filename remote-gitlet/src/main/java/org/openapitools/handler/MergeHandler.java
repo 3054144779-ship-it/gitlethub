@@ -55,9 +55,19 @@ public class MergeHandler {
      * @param repositoryId 仓库 ID
      * @param sourceBranch 源分支名
      * @param targetBranch 目标分支名
+     * @param prId PR ID（可选，用于检查暂存区）
      * @return 合并结果
      */
-    public Result<String> merge(Long repositoryId, String sourceBranch, String targetBranch) {
+    public Result<String> merge(Long repositoryId, String sourceBranch, String targetBranch, Long prId) {
+        // 如果有 PR ID，先检查是否有暂存区
+        if (prId != null) {
+            PullRequest pr = remotePullRequestMapper.selectById(prId);
+            if (pr != null && pr.getStagingPath() != null) {
+                log.info("检测到 PR {} 有暂存区，尝试从暂存区恢复合并", prId);
+                return mergeFromStaging(repositoryId, pr, sourceBranch, targetBranch);
+            }
+        }
+        
         // 1. 获取分支指针
         BranchPointer source = branchPointerMapper.getBranchPointer(repositoryId, sourceBranch);
         BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
@@ -108,17 +118,22 @@ public class MergeHandler {
     }
 
     /**
+     * 兼容旧调用（不带 PR ID）
+     */
+    public Result<String> merge(Long repositoryId, String sourceBranch, String targetBranch) {
+        return merge(repositoryId, sourceBranch, targetBranch, null);
+    }
+
+    /**
      * 三路合并核心逻辑
      */
     private Result<String> threeWayMerge(Long repositoryId, String sourceSha, String targetSha,
                                           String lcaSha, String sourceBranch, String targetBranch) {
-        // 获取仓库路径（需要 owner 和 repo 名称）
         RepositoryPaths paths = getRepositoryPaths(repositoryId);
         if (paths == null) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "无法获取仓库路径。");
         }
 
-        // 读取三个 commit 的 trackedFiles
         RemoteCommit sourceCommit = readCommit(paths, sourceSha);
         RemoteCommit targetCommit = readCommit(paths, targetSha);
         RemoteCommit lcaCommit = readCommit(paths, lcaSha);
@@ -127,62 +142,183 @@ public class MergeHandler {
             return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, "无法读取 commit 对象。");
         }
 
-        // 收集所有文件
         Set<String> allFiles = new TreeSet<>();
         allFiles.addAll(sourceCommit.getTrackedFiles().keySet());
         allFiles.addAll(targetCommit.getTrackedFiles().keySet());
         allFiles.addAll(lcaCommit.getTrackedFiles().keySet());
 
-        // 合并结果
         Map<String, String> mergedTrackedFiles = new TreeMap<>(targetCommit.getTrackedFiles());
         List<String> conflictFiles = new ArrayList<>();
 
-        // 逐文件三路合并
         for (String fileName : allFiles) {
             String sourceBlobSha = sourceCommit.getTrackedFiles().get(fileName);
             String targetBlobSha = targetCommit.getTrackedFiles().get(fileName);
             String lcaBlobSha = lcaCommit.getTrackedFiles().get(fileName);
 
-            // 情况 A: source 和 target 内容一致（或 source 相对 LCA 没变）
             if (Objects.equals(sourceBlobSha, targetBlobSha) || Objects.equals(sourceBlobSha, lcaBlobSha)) {
                 continue;
             }
 
-            // 情况 B: target 相对 LCA 没变，source 变了
             if (Objects.equals(targetBlobSha, lcaBlobSha)) {
                 if (sourceBlobSha != null) {
-                    // source 修改或新增了文件
                     mergedTrackedFiles.put(fileName, sourceBlobSha);
                 } else {
-                    // source 删除了文件
                     mergedTrackedFiles.remove(fileName);
                 }
                 continue;
             }
 
-            // 情况 C: 冲突（三者各不相同）
             conflictFiles.add(fileName);
         }
 
-        // 有冲突：生成冲突文件，返回给前端
         if (!conflictFiles.isEmpty()) {
             return handleConflict(paths, sourceSha, targetSha, lcaSha,
                     conflictFiles, sourceBranch, targetBranch);
         }
 
-        // 无冲突：创建合并提交
         return createMergeCommit(repositoryId, paths, mergedTrackedFiles,
                 sourceSha, targetSha, sourceBranch, targetBranch);
     }
 
     /**
-     * 处理冲突：生成冲突文件到临时目录
+     * 从暂存区恢复合并
+     * 读取暂存区的文件，检查是否有冲突标记，无冲突则生成合并提交
+     * 注意：不清理暂存区，由调用方（PullRequestEventListenerImpl）负责
+     */
+    private Result<String> mergeFromStaging(Long repositoryId, PullRequest pr, 
+                                             String sourceBranch, String targetBranch) {
+        String stagingPath = pr.getStagingPath();
+        File stagingDir = new File(stagingPath);
+        
+        if (!stagingDir.exists()) {
+            log.warn("暂存区不存在: {}", stagingPath);
+            // 暂存区已被清理，重新执行正常合并
+            return merge(repositoryId, sourceBranch, targetBranch, null);
+        }
+        
+        log.info("从暂存区恢复合并: {}", stagingPath);
+        
+        // 获取仓库路径
+        RepositoryPaths paths = getRepositoryPaths(repositoryId);
+        if (paths == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "无法获取仓库路径。");
+        }
+        
+        // 读取 source 和 target commit
+        BranchPointer source = branchPointerMapper.getBranchPointer(repositoryId, sourceBranch);
+        BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
+        String sourceSha = source.getCommitSha();
+        String targetSha = target.getCommitSha();
+        
+        RemoteCommit sourceCommit = readCommit(paths, sourceSha);
+        RemoteCommit targetCommit = readCommit(paths, targetSha);
+        
+        if (sourceCommit == null || targetCommit == null) {
+            return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, "无法读取 commit 对象。");
+        }
+        
+        // 关键：收集暂存区中的所有文件
+        Map<String, String> resolvedFileShas = new HashMap<>();
+        List<String> filesWithConflictMarkers = new ArrayList<>();
+        
+        // 遍历暂存区目录
+        collectResolvedFiles(stagingDir, "", resolvedFileShas, filesWithConflictMarkers, paths);
+        
+        // 检查是否有文件仍包含冲突标记
+        if (!filesWithConflictMarkers.isEmpty()) {
+            log.warn("暂存区中仍有文件包含冲突标记: {}", filesWithConflictMarkers);
+            return Result.fail(ResultCode.MERGE_CONFLICT, 
+                    "以下文件仍包含冲突标记，请继续解决：" + String.join(", ", filesWithConflictMarkers));
+        }
+        
+        // 构建合并后的 trackedFiles
+        Map<String, String> mergedTrackedFiles = new TreeMap<>(targetCommit.getTrackedFiles());
+        mergedTrackedFiles.putAll(resolvedFileShas);
+        
+        // 创建合并提交
+        return createMergeCommitFromStaging(repositoryId, paths, mergedTrackedFiles,
+                sourceSha, targetSha, sourceBranch, targetBranch);
+    }
+
+    /**
+     * 递归收集暂存区中的文件，计算 blob SHA，检查冲突标记
+     */
+    private void collectResolvedFiles(File dir, String relativePath,
+                                       Map<String, String> resolvedFileShas,
+                                       List<String> filesWithConflictMarkers,
+                                       RepositoryPaths paths) {
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return;
+        }
+        
+        for (File file : files) {
+            String currentRelativePath = relativePath.isEmpty() ? 
+                    file.getName() : relativePath + "/" + file.getName();
+            
+            if (file.isDirectory()) {
+                collectResolvedFiles(file, currentRelativePath, resolvedFileShas, 
+                        filesWithConflictMarkers, paths);
+            } else {
+                String content = Utils.readContentsAsString(file);
+                
+                // 检查是否包含冲突标记
+                if (content.contains("<<<<<<<") || content.contains("=======") || 
+                    content.contains(">>>>>>>")) {
+                    filesWithConflictMarkers.add(currentRelativePath);
+                    continue;
+                }
+                
+                // 计算 blob SHA
+                String blobSha = Utils.sha1(content);
+                
+                // 保存 blob 到对象库
+                File blobFile = new File(paths.getObject(), blobSha);
+                Utils.writeContents(blobFile, content);
+                
+                resolvedFileShas.put(currentRelativePath, blobSha);
+                log.debug("暂存区文件: {} -> {}", currentRelativePath, blobSha);
+            }
+        }
+    }
+
+    /**
+     * 从暂存区文件创建合并提交
+     * 注意：不清理暂存区，由调用方负责
+     */
+    private Result<String> createMergeCommitFromStaging(Long repositoryId, RepositoryPaths paths,
+                                                         Map<String, String> mergedTrackedFiles,
+                                                         String sourceSha, String targetSha,
+                                                         String sourceBranch, String targetBranch) {
+        String message = "Merged " + sourceBranch + " into " + targetBranch + ".";
+        List<String> mergeFiles = Arrays.asList(
+                targetSha.substring(0, 7),
+                sourceSha.substring(0, 7)
+        );
+
+        RemoteCommit mergeCommit = new RemoteCommit(message, mergeFiles, targetSha, sourceSha, mergedTrackedFiles);
+        String mergeSha = saveCommit(paths, mergeCommit);
+
+        BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
+        target.setCommitSha(mergeSha);
+        target.setUpdateTime(LocalDateTime.now());
+        branchPointerMapper.updateBranchPointer(repositoryId, mergeSha, target.getVersion());
+
+        commitPointerMapper.insertCommitParent(repositoryId, mergeSha, targetSha);
+        commitPointerMapper.insertCommitParent(repositoryId, mergeSha, sourceSha);
+
+        // 注意：这里不清理暂存区，由 PullRequestEventListenerImpl 负责
+        log.info("从暂存区恢复合并成功: {} ({} + {})", mergeSha, targetSha, sourceSha);
+        return Result.ok(mergeSha + " 合并成功。");
+    }
+
+    /**
+     * 处理冲突：生成冲突文件到临时目录，返回暂存区路径
      */
     private Result<String> handleConflict(RepositoryPaths paths,
                                            String sourceSha, String targetSha, String lcaSha,
                                            List<String> conflictFiles,
                                            String sourceBranch, String targetBranch) {
-        // 创建临时目录存放冲突文件
         String tempDir = basePath + "/temp/merge-" + System.currentTimeMillis();
         File tempDirFile = new File(tempDir);
         tempDirFile.mkdirs();
@@ -190,7 +326,6 @@ public class MergeHandler {
         RemoteCommit sourceCommit = readCommit(paths, sourceSha);
         RemoteCommit targetCommit = readCommit(paths, targetSha);
 
-        // 生成每个冲突文件
         for (String fileName : conflictFiles) {
             String sourceBlobSha = sourceCommit.getTrackedFiles().get(fileName);
             String targetBlobSha = targetCommit.getTrackedFiles().get(fileName);
@@ -198,7 +333,6 @@ public class MergeHandler {
             String sourceContent = (sourceBlobSha != null) ? readBlob(paths, sourceBlobSha) : "";
             String targetContent = (targetBlobSha != null) ? readBlob(paths, targetBlobSha) : "";
 
-            // 生成冲突标记内容
             StringBuilder conflictContent = new StringBuilder();
             conflictContent.append("<<<<<<< ").append(targetBranch).append("\n");
             conflictContent.append(targetContent);
@@ -212,25 +346,25 @@ public class MergeHandler {
             }
             conflictContent.append(">>>>>>> ").append(sourceBranch).append("\n");
 
-            // 写入临时文件
             File conflictFile = new File(tempDir, fileName);
             conflictFile.getParentFile().mkdirs();
             Utils.writeContents(conflictFile, conflictContent.toString());
         }
 
         log.warn("Merge conflict: {} files, temp dir: {}", conflictFiles.size(), tempDir);
-        return Result.fail(ResultCode.MERGE_CONFLICT,
-                "合并冲突：" + String.join(", ", conflictFiles) + "。临时目录：" + tempDir);
+        
+        String conflictMsg = "合并冲突：" + String.join(", ", conflictFiles);
+        return Result.<String>fail(ResultCode.MERGE_CONFLICT, conflictMsg)
+                .setData(tempDir);
     }
 
     /**
-     * 创建合并提交并更新分支指针
+     * 创建合并提交并更新分支指针（无冲突场景）
      */
     private Result<String> createMergeCommit(Long repositoryId, RepositoryPaths paths,
                                               Map<String, String> mergedTrackedFiles,
                                               String sourceSha, String targetSha,
                                               String sourceBranch, String targetBranch) {
-        // 创建合并 commit
         String message = "Merged " + sourceBranch + " into " + targetBranch + ".";
         List<String> mergeFiles = Arrays.asList(
                 targetSha.substring(0, 7),
@@ -238,17 +372,13 @@ public class MergeHandler {
         );
 
         RemoteCommit mergeCommit = new RemoteCommit(message, mergeFiles, targetSha, sourceSha, mergedTrackedFiles);
-
-        // 保存到对象库
         String mergeSha = saveCommit(paths, mergeCommit);
 
-        // 更新 target 分支指针
         BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
         target.setCommitSha(mergeSha);
         target.setUpdateTime(LocalDateTime.now());
         branchPointerMapper.updateBranchPointer(repositoryId, mergeSha, target.getVersion());
 
-        // 记录 commit 父子关系（用于后续 LCA 查找）
         commitPointerMapper.insertCommitParent(repositoryId, mergeSha, targetSha);
         commitPointerMapper.insertCommitParent(repositoryId, mergeSha, sourceSha);
 
@@ -345,7 +475,7 @@ public class MergeHandler {
     }
 
     /**
-     * 获取仓库路径（需要 owner 用户名和仓库名）
+     * 获取仓库路径（需要 owner 和 repo 名称）
      * 路径格式：{basePath}/.gitlet/{owner}/{repo}/
      */
     private RepositoryPaths getRepositoryPaths(Long repositoryId) {

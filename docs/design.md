@@ -317,6 +317,84 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 ## 8. 关键流程
 
+PR:
+
+
+
+```mermaid
+sequenceDiagram
+    participant API as Controller
+    participant PR as PullRequestEventListenerImpl
+    participant MH as MergeHandler
+    participant DB as 数据库
+    participant FS as 文件系统
+API->>PR: mergePullRequest(prId)
+PR->>MH: merge(repositoryId, source, target)
+MH->>FS: 读取 commit/blob
+MH->>MH: 三路合并
+
+alt 无冲突
+    MH->>FS: 写入合并 commit
+    MH->>DB: 更新分支指针
+    MH-->>PR: 成功
+    PR->>DB: 更新 PR 状态 = MERGED
+    PR->>FS: 清理暂存区
+else 有冲突
+    MH->>FS: 生成冲突文件到临时目录
+    MH-->>PR: 失败（含暂存区路径）
+    PR->>DB: 更新 PR.stagingPath
+end
+
+PR-->>API: 返回结果
+```
+
+
+
+```mermaid
+
+sequenceDiagram
+    participant Owner as Owner
+    participant API as Controller
+    participant PR as PullRequestEventListenerImpl
+    participant MH as MergeHandler
+    participant DB as 数据库
+    participant FS as 文件系统
+    
+    Note over Owner,FS: 第一次合并（有冲突）
+    Owner->>API: POST /merge-pull-request?prId=123
+    API->>PR: mergePullRequest(owner, repo, "123")
+    PR->>MH: merge(repoId, source, target, 123)
+    MH->>MH: 检查 PR.stagingPath → null
+    MH->>FS: 读取 commit/blob，执行三路合并
+    MH->>FS: 检测到冲突 → 生成冲突文件到 tempDir
+    MH-->>PR: fail(MERGE_CONFLICT, data=tempDir)
+    PR->>DB: 更新 PR.stagingPath = tempDir
+    PR-->>Owner: 返回冲突信息
+    
+    Note over Owner,FS: 用户解决冲突
+    Owner->>FS: 下载/编辑冲突文件<br/>删除冲突标记
+    
+    Note over Owner,FS: 第二次合并（从暂存区恢复）
+    Owner->>API: POST /merge-pull-request?prId=123
+    API->>PR: mergePullRequest(owner, repo, "123")
+    PR->>MH: merge(repoId, source, target, 123)
+    MH->>DB: 检查 PR.stagingPath → 存在！
+    MH->>FS: 读取暂存区文件
+    MH->>MH: 检查冲突标记 → 无
+    MH->>FS: 计算 blob SHA，保存到对象库
+    MH->>FS: 创建合并 commit
+    MH->>DB: 更新 target 分支指针
+    MH->>FS: 清理暂存区
+    MH->>DB: 清空 PR.stagingPath
+    MH-->>PR: ok(mergeSha)
+    PR->>DB: 更新 PR.status = MERGED
+    PR-->>Owner: 合并成功
+```
+
+
+
+
+
 ![image-20260921234640396](D:\Job_project\gitlethub\docs\design.assets\image-20260921234640396.png)
 
 ### 客户端 CLI 远程命令
@@ -389,6 +467,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | JSON使用Jackson转化 | 采用手写Jackson的形式，对象中不存在转义，选择手写 JSON 字符串，保证轻量纯库 |
 | 校验是网关做还是服务做？ | 优先放在网关层做验签；业务服务只做兜底校验，或者业务层不做校验。详见附录 |
 | PR两版处理方法：无条件自动建 PR, 纯手动建 PR | 第一版<br/>无条件自动建 PR<br/>用户没控制权<br/>第二版<br/>纯手动建 PR<br/>多一步操作<br/>第三版（你的）<br/>可配置的自动建 PR<br/>兼顾便利和控制 |
+| PR 合并采用哪种策略？1.直接改远程仓库中的文件，2.生成暂存区拷贝文件，3.暂存区只存对应的冲突文件 | 暂存区只存对应的冲突文件。直接改仓库中的文件会污染远程仓库，生成暂存区拷贝文件IO开销+储存消耗过大。所以采用只在暂存区存对应的冲突文件 |
 
 > 这一节比「做什么」更值得维护：半年后你不会记得为什么当时没选 JGit。
 
@@ -518,6 +597,7 @@ make check       # 21/21 必须全绿
 | D26 | push / pull 失败与 `50001` 冲突在 CLI 侧的表现（退出码 / 是否自动 pull 重试） | | |
 | D27 | 顺序改成 refs 在先之后，「自动建仓」挂在哪一步（refs 步自动建，还是保留 `POST /repo` 单独开仓） | 保留 `POST /repo` 单独建仓 | 不做自动建仓：仓库只能手动建，push 两步都不建仓（否则任何认证用户 push 任意 owner/repo 就能凭空开仓） |
 | D28 | gitlet pull应该拉取哪个仓库？多个绑定呢？ |  | 一个本地分支同一时间只能选其中一个作为上游。 |
+| D29 | 循环生成合并冲突文件问题：如果说生成了暂存区的合并冲突文件的话，修改改这个文件，假设把远程仓库的文件内容删了，这个时候文件中的内容和未生成合并冲突时候提交的文件内容一样，再提交的时候依然生成冲突文件 | | 加一个校验，如果当前文件在暂存区中有优先采用暂存区中的文件，并对暂存区中的文件进行冲突检查即 |
 
 ### D12附：
 

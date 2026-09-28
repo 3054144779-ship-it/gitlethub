@@ -119,23 +119,23 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         
         log.info("合并 Pull Request {}", pullRequest.getId());
         
-        // 调用 MergeHandler 执行合并
+        // 传递 PR ID，让 MergeHandler 检查暂存区
         Result<String> merge = mergeHandler.merge(pullRequest.getRepositoryId(),
-                pullRequest.getSourceBranch(), pullRequest.getTargetBranch());
+                pullRequest.getSourceBranch(), pullRequest.getTargetBranch(), 
+                pullRequest.getId());
         
-        //  使用 == 比较 int 值
         if (merge.getCode() == ResultCode.OK) {
-            // 合并成功：清理暂存区，更新 PR 状态
+            // ✅ 合并成功：清理暂存区，更新 PR 状态
             cleanupStaging(pullRequest.getId());
-            updatePRStatus(pullRequest);
+            updatePRStatus(pullRequest, PRStatusEnum.MERGED);
         } else if (merge.getCode() == ResultCode.MERGE_CONFLICT) {
-            //  从 data 获取暂存区路径（不是从 message 解析）
+            // ✅ 有冲突：存储暂存区路径到 PR 表（不清理，等待用户解决）
             String stagingPath = merge.getData();
             if (stagingPath != null) {
                 pullRequest.setStagingPath(stagingPath);
                 pullRequest.setUpdateTime(LocalDateTime.now());
                 remotePullRequestMapper.updateById(pullRequest);
-                log.info("PR {} 合并冲突，暂存区路径：{}", pullRequest.getId(), stagingPath);
+                log.info("PR {} 合并冲突，暂存区路径已保存：{}", pullRequest.getId(), stagingPath);
             }
         }
         
@@ -144,16 +144,15 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
 
     /**
      * 更新 PR 状态
-     *  使用 enum.getValue() 获取整数值
      */
-    private void updatePRStatus(PullRequest pr) {
-        pr.setStatus(PRStatusEnum.MERGED);
+    private void updatePRStatus(PullRequest pr, PRStatusEnum status) {
+        pr.setStatus(status);
         pr.setUpdateTime(LocalDateTime.now());
         remotePullRequestMapper.updateById(pr);
     }
 
     /**
-     * 清理暂存区
+     * 清理暂存区（合并成功或 PR 关闭时调用）
      */
     private void cleanupStaging(Long prId) {
         PullRequest pr = remotePullRequestMapper.selectById(prId);
@@ -166,7 +165,6 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
             // 清空 PR 表的暂存区路径
             pr.setStagingPath(null);
             pr.setUpdateTime(LocalDateTime.now());
-            pr.setIsDeleted(1); // 删除PR表
             remotePullRequestMapper.updateById(pr);
         }
     }
