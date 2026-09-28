@@ -8,7 +8,7 @@ import org.openapitools.mapper.RemoteCommitPointerMapper;
 import org.openapitools.mapper.RemotePullRequestMapper;
 import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
-import org.openapitools.model.RemoteCommit;
+import org.openapitools.model.Commit;
 import org.openapitools.model.RepositoryPaths;
 import org.openapitools.utils.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -144,9 +144,9 @@ public class MergeHandler {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "无法获取仓库路径。");
         }
 
-        RemoteCommit sourceCommit = readCommit(paths, sourceSha);
-        RemoteCommit targetCommit = readCommit(paths, targetSha);
-        RemoteCommit lcaCommit = readCommit(paths, lcaSha);
+        Commit sourceCommit = readCommit(paths, sourceSha);
+        Commit targetCommit = readCommit(paths, targetSha);
+        Commit lcaCommit = readCommit(paths, lcaSha);
 
         if (sourceCommit == null || targetCommit == null || lcaCommit == null) {
             return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, "无法读取 commit 对象。");
@@ -228,8 +228,8 @@ public class MergeHandler {
         String sourceSha = source.getCommitSha();
         String targetSha = target.getCommitSha();
         
-        RemoteCommit sourceCommit = readCommit(paths, sourceSha);
-        RemoteCommit targetCommit = readCommit(paths, targetSha);
+        Commit sourceCommit = readCommit(paths, sourceSha);
+        Commit targetCommit = readCommit(paths, targetSha);
         
         if (sourceCommit == null || targetCommit == null) {
             return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, "无法读取 commit 对象。");
@@ -313,7 +313,7 @@ public class MergeHandler {
                 sourceSha.substring(0, 7)
         );
 
-        RemoteCommit mergeCommit = new RemoteCommit(message, mergeFiles, targetSha, sourceSha, mergedTrackedFiles);
+        Commit mergeCommit = new Commit(message, mergeFiles, targetSha, sourceSha, mergedTrackedFiles);
         String mergeSha = saveCommit(paths, mergeCommit);
 
         BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
@@ -347,8 +347,8 @@ public class MergeHandler {
         // 用 writeObject（走 serialize）与读取端 readObject 配对；转 HashMap 保证与 HashMap.class 类型一致
         Utils.writeObject(tempTrackedFileDir, new HashMap<>(mergedTrackedFiles));
 
-        RemoteCommit sourceCommit = readCommit(paths, sourceSha);
-        RemoteCommit targetCommit = readCommit(paths, targetSha);
+        Commit sourceCommit = readCommit(paths, sourceSha);
+        Commit targetCommit = readCommit(paths, targetSha);
 
         for (String fileName : conflictFiles) {
             String sourceBlobSha = sourceCommit.getTrackedFiles().get(fileName);
@@ -397,7 +397,7 @@ public class MergeHandler {
                 sourceSha.substring(0, 7)
         );
 
-        RemoteCommit mergeCommit = new RemoteCommit(message, mergeFiles, targetSha, sourceSha, mergedTrackedFiles);
+        Commit mergeCommit = new Commit(message, mergeFiles, targetSha, sourceSha, mergedTrackedFiles);
         String mergeSha = saveCommit(paths, mergeCommit);
 
         BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
@@ -415,13 +415,13 @@ public class MergeHandler {
     /**
      * 从对象库读取 commit 对象
      */
-    private RemoteCommit readCommit(RepositoryPaths paths, String commitSha) {
+    private Commit readCommit(RepositoryPaths paths, String commitSha) {
         File commitFile = new File(paths.getCommits(), commitSha);
         if (!commitFile.exists()) {
             log.error("Commit file not found: {}", commitFile.getAbsolutePath());
             return null;
         }
-        return Utils.readObject(commitFile, RemoteCommit.class);
+        return Utils.readObject(commitFile, Commit.class);
     }
 
     /**
@@ -438,16 +438,13 @@ public class MergeHandler {
 
     /**
      * 保存 commit 到对象库
+     * SHA 必须与客户端 ObjectStore.saveCommit 一致：sha1(序列化字节)
      */
-    private String saveCommit(RepositoryPaths paths, RemoteCommit commit) {
-        // 计算 SHA（基于 commit 内容）
-        String sha = Utils.sha1(commit.getMessage(), commit.getParent(),
-                commit.getSecondParent(), commit.getTrackedFiles().toString());
-
-        // 写入文件
+    private String saveCommit(RepositoryPaths paths, Commit commit) {
+        byte[] serialized = Utils.serialize(commit);
+        String sha = Utils.sha1((Object) serialized);
         File commitFile = new File(paths.getCommits(), sha);
         Utils.writeObject(commitFile, commit);
-
         return sha;
     }
 

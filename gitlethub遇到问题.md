@@ -999,4 +999,50 @@ graph TD
 - 对着第六章的每个风险，自己判断"这个我认同吗？该怎么修？"
 - 能自己讲出「为什么选方案 A 不选 B」，这文档就真正变成你的了
 
-要不要我挑第六章里那个高危 bug，陪你走一遍"怎么定位 → 怎么修"？这样你能把这条链路彻底吃透。
+
+
+问题：
+
+一个**潜伏的运行期阻断 bug**——它不在你刚改的代码里,而在服务端合并的架构假设上。
+
+## 🔴 严重阻断:服务端根本读不了 push 上来的 commit
+
+### 证据链
+
+| 环节            | 代码位置                     | 事实                                                         |
+| --------------- | ---------------------------- | ------------------------------------------------------------ |
+| 客户端 push     | `Main.java:161-162`          | commit 的 content = `serialize(gitlet.commit.Commit)` 字节   |
+| 服务端存 push   | `RemoteServiceImpl.java:148` | `writeContents(target, content)` —— **原样存字节,从不反序列化** |
+| 服务端 pull     | `RemoteServiceImpl.java:432` | `readContents(...)` —— **也是原样读字节**                    |
+| 依赖关系        | `remote-gitlet/pom.xml`      | **不依赖 gitlet_core**,只依赖 common-service                 |
+| 合并时读 commit | `MergeHandler.java:424`      | `Utils.readObject(commitFile, RemoteCommit.class)` —— **要反序列化!** |
+
+### 为什么会崩
+
+`Utils.readObject` 内部是 `ObjectInputStream.readObject()`。Java 原生序列化的字节流里**写死了类的全限定名**。push 上来的 commit 字节流里记的类名是 `gitlet.commit.Commit`,而:
+
+1. 服务器 classpath 上**没有** `gitlet.commit.Commit`(不依赖 gitlet_core)→ `Class.forName` 抛 **ClassNotFoundException**
+2. 就算有,`RemoteCommit.class.cast(...)` 也会因为 `RemoteCommit` ≠ `Commit` 抛 **ClassCastException**
+
+被 `readObject` 的 catch 包成 `IllegalArgumentException` 抛出。
+
+**结论:任何一次非快进的三路合并,走到 `threeWayMerge` 的第一行 `readCommit` 就崩。**
+
+### 为什么你还没发现
+
+`merge()` 里**快进合并**(`lca == targetSha`,L116-123)只更新分支指针,**不调用 `readCommit`**。所以只要测的是快进场景就一切正常——只有真正的三路合并才会触发。这是个典型的潜伏 bug。
+
+### 还有两个连带问题
+
+- **反向不兼容**:服务端 `saveCommit` 写的是 `serialize(RemoteCommit)`,客户端 pull 下去用 `Commit.class` 读 → 客户端同样 ClassNotFoundException。
+- **SHA 算法不一致**(我之前提的那个,现在确认了):
+  - 客户端 `ObjectStore.saveCommit:161`:`sha1(serialize(commit))`
+  - 服务端 `MergeHandler.saveCommit:444`:`sha1(message, parent, secondParent, trackedFiles.toString())`
+  - 两者算出的 SHA 完全不同,破坏内容寻址。
+
+### 根因一句话
+
+> 整个远程架构把 commit 当**不透明字节**存取(push 存字节、pull 发字节),靠 JSON 传输(`GitletObject` 在两个模块各有一份、包名都不同也不影响,因为 JSON 不带类名)。但 `MergeHandler` 打破了这个约定——它要**反序列化** commit,而 Java 原生序列化是带类名的,`RemoteCommit` 和 `gitlet.commit.Commit` 是两个类。
+
+
+
