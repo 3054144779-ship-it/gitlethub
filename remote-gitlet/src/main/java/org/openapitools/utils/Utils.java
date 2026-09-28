@@ -147,7 +147,7 @@ public class Utils {
         }
     }
 
-    /** Write OBJ to FILE. */
+    /** 将 OBJ 写入 FILE。 */
     public static void writeObject(File file, Serializable obj) {
         writeContents(file, serialize(obj));
     }

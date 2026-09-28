@@ -126,17 +126,20 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                 pullRequest.getId());
         
         if (merge.getCode() == ResultCode.OK) {
-            // ✅ 合并成功：清理暂存区，更新 PR 状态
+            // 合并成功：清理暂存区，更新 PR 状态
             cleanupStaging(pullRequest.getId());
             updatePRStatus(pullRequest, PRStatusEnum.MERGED);
         } else if (merge.getCode() == ResultCode.MERGE_CONFLICT) {
-            // ✅ 有冲突：存储暂存区路径到 PR 表（不清理，等待用户解决）
-            String stagingPath = merge.getData();
-            if (stagingPath != null) {
-                pullRequest.setStagingPath(stagingPath);
+            // data 含 "冲突目录|tracked文件" 两个路径时（首次生成暂存区）才写库；
+            // 若从暂存区恢复但仍有冲突标记，data 为 null，保持原路径不变，避免 NPE
+            String data = merge.getData();
+            if (data != null && data.contains("|")) {
+                String[] parts = data.split("\\|");
+                pullRequest.setStagingPath(parts[0]);
+                pullRequest.setStagingPathTracked(parts[1]);
                 pullRequest.setUpdateTime(LocalDateTime.now());
                 remotePullRequestMapper.updateById(pullRequest);
-                log.info("PR {} 合并冲突，暂存区路径已保存：{}", pullRequest.getId(), stagingPath);
+                log.info("PR {} 合并冲突，暂存区路径已保存：{}", pullRequest.getId(), parts[0]);
             }
         }
         
@@ -157,17 +160,30 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
      */
     private void cleanupStaging(Long prId) {
         PullRequest pr = remotePullRequestMapper.selectById(prId);
-        if (pr != null && pr.getStagingPath() != null) {
+        if (pr == null) {
+            return;
+        }
+        // 删除冲突文件目录
+        if (pr.getStagingPath() != null) {
             File stagingDir = new File(pr.getStagingPath());
             if (stagingDir.exists()) {
                 deleteDirectory(stagingDir);
                 log.info("清理暂存区：{}", pr.getStagingPath());
             }
-            // 清空 PR 表的暂存区路径
-            pr.setStagingPath(null);
-            pr.setUpdateTime(LocalDateTime.now());
-            remotePullRequestMapper.updateById(pr);
         }
+        // 删除序列化的 trackedFiles 文件
+        if (pr.getStagingPathTracked() != null) {
+            File trackedFile = new File(pr.getStagingPathTracked());
+            if (trackedFile.exists()) {
+                trackedFile.delete();
+                log.info("清理 trackedFiles 文件：{}", pr.getStagingPathTracked());
+            }
+        }
+        // 清空 PR 表的两个暂存区路径
+        pr.setStagingPath(null);
+        pr.setStagingPathTracked(null);
+        pr.setUpdateTime(LocalDateTime.now());
+        remotePullRequestMapper.updateById(pr);
     }
 
     /**

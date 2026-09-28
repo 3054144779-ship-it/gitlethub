@@ -20,8 +20,10 @@ import po.Repository;
 import po.User;
 
 import java.io.File;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * 远程合并处理器
@@ -49,6 +51,14 @@ public class MergeHandler {
 
     @Value("${gitlet.storage.base-path:./storage}")
     private String basePath;
+
+    /**
+     * 冲突标记检测正则（行首锚定）
+     * 匹配三种情况：以 "<<<<<<< " 开头的行、整行恰为 "=======" 的行、以 ">>>>>>> " 开头的行
+     * 行首锚定可避免把正常文件里的 "======="（如 Markdown 分隔线）误判为冲突
+     */
+    private static final Pattern CONFLICT_MARKER_PATTERN =
+            Pattern.compile("^(?:<<<<<<< |=======$|>>>>>>> )", Pattern.MULTILINE);
 
     /**
      * 合并 source 分支到 target 分支（PR 合并入口）
@@ -173,7 +183,7 @@ public class MergeHandler {
 
         if (!conflictFiles.isEmpty()) {
             return handleConflict(paths, sourceSha, targetSha, lcaSha,
-                    conflictFiles, sourceBranch, targetBranch);
+                    conflictFiles, sourceBranch, targetBranch, mergedTrackedFiles);
         }
 
         return createMergeCommit(repositoryId, paths, mergedTrackedFiles,
@@ -188,16 +198,24 @@ public class MergeHandler {
     private Result<String> mergeFromStaging(Long repositoryId, PullRequest pr, 
                                              String sourceBranch, String targetBranch) {
         String stagingPath = pr.getStagingPath();
+        String stagingPathTracked = pr.getStagingPathTracked();
         File stagingDir = new File(stagingPath);
-        
-        if (!stagingDir.exists()) {
-            log.warn("暂存区不存在: {}", stagingPath);
-            // 暂存区已被清理，重新执行正常合并
+
+        // 暂存区目录或 trackedFiles 文件缺失/不完整 → 回退到重新三路合并
+        if (stagingPathTracked == null || !stagingDir.exists()) {
+            log.warn("暂存区不完整: stagingPath={}, trackedPath={}", stagingPath, stagingPathTracked);
             return merge(repositoryId, sourceBranch, targetBranch, null);
         }
-        
+
+        File stagingPathFile = new File(stagingPathTracked);
+        if (!stagingPathFile.exists()) {
+            log.warn("trackedFiles 序列化文件不存在: {}", stagingPathTracked);
+            return merge(repositoryId, sourceBranch, targetBranch, null);
+        }
+
+        // 只有暂存区完整，回复合并才能进行
         log.info("从暂存区恢复合并: {}", stagingPath);
-        
+
         // 获取仓库路径
         RepositoryPaths paths = getRepositoryPaths(repositoryId);
         if (paths == null) {
@@ -217,7 +235,7 @@ public class MergeHandler {
             return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, "无法读取 commit 对象。");
         }
         
-        // 关键：收集暂存区中的所有文件
+        // 收集暂存区中的所有文件
         Map<String, String> resolvedFileShas = new HashMap<>();
         List<String> filesWithConflictMarkers = new ArrayList<>();
         
@@ -232,7 +250,7 @@ public class MergeHandler {
         }
         
         // 构建合并后的 trackedFiles
-        Map<String, String> mergedTrackedFiles = new TreeMap<>(targetCommit.getTrackedFiles());
+        Map<String, String> mergedTrackedFiles = Utils.readObject(stagingPathFile,  HashMap.class);
         mergedTrackedFiles.putAll(resolvedFileShas);
         
         // 创建合并提交
@@ -261,10 +279,9 @@ public class MergeHandler {
                         filesWithConflictMarkers, paths);
             } else {
                 String content = Utils.readContentsAsString(file);
-                
-                // 检查是否包含冲突标记
-                if (content.contains("<<<<<<<") || content.contains("=======") || 
-                    content.contains(">>>>>>>")) {
+
+                // 检查是否包含冲突标记（行首锚定，避免误判正常文件里的 =======）
+                if (CONFLICT_MARKER_PATTERN.matcher(content).find()) {
                     filesWithConflictMarkers.add(currentRelativePath);
                     continue;
                 }
@@ -318,10 +335,17 @@ public class MergeHandler {
     private Result<String> handleConflict(RepositoryPaths paths,
                                            String sourceSha, String targetSha, String lcaSha,
                                            List<String> conflictFiles,
-                                           String sourceBranch, String targetBranch) {
+                                           String sourceBranch, String targetBranch,
+                                          Map<String, String> mergedTrackedFiles) {
         String tempDir = basePath + "/temp/merge-" + System.currentTimeMillis();
+        String tempTrackedDir = basePath + "/temp/tracked" + System.currentTimeMillis();
         File tempDirFile = new File(tempDir);
+        File tempTrackedFileDir = new File(tempTrackedDir);
         tempDirFile.mkdirs();
+
+        // 序列化已自动合并的 trackedFiles
+        // 用 writeObject（走 serialize）与读取端 readObject 配对；转 HashMap 保证与 HashMap.class 类型一致
+        Utils.writeObject(tempTrackedFileDir, new HashMap<>(mergedTrackedFiles));
 
         RemoteCommit sourceCommit = readCommit(paths, sourceSha);
         RemoteCommit targetCommit = readCommit(paths, targetSha);
@@ -352,10 +376,12 @@ public class MergeHandler {
         }
 
         log.warn("Merge conflict: {} files, temp dir: {}", conflictFiles.size(), tempDir);
-        
+
+        String data = tempDir + "|" + tempTrackedDir;
+
         String conflictMsg = "合并冲突：" + String.join(", ", conflictFiles);
         return Result.<String>fail(ResultCode.MERGE_CONFLICT, conflictMsg)
-                .setData(tempDir);
+                .setData(data);
     }
 
     /**

@@ -51,6 +51,9 @@ public class PullRequest {
     @TableField("staging_path")
     private String stagingPath;  // 暂存区路径（合并时生成）
 
+    @TableField("staging_path_tracked")
+    private String stagingPathTracked;  // 暂存区路径（被追踪的文件映射）
+
     @TableField("is_deleted")
     @TableLogic
     private Integer isDeleted;
