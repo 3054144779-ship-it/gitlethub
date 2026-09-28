@@ -1,8 +1,11 @@
 package org.openapitools.service.impl;
 
 import common.Result;
+import common.ResultCode;
 import dto.PullRequestDTO;
+import enums.PRStatusEnum;
 import lombok.extern.slf4j.Slf4j;
+import org.openapitools.handler.MergeHandler;
 import org.openapitools.mapper.*;
 import org.openapitools.model.PushEvent;
 import org.openapitools.service.PullRequestEventListener;
@@ -15,6 +18,7 @@ import po.Collaborator;
 import po.PullRequest;
 import po.Repository;
 
+import java.io.File;
 import java.time.LocalDateTime;
 
 @Slf4j
@@ -30,6 +34,11 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     private RemoteCollaboratorMapper remoteCollaboratorMapper;
     @Autowired
     private RemoteUserMapper remoteUserMapper;
+    @Autowired
+    private PullRequestEventListener pullRequestEventListener;
+    @Autowired
+    private MergeHandler mergeHandler;
+
 
     // 创建PR Webhook
     @Async
@@ -95,6 +104,91 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     }
 
     /**
+     * 合并 Pull Request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param pullRequestId  (required) pull request 的 id
+     * @return 合并 Pull Request 的结果
+     */
+    @Override
+    public Result<String> mergePullRequest(String owner, String repo, String pullRequestId) {
+        PullRequest pullRequest = remotePullRequestMapper.selectById(pullRequestId);
+        if (pullRequest == null) {
+            return Result.fail(ResultCode.BAD_REQUEST, "PR 不存在");
+        }
+        
+        log.info("合并 Pull Request {}", pullRequest.getId());
+        
+        // 调用 MergeHandler 执行合并
+        Result<String> merge = mergeHandler.merge(pullRequest.getRepositoryId(),
+                pullRequest.getSourceBranch(), pullRequest.getTargetBranch());
+        
+        //  使用 == 比较 int 值
+        if (merge.getCode() == ResultCode.OK) {
+            // 合并成功：清理暂存区，更新 PR 状态
+            cleanupStaging(pullRequest.getId());
+            updatePRStatus(pullRequest);
+        } else if (merge.getCode() == ResultCode.MERGE_CONFLICT) {
+            //  从 data 获取暂存区路径（不是从 message 解析）
+            String stagingPath = merge.getData();
+            if (stagingPath != null) {
+                pullRequest.setStagingPath(stagingPath);
+                pullRequest.setUpdateTime(LocalDateTime.now());
+                remotePullRequestMapper.updateById(pullRequest);
+                log.info("PR {} 合并冲突，暂存区路径：{}", pullRequest.getId(), stagingPath);
+            }
+        }
+        
+        return merge;
+    }
+
+    /**
+     * 更新 PR 状态
+     *  使用 enum.getValue() 获取整数值
+     */
+    private void updatePRStatus(PullRequest pr) {
+        pr.setStatus(PRStatusEnum.MERGED);
+        pr.setUpdateTime(LocalDateTime.now());
+        remotePullRequestMapper.updateById(pr);
+    }
+
+    /**
+     * 清理暂存区
+     */
+    private void cleanupStaging(Long prId) {
+        PullRequest pr = remotePullRequestMapper.selectById(prId);
+        if (pr != null && pr.getStagingPath() != null) {
+            File stagingDir = new File(pr.getStagingPath());
+            if (stagingDir.exists()) {
+                deleteDirectory(stagingDir);
+                log.info("清理暂存区：{}", pr.getStagingPath());
+            }
+            // 清空 PR 表的暂存区路径
+            pr.setStagingPath(null);
+            pr.setUpdateTime(LocalDateTime.now());
+            pr.setIsDeleted(1); // 删除PR表
+            remotePullRequestMapper.updateById(pr);
+        }
+    }
+
+    /**
+     * 递归删除目录
+     */
+    private void deleteDirectory(File dir) {
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    deleteDirectory(file);
+                } else {
+                    file.delete();
+                }
+            }
+        }
+        dir.delete();
+    }
+
+    /**
      * 从被拒绝的推送中创建 PR
      * 被拒的 commit 没有分支承载，需要先建临时分支
      * @param pushEvent 推送事件
@@ -130,7 +224,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                 .description("Auto-created on push to " + sourceBranch)
                 .sourceBranch(sourceBranch)
                 .targetBranch(repository.getDefaultBranch())
-                .status(0)  // OPEN
+                .status(PRStatusEnum.OPEN)  // OPEN
                 .authorId(pushEvent.getUserId())
                 .createTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())

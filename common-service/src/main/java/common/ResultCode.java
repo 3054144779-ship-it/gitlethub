@@ -15,6 +15,9 @@ public final class ResultCode {
     /** sha1 与内容不符 */
     public static final int SHA1_MISMATCH = 10002;
 
+    /** 合并冲突 */
+    public static final int MERGE_CONFLICT = 1007;
+
     /** refs 指向的 commit 服务端没有 */
     public static final int MISSING_OBJECT = 10003;
 
@@ -48,6 +51,15 @@ public final class ResultCode {
     /** 提交为空，拉取失败 */
     public static final int EMPTY_REPOSITORY = 30005;
 
+    /** 分支为空 */
+    public static final int BRANCH_EMPTY = 3006;
+
+    /** 远程仓库更新失败 */
+    public static final int REMOTE_REPOSITORY_UPDATE_FAILED = 3008;
+
+    /** 不能与自己合并 */
+    public static final Integer CANNOT_MERGE_WITH_ITSELF = 3007;
+
     /** 分支已被别人推进（乐观锁失败） */
     public static final int VERSION_CONFLICT = 50001;
 
@@ -57,8 +69,7 @@ public final class ResultCode {
     /** 用户不存在 */
     public static final int USER_NOT_FOUND = 1006;
 
-    /** 远程仓库更新失败 */
-    public static final int REMOTE_REPOSITORY_UPDATE_FAILED = 3004;
+
 
     private ResultCode() {
     }

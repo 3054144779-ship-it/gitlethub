@@ -68,7 +68,7 @@ class PushForceUpdateBranchTest {
     private void mockCommon(BranchPointer bp) {
         when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
         when(remoteRepositoryMapper.getRepositoryId(1L, "test-repo")).thenReturn(1L);
-        when(remoteBranchPointer.getBranchPointer("alice", 1L, "master")).thenReturn(bp);
+        when(remoteBranchPointer.getBranchPointer(1L, "master")).thenReturn(bp);
         when(remoteCollaborator.getCollaborator(1L, 1L)).thenReturn(
                 Collaborator.builder().id(1L).userId(1L).repositoryId(1L)
                         .level(CollaboratorLevelEnum.OWNER).build());

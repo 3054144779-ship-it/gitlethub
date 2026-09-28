@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import enums.PRStatusEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -36,7 +37,7 @@ public class PullRequest {
     private String targetBranch;
 
     @TableField("status")
-    private Integer status;
+    private PRStatusEnum status;
 
     @TableField("author_id")
     private Long authorId;
@@ -46,6 +47,9 @@ public class PullRequest {
 
     @TableField("update_time")
     private LocalDateTime updateTime;
+
+    @TableField("staging_path")
+    private String stagingPath;  // 暂存区路径（合并时生成）
 
     @TableField("is_deleted")
     @TableLogic

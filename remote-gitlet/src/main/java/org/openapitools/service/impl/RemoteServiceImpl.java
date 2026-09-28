@@ -183,7 +183,7 @@ public class RemoteServiceImpl implements RemoteService {
         // 获取仓库id
         Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
         // 获取分支指针
-        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
+        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(repositoryId, branch);
         // 获取提交者信息
         Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
         log.info("userId:{}, repositoryId:{}", userId, repositoryId);
@@ -262,7 +262,7 @@ public class RemoteServiceImpl implements RemoteService {
         // 获取仓库id
         Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
         // 获取分支指针
-        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
+        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(repositoryId, branch);
         // 获取提交者信息
         Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
 
@@ -382,7 +382,7 @@ public class RemoteServiceImpl implements RemoteService {
 
         Long ownerId = remoteUserMapper.getUserId(owner);
         Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
-        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(owner, repositoryId, branch);
+        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(repositoryId, branch);
 
         // 判断当前分支是否存在，如果不存在则返回错误码30004
         if (branchPointer == null) {

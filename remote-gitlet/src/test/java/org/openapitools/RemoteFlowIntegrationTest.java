@@ -100,7 +100,7 @@ class RemoteFlowIntegrationTest {
         // ===== 3. push 更新分支（DB）=====
         // 首次推送：master 受保护但 commitSha 为 null，允许建立历史
         when(remoteRepositoryMapper.getRepositoryId(1L, REPO)).thenReturn(1L);
-        when(remoteBranchPointer.getBranchPointer(OWNER, 1L, "master")).thenReturn(
+        when(remoteBranchPointer.getBranchPointer(1L, "master")).thenReturn(
                 BranchPointer.builder().id(1L).repositoryId(1L).branchName("master")
                         .commitSha(null).isProtected(1).isForcePush(0).version(0).build());
         when(remoteCollaborator.getCollaborator(1L, 1L)).thenReturn(

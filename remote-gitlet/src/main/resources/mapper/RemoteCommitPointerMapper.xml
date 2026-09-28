@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="org.openapitools.mapper.RemoteCommitPointerMapper">
+    <insert id="insertCommitParent">
+        INSERT INTO commit_parent (repository_id, commit_sha, parent_sha)
+        VALUES (#{repositoryId}, #{commitSha}, #{parentSha})
+    </insert>
+    <select id="getParents" resultType="java.lang.String">
+        SELECT parent_sha
+        FROM commit_parent
+        WHERE repository_id = #{repositoryId}
+          AND commit_sha = #{commitSha}
+    </select>
 </mapper>

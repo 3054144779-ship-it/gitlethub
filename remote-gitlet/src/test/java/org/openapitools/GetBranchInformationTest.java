@@ -48,7 +48,7 @@ class GetBranchInformationTest {
     void getBranchInformation_branchExists_returnsSha() {
         when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
         when(remoteRepositoryMapper.getRepositoryId(1L, "test-repo")).thenReturn(1L);
-        when(remoteBranchPointer.getBranchPointer("alice", 1L, "master")).thenReturn(
+        when(remoteBranchPointer.getBranchPointer(1L, "master")).thenReturn(
                 BranchPointer.builder()
                         .id(1L)
                         .repositoryId(1L)
@@ -71,7 +71,7 @@ class GetBranchInformationTest {
     void getBranchInformation_branchNotExist_returnsBranchNotFound() {
         when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
         when(remoteRepositoryMapper.getRepositoryId(1L, "test-repo")).thenReturn(1L);
-        when(remoteBranchPointer.getBranchPointer("alice", 1L, "dev")).thenReturn(null);
+        when(remoteBranchPointer.getBranchPointer(1L, "dev")).thenReturn(null);
 
         Result<RefView> result = remoteService.getBranchInformation("alice", "test-repo", "dev");
 

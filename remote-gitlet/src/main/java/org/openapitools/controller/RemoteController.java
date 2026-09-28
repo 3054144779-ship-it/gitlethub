@@ -143,5 +143,18 @@ public class RemoteController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 合并 pull request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param pullRequestId  (required) pull request 的 id
+     * @return 合并响应结果
+     */
+    @PostMapping("/pull-request/{pullRequestId}")
+    public ResponseEntity<Result<String>> mergePullRequest(
+            @PathVariable String owner, @PathVariable String repo, @PathVariable String pullRequestId) {
+        Result<String> response = pullRequestEventListener.mergePullRequest(owner, repo, pullRequestId);
+        return ResponseEntity.ok(response);
+    }
 
 }

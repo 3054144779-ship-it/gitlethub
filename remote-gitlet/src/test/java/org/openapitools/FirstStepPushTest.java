@@ -103,7 +103,7 @@ public class FirstStepPushTest {
     private void mockCommonDependencies(BranchPointer bp, Collaborator collab) {
         when(remoteRepositoryMapper.getRepositoryId(1L, "test-repo")).thenReturn(1L);
         when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
-        when(remoteBranchPointerMapper.getBranchPointer("alice", 1L, "feature")).thenReturn(bp);
+        when(remoteBranchPointerMapper.getBranchPointer(1L, "feature")).thenReturn(bp);
         when(remoteCollaboratorMapper.getCollaborator(1L, 1L)).thenReturn(collab);
     }
 
@@ -169,7 +169,7 @@ public class FirstStepPushTest {
         when(remoteRepositoryMapper.getRepositoryId(1L, "test-repo")).thenReturn(1L);
         when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
         BranchPointer bp = buildBranchPointer(false);
-        when(remoteBranchPointerMapper.getBranchPointer("alice", 1L, "feature")).thenReturn(bp);
+        when(remoteBranchPointerMapper.getBranchPointer(1L, "feature")).thenReturn(bp);
         when(remoteCollaboratorMapper.getCollaborator(1L, 1L)).thenReturn(null);
 
         RefUpdateRequest req = new RefUpdateRequest(SHA1);

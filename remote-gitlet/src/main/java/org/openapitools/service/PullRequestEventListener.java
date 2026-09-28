@@ -18,4 +18,13 @@ public interface PullRequestEventListener {
      * @return pull request 的 url
      */
     Result<String> createPullRequest(String owner, String repo, PullRequestDTO pullRequestDTO);
+
+    /**
+     * 合并 pull request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param pullRequestId  (required) pull request 的 id
+     * @return 合并结果
+     */
+    Result<String> mergePullRequest(String owner, String repo, String pullRequestId);
 }

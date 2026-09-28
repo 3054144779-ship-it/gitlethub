@@ -27,7 +27,8 @@ public class RepositoryPaths {
     private final File commits;
     /** 储存仓库的标识。 */
     private final File repositoryId;
-
+    /** 储存暂存区的文件。 */
+    private final File PRStaging;
 
     public RepositoryPaths(String repoId, File cwd) {
         this.cwd = cwd;
@@ -37,5 +38,6 @@ public class RepositoryPaths {
         this.branchDir = join(repositoryId, "refs", "heads");
         this.headFile = join(repositoryId, "HEAD");
         this.commits = join(object, "commits");
+        this.PRStaging = join(repositoryId, "storage");
     }
 }
