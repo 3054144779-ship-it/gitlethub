@@ -93,6 +93,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                 .description(pullRequestDTO.getDescription())
                 .sourceBranch(pullRequestDTO.getSourceBranch())
                 .targetBranch(pullRequestDTO.getTargetBranch())
+                .status(PRStatusEnum.OPEN)
                 .authorId(remoteUserMapper.getUserId(owner))
                 .createTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
@@ -184,19 +185,6 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
             }
         }
         dir.delete();
-    }
-
-    /**
-     * 从被拒绝的推送中创建 PR
-     * 被拒的 commit 没有分支承载，需要先建临时分支
-     * @param pushEvent 推送事件
-     */
-    private void createPrFromRejectedPush(PushEvent pushEvent) {
-        // 把被拒的 commit 存到临时分支
-        String tempBranch = "pr/" + pushEvent.getUserId() + "-" + System.currentTimeMillis();
-        createBranch(pushEvent.getRepositoryId(), tempBranch, pushEvent.getSha1());
-        log.info("从被拒绝的推送中创建 PR，临时分支: {}", tempBranch);
-        createPullRequestObject(pushEvent, tempBranch);
     }
 
     /**

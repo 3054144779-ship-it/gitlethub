@@ -650,8 +650,353 @@ if (pushResult1.isSuccess() && pushResult2.isSuccess()) {   // 两个都误判�
    - 修复 B → 真成功才写 tracking = `59681dde`,这次是真的对上了。
 3. 之后 `pull`,`getBranchSha` 就能读到 `59681dde` 而不是 null 了。
 
+
+
+Cloud-Gitlet PR 链路设计与方案取舍:
+
+> 本文档整合 Pull Request 链路从「协作模型」到「冲突解决」的全部关键决策，
+> 记录每个决策的备选方案、最终选择与理由，并标注当前代码的已知风险。
+
 ---
 
-回到你上一个问题的主题——**这次日志就是最好的 debug 教材**。你如果只盯着"非快进被拒绝"那一行去改 `nonFastForwardCheck`,就修错地方了(那个校验本身没错,是喂给它的数据被污染了)。真正的线索藏在**第一次 push 的 `上传对象 []` 和那句 WARN** 里。所以下次遇到"第二次才爆的错",记得往前翻**上一次操作的日志**——很多"莫名其妙的冲突",都是上一步的静默失败埋的。
+## 一、背景与目标
 
-要不要我把这三处修复涉及的方法,连同"服务端 HTTP 200 包装业务错误码"这个坑,一起补进你那份 Markdown 文档?
+Cloud-Gitlet 是一个类 Git 的云端版本控制系统。PR 链路要解决的核心问题：
+
+- 协作者如何安全地把 `feature` 分支的改动合入受保护分支（如 `master`）
+- 合并冲突如何在**服务端**检测与解决（支持 WebUI 一键合并）
+- 如何在**不依赖用户本地环境**的前提下完成三路合并
+
+---
+
+## 二、整体架构
+
+```mermaid
+
+sequenceDiagram
+    participant Owner as Owner
+    participant API as Controller
+    participant PR as PullRequestEventListenerImpl
+    participant MH as MergeHandler
+    participant DB as 数据库
+    participant FS as 文件系统
+    
+    Note over Owner,FS: 第一次合并（有冲突）
+    Owner->>API: POST /merge-pull-request?prId=123
+    API->>PR: mergePullRequest(owner, repo, "123")
+    PR->>MH: merge(repoId, source, target, 123)
+    MH->>MH: 检查 PR.stagingPath → null
+    MH->>FS: 读取 commit/blob，执行三路合并
+    MH->>FS: 检测到冲突 → 生成冲突文件到 tempDir
+    MH-->>PR: fail(MERGE_CONFLICT, data=tempDir)
+    PR->>DB: 更新 PR.stagingPath = tempDir
+    PR-->>Owner: 返回冲突信息
+    
+    Note over Owner,FS: 用户解决冲突
+    Owner->>FS: 下载/编辑冲突文件<br/>删除冲突标记
+    
+    Note over Owner,FS: 第二次合并（从暂存区恢复）
+    Owner->>API: POST /merge-pull-request?prId=123
+    API->>PR: mergePullRequest(owner, repo, "123")
+    PR->>MH: merge(repoId, source, target, 123)
+    MH->>DB: 检查 PR.stagingPath → 存在！
+    MH->>FS: 读取暂存区文件
+    MH->>MH: 检查冲突标记 → 无
+    MH->>FS: 计算 blob SHA，保存到对象库
+    MH->>FS: 创建合并 commit
+    MH->>DB: 更新 target 分支指针
+    MH->>FS: 清理暂存区
+    MH->>DB: 清空 PR.stagingPath
+    MH-->>PR: ok(mergeSha)
+    PR->>DB: 更新 PR.status = MERGED
+    PR-->>Owner: 合并成功
+```
+
+**模块隔离原则**：`remote-gitlet` 是 Spring 服务（数据库 + 文件对象库），
+`gitlet_core` 是纯库（本地文件操作）。两者**不共享类**，远程用自己的
+`RemoteCommit`、`RepositoryPaths`、`Utils` 和 Mapper。
+
+---
+
+## 三、关键设计决策（方案取舍）
+
+### 决策 1：协作模型 — 单仓库 + 分支保护 + 同仓库 PR
+
+| 备选             | 说明                                                | 取舍       |
+| ---------------- | --------------------------------------------------- | ---------- |
+| GitHub fork 模型 | 先 fork 到自己账号 → push 到 fork → 跨仓库 PR       | ❌ 复杂度高 |
+| **单仓库模型**   | 协作者直接是仓库成员，push feature 分支 → 同仓库 PR | ✅ 采用     |
+
+**理由**：Cloud-Gitlet 定位轻量协作，协作者本就是仓库成员，无需 fork 的账号与跨仓库复杂度。
+分支保护机制保证只有 Owner 能推 `master`，协作者只能推自己的 feature 分支。
+
+**分支覆盖问题**：由「非快进校验」兜底 —— 同名分支若被他人推进，非快进推送会被拒，不会静默覆盖。
+
+---
+
+### 决策 2：PR 触发方式 — Spring 内部事件（非 HTTP Webhook）
+
+| 备选                        | 说明                                 | 取舍         |
+| --------------------------- | ------------------------------------ | ------------ |
+| HTTP Webhook                | push 后回调外部配置的 URL            | ❌ 当前不需要 |
+| **Spring ApplicationEvent** | 同进程内 `@EventListener` + `@Async` | ✅ 采用       |
+
+**理由**：
+- push 主流程发布 `PushEvent`，监听器**异步**建 PR，不阻塞、不影响 push 结果
+- 严格说这**不是 Webhook**（没有回调外部地址），是内部事件驱动
+- 未来若要接真 Webhook，只需新增监听器，**不用改现有代码**
+
+**代码位置**：
+- `RemoteServiceImpl` 在 `pushUpdateBranch` 里发布事件（rejected / success 两种）
+- `PullRequestEventListenerImpl.onPush()` 消费事件
+
+---
+
+### 决策 3：自动建 PR — 仓库级 + 用户级两级开关
+
+```mermaid
+graph TD
+    Push["push 成功事件"] --> R{"repo.allowAutoPr"}
+    R -->|关闭 0| Skip["跳过"]
+    R -->|开启/null| U{"collaborator.autoCreatePr"}
+    U -->|关闭 0| Skip
+    U -->|开启/null| Create["createPrFromFeatureBranch"]
+    Push2["push 被拒 rejected"] --> Skip2["直接 return<br/>提示走 feature 分支"]
+```
+
+| 版本       | 逻辑                   | 取舍         |
+| ---------- | ---------------------- | ------------ |
+| 第一版     | 无脑自动建 PR          | ❌ 太激进     |
+| 第二版     | 纯手动（GitHub 式）    | ❌ 丢失便利性 |
+| **第三版** | 两级开关，都开才自动建 | ✅ 采用       |
+
+**理由**：兼顾灵活性与便利性。Owner 可全局关闭，协作者可个人关闭。
+`null` 一律视为「允许」，兼容老数据、避免 NPE。
+
+---
+
+### 决策 4：合并位置 — 服务端三路合并
+
+| 备选           | 说明                                         | 取舍           |
+| -------------- | -------------------------------------------- | -------------- |
+| 客户端合并     | 服务器只存 PR 元数据，用户本地 merge 后 push | ❌ 依赖本地环境 |
+| **服务端合并** | 服务器读对象库，内存执行三路合并             | ✅ 采用         |
+
+**前提**：远程对象库**已有完整 commit/blob**（协作者 push 时上传），服务端能读到文件内容，
+因此具备做三路合并的条件（这也是 GitHub 的模式）。
+
+**理由**：支持 WebUI 一键合并，不依赖用户本地是否装 gitlet。
+
+---
+
+### 决策 5：暂存区设计 — 按需创建 + 不复制源文件 + 内存合并
+
+| 备选               | 说明                                      | 取舍       |
+| ------------------ | ----------------------------------------- | ---------- |
+| PR 创建即复制文件  | 建 PR 时把 source/target/LCA 复制到暂存区 | ❌ 浪费存储 |
+| **合并时按需创建** | 只在合并尝试时创建，且只写冲突结果        | ✅ 采用     |
+
+**核心理念**：
+- 主对象库是**只读源**，直接从 commit 的 `trackedFiles` 映射把 blob 读进**内存**
+- 三路合并在**内存**中执行
+- **无冲突** → 直接生成合并提交写回对象库，更新分支指针，不产生暂存区
+- **有冲突** → 只把**冲突文件**（带标记）写入暂存区，供 WebUI 编辑或下载
+
+**暂存区的真正意义**：隔离临时结果、存放冲突文件、避免为每个 PR 预存大量副本。
+
+---
+
+### 决策 6：冲突解决 — 暂存区复用 + 冲突标记校验（方案 A）
+
+**要解决的问题**：用户在暂存区改完冲突文件后，若再次调合并接口，服务器会**重新三路合并 → 再次检测冲突 → 死循环**。
+
+| 维度       | 方案 A（暂存区复用）       | 方案 B（新增 resolve 接口） |
+| ---------- | -------------------------- | --------------------------- |
+| 复杂度     | 低，复用 merge 接口        | 高，新增 API/DTO/Service    |
+| 幂等性     | 天然支持                   | 需额外状态机                |
+| 用户体验   | WebUI 只需一个「合并」按钮 | 需区分两个入口              |
+| Git 符合度 | 高（类似 git merge 幂等）  | 低                          |
+
+**最终选择**：方案 A。
+
+**机制**：
+```mermaid
+graph TD
+    Merge["mergePullRequest(prId)"] --> Check{"PR.stagingPath 存在?"}
+    Check -->|是| FromStaging["mergeFromStaging"]
+    Check -->|否| Normal["threeWayMerge"]
+    FromStaging --> Scan["递归扫描暂存区文件"]
+    Scan --> Mark{"含冲突标记?"}
+    Mark -->|是| Fail["返回错误，提示继续解决"]
+    Mark -->|否| Commit["计算 blob SHA → 生成双父合并提交"]
+    Normal -->|无冲突| Commit2["生成合并提交"]
+    Normal -->|有冲突| Staging["写冲突文件 → 存 stagingPath 到 PR 表"]
+```
+
+---
+
+### 决策 7：对象生命周期 — GC 而非立即删除
+
+**PR 被拒绝后，主对象库的 commit/blob 要不要删？** → **不删。**
+
+```
+PR 拒绝 ≠ 分支删除
+  PR 记录        → 逻辑删除 ✅
+  feature 分支   → 还在 ❌ 不能删
+  commit / blob  → 被 feature 分支引用 ❌ 不能删
+```
+
+**理由**：遵循 Git 的 GC 机制。只有当对象**不被任何分支/标签引用**时才成为悬空对象，
+再由 GC 定期清理（Git 默认保留 2 周）。PR 拒绝只删 PR 记录本身。
+
+---
+
+### 决策 8：LCA 查找 — 数据库 commit_parent 表 BFS
+
+远程没有本地那种「commit 对象在内存里的 parent 链」，改用数据库 `commit_parent` 表：
+
+1. 从 `targetSha` 出发 BFS，收集 target 的所有祖先
+2. 从 `sourceSha` 出发 BFS，第一个命中 target 祖先集合的节点即 LCA
+3. LCA 为 null → 无关历史，拒绝合并
+
+**合并类型判断**：
+- `lca == sourceSha` → source 已被 target 包含，无需合并
+- `lca == targetSha` → **快进**，直接把 target 指向 source
+- 其他 → **三路合并**
+
+---
+
+## 四、完整链路流程
+
+### 4.1 PR 创建（两条路径）
+
+| 路径 | 入口                                  | 说明                                        |
+| ---- | ------------------------------------- | ------------------------------------------- |
+| 手动 | `createPullRequest(owner, repo, dto)` | 用户指定 source/target/title/description    |
+| 自动 | `onPush → createPrFromFeatureBranch`  | push 成功 + 两级开关都开，target 用默认分支 |
+
+### 4.2 PR 合并
+
+```mermaid
+graph TD
+    A["Owner 点击合并"] --> B["mergePullRequest"]
+    B --> C["MergeHandler.merge(repoId, src, tgt, prId)"]
+    C --> D{"有 stagingPath?"}
+    D -->|有| E["mergeFromStaging"]
+    D -->|无| F["取分支指针 → findLCA"]
+    F --> G{"合并类型"}
+    G -->|已包含| H["返回已更新"]
+    G -->|快进| I["更新 target 指针"]
+    G -->|三路| J["threeWayMerge"]
+    J --> K{"有冲突?"}
+    K -->|无| L["createMergeCommit"]
+    K -->|有| M["handleConflict → 写暂存区"]
+    E --> N{"冲突标记?"}
+    N -->|有| O["返回 MERGE_CONFLICT"]
+    N -->|无| P["createMergeCommitFromStaging"]
+    L --> Q["Listener: 清理暂存区 + 状态 MERGED"]
+    I --> Q
+    P --> Q
+    M --> R["Listener: 存 stagingPath 到 PR 表"]
+    O --> R
+```
+
+**职责边界**：
+- `MergeHandler`：纯合并逻辑（读对象库、三路合并、写结果、返回暂存区路径）
+- `PullRequestEventListenerImpl`：PR 业务（更新 PR 表、清理暂存区、改状态）
+
+---
+
+## 五、数据模型
+
+### pull_request 表（PO：`PullRequest`）
+
+| 字段                          | 类型          | 说明                             |
+| ----------------------------- | ------------- | -------------------------------- |
+| id                            | Long          | 主键                             |
+| repository_id                 | Long          | 所属仓库                         |
+| title / description           | String        | PR 标题/描述                     |
+| source_branch / target_branch | String        | 源/目标分支                      |
+| status                        | PRStatusEnum  | OPEN / MERGED / CLOSED           |
+| author_id                     | Long          | 创建者                           |
+| **staging_path**              | String        | **暂存区路径（合并冲突时写入）** |
+| create_time / update_time     | LocalDateTime | 时间戳                           |
+| is_deleted                    | Integer       | 逻辑删除（@TableLogic）          |
+
+### commit_parent 表
+
+记录提交的父子关系，供 `findLCA` BFS 使用。合并提交有**两条**父记录（target + source）。
+
+---
+
+## 六、已知风险与待办（工程自查）
+
+> 以下是通读当前代码后发现的真实缺口，按严重程度排序。
+
+### 🔴 高危
+
+1. **暂存区恢复会丢失「自动合并的非冲突文件」**
+   - `threeWayMerge` 里，非冲突的 source 改动被合进 `mergedTrackedFiles`；
+     但只要有冲突就走 `handleConflict`，**只写冲突文件**到暂存区，`mergedTrackedFiles` 被丢弃。
+   - `mergeFromStaging` 重建时用 `target.trackedFiles + 冲突文件`，
+     导致**非冲突的 source 改动丢失**。
+   - **修复方向**：`handleConflict` 时把「已自动合并的完整 trackedFiles」一并持久化
+     （写暂存区或存 PR 表），恢复时以它为基准，而非重新用 target 的。
+
+### 🟡 中危
+
+2. **手动建 PR 未设 status**
+   - `createPullRequest` 的 builder 没有 `.status(PRStatusEnum.OPEN)`，落库为 null。
+   - 对比 `createPullRequestObject`（自动路径）是设了 OPEN 的。
+
+3. **冲突标记误判**
+   - `collectResolvedFiles` 用 `content.contains("=======")` 判断，
+     正常文件若含 7 个连续等号（如 Markdown 分隔线）会被误判为未解决。
+   - **修复方向**：用更严格的行首正则，如 `^<<<<<<< `、`^=======$`、`^>>>>>>> `。
+
+4. **合并提交 SHA 计算方式与本地可能不一致**
+   - `saveCommit` 用 `sha1(message, parent, secondParent, trackedFiles.toString())`，
+     与 `gitlet_core` 本地 Commit 的 SHA 算法未必一致，跨端引用同一 commit 时可能对不上。
+
+### 🟢 低危 / 清理项
+
+5. **死代码**：`createPrFromRejectedPush` 和 `createBranch` 已不再被调用
+   （rejected 现在直接 return），可删除。
+
+6. **暂存区路径命名不统一**：代码用 `basePath/temp/merge-{timestamp}`，
+   与设计文档描述的 `.gitlet/pr-staging/{prId}/` 不一致。建议统一为按 prId 命名，便于追踪与清理。
+
+7. **依赖确认**：`RemoteCommit` 类、`RemoteCommitPointerMapper.getParents/insertCommitParent`
+   的 SQL 实现（XML 或注解）需确认存在，否则运行期报错。
+
+---
+
+## 七、一句话总结每个决策
+
+| #    | 决策       | 一句话                                 |
+| ---- | ---------- | -------------------------------------- |
+| 1    | 单仓库模型 | 不做 fork，协作者直接推 feature 分支   |
+| 2    | 内部事件   | 用 Spring 事件解耦，不是真 Webhook     |
+| 3    | 两级开关   | 仓库 + 用户都同意才自动建 PR           |
+| 4    | 服务端合并 | 对象库有全量文件，服务端做三路合并     |
+| 5    | 暂存区按需 | 合并时才建，只存冲突文件，内存合并     |
+| 6    | 暂存区复用 | 靠冲突标记校验实现幂等，不新增接口     |
+| 7    | GC 回收    | PR 拒绝不删对象，等 GC 清悬空          |
+| 8    | 表驱动 LCA | 用 commit_parent 表 BFS 找最近公共祖先 |
+---
+
+文档已经整理好了。几个说明：
+
+**1. 这份文档基于代码真实状态**，不是凭记忆——我逐行读了 `MergeHandler`、`PullRequestEventListenerImpl`、`PullRequest` 三个核心文件。
+
+**2. 我特意加了「第六章 已知风险」**，其中标红的第 1 条是通读代码时发现的**真实 bug**：
+
+> 有冲突时，`threeWayMerge` 里已经自动合并好的非冲突文件（`mergedTrackedFiles`）会被丢弃，`handleConflict` 只写了冲突文件到暂存区；等用户解决完冲突走 `mergeFromStaging` 恢复时，是用 `target 的原始文件 + 冲突文件` 重建的，**那些自动合并的非冲突 source 改动就丢了**。
+
+这个如果你面试/答辩时被问到"有冲突又有非冲突改动的场景怎么处理"，是能加分的深度点。
+
+**3. 关于文档定位**：这份东西的价值不在于"是我写的"，而在于它把**你做过的决策**串成了可复述的逻辑链。建议你：
+- 对着第六章的每个风险，自己判断"这个我认同吗？该怎么修？"
+- 能自己讲出「为什么选方案 A 不选 B」，这文档就真正变成你的了
+
+要不要我挑第六章里那个高危 bug，陪你走一遍"怎么定位 → 怎么修"？这样你能把这条链路彻底吃透。
