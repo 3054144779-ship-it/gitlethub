@@ -9,8 +9,10 @@ import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.service.RepositoryService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 import po.Repository;
 
+@Service
 public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, Repository> implements RepositoryService{
     @Autowired
     private RemoteRepositoryMapper remoteRepositoryMapper;

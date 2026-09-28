@@ -99,7 +99,7 @@ class PushForceUpdateBranchTest {
     void forceUpdate_notAllowed_returnsForbidden() {
         when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
         when(remoteRepositoryMapper.getRepositoryId(1L, "test-repo")).thenReturn(1L);
-        when(remoteBranchPointer.getBranchPointer("alice", 1L, "master"))
+        when(remoteBranchPointer.getBranchPointer(1L, "master"))
                 .thenReturn(buildBranchPointer(0));
 
         Result<RefView> result = remoteService.pushForceUpdateBranch(

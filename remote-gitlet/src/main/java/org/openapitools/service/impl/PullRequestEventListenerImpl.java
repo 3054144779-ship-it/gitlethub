@@ -35,8 +35,6 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     @Autowired
     private RemoteUserMapper remoteUserMapper;
     @Autowired
-    private PullRequestEventListener pullRequestEventListener;
-    @Autowired
     private MergeHandler mergeHandler;
 
 
