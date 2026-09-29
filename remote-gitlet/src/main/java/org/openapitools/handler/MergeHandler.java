@@ -101,6 +101,7 @@ public class MergeHandler {
             return Result.fail(ResultCode.CANNOT_MERGE_WITH_ITSELF, "Cannot merge a branch with itself.");
         }
 
+        log.info("Merging branches: {} -> {}", sourceBranch, targetBranch);
         // 2. 找 LCA
         String lcaSha = findLCA(repositoryId, sourceSha, targetSha);
         if (lcaSha == null) {
@@ -118,12 +119,12 @@ public class MergeHandler {
             target.setCommitSha(sourceSha);
             target.setUpdateTime(LocalDateTime.now());
             branchPointerMapper.updateBranchPointer(repositoryId, sourceSha, target.getVersion());
-            log.info("Fast-forward merge: {} -> {}, new SHA: {}", sourceBranch, targetBranch, sourceSha);
+            log.info("快进合并: {} -> {}, new SHA: {}", sourceBranch, targetBranch, sourceSha);
             return Result.ok(sourceSha + " 快进合并成功。");
         }
 
         // 4. 非快进合并：执行三路合并
-        log.info("Three-way merge: {} -> {}, LCA: {}", sourceBranch, targetBranch, lcaSha);
+        log.info("三路合并: {} -> {}, LCA: {}", sourceBranch, targetBranch, lcaSha);
         return threeWayMerge(repositoryId, sourceSha, targetSha, lcaSha, sourceBranch, targetBranch);
     }
 
@@ -472,6 +473,8 @@ public class MergeHandler {
             }
         }
 
+        log.info("Target 祖先: {}", targetAncestors);
+
         // 从 source 开始 BFS，找第一个在 targetAncestors 中的节点
         queue.clear();
         queue.add(sourceSha);
@@ -479,6 +482,9 @@ public class MergeHandler {
 
         while (!queue.isEmpty()) {
             String sha = queue.poll();
+
+            log.info("Checking commit: {}", sha);
+
             if (sha == null || visited.contains(sha)) {
                 continue;
             }

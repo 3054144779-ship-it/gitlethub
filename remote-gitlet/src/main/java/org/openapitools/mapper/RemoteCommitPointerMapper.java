@@ -2,6 +2,7 @@ package org.openapitools.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import po.CommitParent;
 
 import java.util.List;
@@ -14,7 +15,7 @@ public interface RemoteCommitPointerMapper extends BaseMapper<CommitParent> {
      * @param sha 提交的sha值
      * @return 父提交的sha值列表
      */
-    List<String> getParents(Long repositoryId, String sha);
+    List<String> getParents(@Param("repositoryId") Long repositoryId, @Param("commitSha") String sha);
 
     /**
      * 插入合并提交的父提交
@@ -22,5 +23,7 @@ public interface RemoteCommitPointerMapper extends BaseMapper<CommitParent> {
       * @param mergeSha 合并提交的sha值
       * @param targetSha 目标提交的sha值
      */
-    void insertCommitParent(Long repositoryId, String mergeSha, String targetSha);
+    void insertCommitParent(@Param("repositoryId") Long repositoryId,
+                            @Param("commitSha") String mergeSha,
+                            @Param("parentSha") String targetSha);
 }

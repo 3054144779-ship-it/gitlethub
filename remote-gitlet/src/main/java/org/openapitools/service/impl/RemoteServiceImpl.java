@@ -240,7 +240,7 @@ public class RemoteServiceImpl implements RemoteService {
         }
 
         // 用户权限通过，分支不受保护，更新分支指向提交
-        if (!pushWrite(branchPointer, sha1, repositoryId, collaborator, branch)) {
+        if (!pushWrite(branchPointer, sha1, repositoryId, collaborator, branch, repositoryPaths)) {
             // 更新失败，返回版本冲突
             return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
         }
@@ -292,7 +292,8 @@ public class RemoteServiceImpl implements RemoteService {
         }
 
         log.info("强制更新分支 {} {}", branch, refUpdateRequest);
-        pushWrite(branchPointer, refUpdateRequest.getSha(), repositoryId, collaborator, branch);
+        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
+        pushWrite(branchPointer, refUpdateRequest.getSha(), repositoryId, collaborator, branch, repositoryPaths);
 
         return Result.ok();
     }
@@ -482,7 +483,7 @@ public class RemoteServiceImpl implements RemoteService {
      * @param branch 分支名
      */
     private boolean pushWrite(BranchPointer branchPointer, String sha1, Long repositoryId,
-                           Collaborator collaborator, String branch) {
+                           Collaborator collaborator, String branch, RepositoryPaths repositoryPaths) {
         // 用户权限通过，分支不受保护，更新分支指向提交
         int link = remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1, branchPointer.getVersion());
         if (link == 0) {
@@ -501,11 +502,14 @@ public class RemoteServiceImpl implements RemoteService {
         // 插入提交记录
         remoteSubmissionRecordMapper.insert(submissionRecord);
 
+        Commit commit = Utils.readObject(Utils.join(repositoryPaths.getCommits(), sha1), Commit.class);
+
         // 创建提交图谱索引
         CommitParent commitParent = CommitParent.builder()
                 .repositoryId(repositoryId)              // 仓库ID
                 .commitSha(sha1)                         // 提交SHA1值
-                .parentSha(branchPointer.getCommitSha()) // 父提交SHA1值
+                .parentSha(commit.getParent()) // 父提交SHA1值
+                .parentSecondSha(commit.getSecondParent())
                 .build();
 
         // 插入提交图谱索引
