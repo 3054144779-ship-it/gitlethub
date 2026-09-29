@@ -17,6 +17,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.Generated;
+import vo.PullRequestVO;
 
 import javax.annotation.Nullable;
 
@@ -154,6 +155,13 @@ public class RemoteController {
     public ResponseEntity<Result<String>> mergePullRequest(
             @PathVariable String owner, @PathVariable String repo, @PathVariable String pullRequestId) {
         Result<String> response = pullRequestEventListener.mergePullRequest(owner, repo, pullRequestId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/pull-request")
+    public ResponseEntity<Result<PullRequestVO>> getPullRequest(
+            @PathVariable String owner, @PathVariable String repo) {
+        Result<PullRequestVO> response = pullRequestEventListener.getPullRequest(owner, repo);
         return ResponseEntity.ok(response);
     }
 

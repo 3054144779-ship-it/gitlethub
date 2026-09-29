@@ -230,6 +230,8 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 **spec 覆盖的（实现方 `remote-gitlet`）**
 
+注：owenr为用户名，repo为仓库名
+
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | POST | `/api/repos/{owner}/{repo}/refs/{branch}` | push 第一步：更新分支（乐观锁） |

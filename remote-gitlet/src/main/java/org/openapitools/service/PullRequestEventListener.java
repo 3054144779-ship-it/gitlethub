@@ -3,6 +3,7 @@ package org.openapitools.service;
 import common.Result;
 import dto.PullRequestDTO;
 import org.openapitools.model.PushEvent;
+import vo.PullRequestVO;
 
 public interface PullRequestEventListener {
     /**
@@ -27,4 +28,12 @@ public interface PullRequestEventListener {
      * @return 合并结果
      */
     Result<String> mergePullRequest(String owner, String repo, String pullRequestId);
+
+    /***
+     * 获取 pull request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return
+     */
+    Result<PullRequestVO> getPullRequest(String owner, String repo);
 }

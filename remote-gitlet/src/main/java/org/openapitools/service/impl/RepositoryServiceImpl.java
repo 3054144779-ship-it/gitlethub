@@ -1,5 +1,6 @@
 package org.openapitools.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import common.Result;
 import common.ResultCode;
@@ -11,6 +12,7 @@ import org.openapitools.service.RepositoryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import po.Repository;
+import vo.RepositoryVO;
 
 @Service
 public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, Repository> implements RepositoryService{
@@ -45,5 +47,23 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
         }
 
         return Result.ok();
+    }
+
+    /**
+     * 获取远程仓库配置
+     * @param repositoryId 远程仓库ID
+      * @return 远程仓库配置
+     */
+    @Override
+    public Result<RepositoryVO> getRemoteRepository(String repositoryId) {
+        Repository repository = lambdaQuery().eq(Repository::getId, repositoryId).one();
+
+        if (repository == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+
+        RepositoryVO repositoryVO = BeanUtil.copyProperties(repository, RepositoryVO.class);
+
+        return Result.ok(repositoryVO);
     }
 }

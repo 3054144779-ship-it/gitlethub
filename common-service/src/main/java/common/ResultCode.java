@@ -70,7 +70,6 @@ public final class ResultCode {
     public static final int USER_NOT_FOUND = 1006;
 
 
-
     private ResultCode() {
     }
 }

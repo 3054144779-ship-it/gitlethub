@@ -8,6 +8,7 @@ import org.openapitools.service.RepositoryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import vo.RepositoryVO;
 
 @RestController
 @RequestMapping("/api/repos")
@@ -40,6 +41,18 @@ public class RepositoryController {
     public ResponseEntity<Result<String>> updateRemoteRepository(
             @RequestBody RepositoryCreateDTO repositoryCreateDTO) {
         Result<String> response = repositoryService.updateRemoteRepository(repositoryCreateDTO);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 获取远程仓库配置
+     * @param repositoryId 远程仓库ID
+     * @return 远程仓库配置
+     */
+    @GetMapping("/{repositoryId}")
+    public ResponseEntity<Result<RepositoryVO>> getRemoteRepository(
+            @PathVariable String repositoryId) {
+        Result<RepositoryVO> response = repositoryService.getRemoteRepository(repositoryId);
         return ResponseEntity.ok(response);
     }
 

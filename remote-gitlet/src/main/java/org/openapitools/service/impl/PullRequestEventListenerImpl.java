@@ -1,5 +1,6 @@
 package org.openapitools.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import common.Result;
 import common.ResultCode;
 import dto.PullRequestDTO;
@@ -17,6 +18,7 @@ import po.BranchPointer;
 import po.Collaborator;
 import po.PullRequest;
 import po.Repository;
+import vo.PullRequestVO;
 
 import java.io.File;
 import java.time.LocalDateTime;
@@ -142,6 +144,23 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         }
         
         return merge;
+    }
+
+    /**
+     * 获取 Pull Request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return 获取 Pull Request 的结果
+     */
+    @Override
+    public Result<PullRequestVO> getPullRequest(String owner, String repo) {
+        log.info("获取 Pull Request {} {}", owner, repo);
+        Long userId = remoteUserMapper.getUserId(owner);
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
+        PullRequest pullRequest = remotePullRequestMapper.selectById(repositoryId);
+        PullRequestVO pullRequestVO = BeanUtil.copyProperties(pullRequest, PullRequestVO.class);
+        log.info("获取 Pull Request 成功 {}", pullRequestVO);
+        return Result.ok(pullRequestVO);
     }
 
     /**
