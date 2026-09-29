@@ -18,18 +18,21 @@ public interface PullRequestEventListener {
      * 创建 pull request
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
+     * @param pullRequestDTO  (required) 创建 Pull Request 的 DTO
+     * @param actorId  (optional) 调用者用户 ID（由鉴权过滤器注入）；为空时回退为仓库所有者
      * @return pull request 的 url
      */
-    Result<String> createPullRequest(String owner, String repo, PullRequestDTO pullRequestDTO);
+    Result<String> createPullRequest(String owner, String repo, PullRequestDTO pullRequestDTO, Long actorId);
 
     /**
      * 合并 pull request
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param pullRequestId  (required) pull request 的 id
+     * @param actorId  (optional) 调用者用户 ID；合并仅允许仓库 OWNER，为空视为无权
      * @return 合并结果
      */
-    Result<String> mergePullRequest(String owner, String repo, String pullRequestId);
+    Result<String> mergePullRequest(String owner, String repo, String pullRequestId, Long actorId);
 
     /***
      * 获取仓库最近的一条 pull request

@@ -1,11 +1,15 @@
 package org.openapitools;
 
+import cn.hutool.jwt.JWT;
+import common.Result;
 import enums.CollaboratorLevelEnum;
 import enums.PRStatusEnum;
 import gitlet.commit.Commit;
+import jwt.KeyPairManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.openapitools.handler.MergeHandler;
 import org.openapitools.mapper.*;
 import org.openapitools.service.support.RepositoryObjectReader;
 import org.openapitools.utils.Utils;
@@ -13,6 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,10 +31,12 @@ import po.User;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -61,6 +69,14 @@ class ReadEndpointsMockMvcTest {
     private RemoteCommitPointerMapper remoteCommitPointer;
     @MockBean
     private RemotePullRequestMapper remotePullRequestMapper;
+    // 合并要真写对象存储，这里只验证鉴权链路，故 mock 掉
+    @MockBean
+    private MergeHandler mergeHandler;
+    // 鉴权依赖：签名校验用 mock，token 本体用 hutool 真实签出以走真实解析
+    @MockBean
+    private KeyPairManager keyPairManager;
+    @MockBean
+    private StringRedisTemplate stringRedisTemplate;
 
     @Autowired
     private RepositoryObjectReader repositoryObjectReader;
@@ -104,6 +120,10 @@ class ReadEndpointsMockMvcTest {
                 Collaborator.builder().id(1L).repositoryId(7L).userId(1L)
                         .level(CollaboratorLevelEnum.OWNER).autoCreatePr(1).build()));
         when(remoteUserMapper.selectById(1L)).thenReturn(user(1L, OWNER));
+
+        // JwtAuthFilter：签名一律通过、token 不在登出黑名单
+        when(keyPairManager.verifyToken(anyString())).thenReturn(true);
+        when(stringRedisTemplate.hasKey(anyString())).thenReturn(false);
     }
 
     @Test
@@ -223,6 +243,52 @@ class ReadEndpointsMockMvcTest {
         mockMvc.perform(get("/api/repos/" + OWNER + "/missing/commits"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(30001));
+    }
+
+    /**
+     * 鉴权链路端到端：JwtAuthFilter 解析 Bearer token → 写入 request attribute
+     * → controller 的 @RequestAttribute 绑定 → service 判定身份。携带 owner 的 token 可合并。
+     */
+    @Test
+    void mergePullRequest_withOwnerToken_succeeds() throws Exception {
+        when(remotePullRequestMapper.selectById(100L)).thenReturn(openPrWithAuthor(1L));
+        when(mergeHandler.merge(7L, "feature", "master", 100L)).thenReturn(Result.ok());
+
+        mockMvc.perform(post(BASE + "/pull-request/100")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    /** 协作者（CONTRIBUTOR）的 token 无法合并 —— 即便 PR 是他自己提的 */
+    @Test
+    void mergePullRequest_withContributorToken_isForbidden() throws Exception {
+        when(remotePullRequestMapper.selectById(100L)).thenReturn(openPrWithAuthor(2L));
+        when(remoteCollaborator.getCollaborator(2L, 7L)).thenReturn(
+                Collaborator.builder().id(9L).repositoryId(7L).userId(2L)
+                        .level(CollaboratorLevelEnum.CONTRIBUTOR).isDeleted(0).build());
+
+        mockMvc.perform(post(BASE + "/pull-request/100")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(2L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(20002));
+    }
+
+    private PullRequest openPrWithAuthor(Long authorId) {
+        return PullRequest.builder()
+                .id(100L).repositoryId(7L).title("Add feature")
+                .sourceBranch("feature").targetBranch("master")
+                .status(PRStatusEnum.OPEN).authorId(authorId).build();
+    }
+
+    /** 用 hutool 真实签出带 userId claim 的 Bearer 值，供过滤器解析 */
+    private String bearer(Long userId) {
+        String token = JWT.create()
+                .setPayload("userId", userId)
+                .setExpiresAt(new Date(System.currentTimeMillis() + 3600_000L))
+                .setKey("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8))
+                .sign();
+        return "Bearer " + token;
     }
 
     private User user(Long id, String username) {

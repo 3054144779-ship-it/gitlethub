@@ -9,6 +9,7 @@ import org.openapitools.model.RefUpdateRequest;
 import org.openapitools.model.RefView;
 
 
+import org.openapitools.filter.JwtAuthFilter;
 import org.openapitools.service.BlobQueryService;
 import org.openapitools.service.BranchQueryService;
 import org.openapitools.service.CommitQueryService;
@@ -154,8 +155,10 @@ public class RemoteController {
      */
     @PostMapping("/pull-request")
     public ResponseEntity<Result<String>> createPullRequest(
-            @PathVariable String owner, @PathVariable String repo, @RequestBody PullRequestDTO pullRequestDTO) {
-        Result<String> response = pullRequestEventListener.createPullRequest(owner, repo, pullRequestDTO);
+            @PathVariable String owner, @PathVariable String repo,
+            @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId,
+            @RequestBody PullRequestDTO pullRequestDTO) {
+        Result<String> response = pullRequestEventListener.createPullRequest(owner, repo, pullRequestDTO, actorId);
         return ResponseEntity.ok(response);
     }
 
@@ -168,8 +171,9 @@ public class RemoteController {
      */
     @PostMapping("/pull-request/{pullRequestId}")
     public ResponseEntity<Result<String>> mergePullRequest(
-            @PathVariable String owner, @PathVariable String repo, @PathVariable String pullRequestId) {
-        Result<String> response = pullRequestEventListener.mergePullRequest(owner, repo, pullRequestId);
+            @PathVariable String owner, @PathVariable String repo, @PathVariable String pullRequestId,
+            @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId) {
+        Result<String> response = pullRequestEventListener.mergePullRequest(owner, repo, pullRequestId, actorId);
         return ResponseEntity.ok(response);
     }
 

@@ -15,7 +15,8 @@ import org.springframework.scheduling.annotation.EnableAsync;
     nameGenerator = FullyQualifiedAnnotationBeanNameGenerator.class
 )
 @ComponentScan(
-    basePackages = {"org.openapitools", "org.openapitools.api" , "org.openapitools.configuration"},
+    // jwt：common-service 的 KeyPairManager（JWT 密钥对），供 JwtAuthFilter 校验 token 用
+    basePackages = {"org.openapitools", "org.openapitools.api" , "org.openapitools.configuration", "jwt"},
     nameGenerator = FullyQualifiedAnnotationBeanNameGenerator.class
 )
 @EnableFeignClients(basePackages = "org.openapitools.api")

@@ -10,6 +10,7 @@ import enums.PRStatusEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.handler.MergeHandler;
 import org.openapitools.mapper.*;
+import org.openapitools.message.MsgConstant;
 import org.openapitools.model.PushEvent;
 import org.openapitools.service.PullRequestEventListener;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -88,19 +89,26 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param pullRequestDTO  (required) 创建 Pull Request 的 DTO
+     * @param actorId  (optional) 调用者用户 ID（由鉴权过滤器注入）
      * @return 创建 Pull Request 的结果
      */
     @Override
-    public Result<String> createPullRequest(String owner, String repo, PullRequestDTO pullRequestDTO) {
-        log.info("创建 Pull Request {} {} {}", owner, repo, pullRequestDTO);
+    public Result<String> createPullRequest(String owner, String repo, PullRequestDTO pullRequestDTO, Long actorId) {
+        log.info("创建 Pull Request {} {} {} by {}", owner, repo, pullRequestDTO, actorId);
+        Long ownerId = remoteUserMapper.getUserId(owner);
+        // 作者是发起人；未带身份时（如未登录/CLI）回退为仓库所有者，保持旧行为
+        Long authorId = actorId != null ? actorId : ownerId;
+        if (actorId == null) {
+            log.warn("创建 Pull Request 未携带调用者身份，作者回退为仓库所有者 {}", ownerId);
+        }
         PullRequest pullRequest = PullRequest.builder()
-                .repositoryId(remoteRepositoryMapper.getRepositoryId(remoteUserMapper.getUserId(owner), repo))
+                .repositoryId(remoteRepositoryMapper.getRepositoryId(ownerId, repo))
                 .title(pullRequestDTO.getTitle())
                 .description(pullRequestDTO.getDescription())
                 .sourceBranch(pullRequestDTO.getSourceBranch())
                 .targetBranch(pullRequestDTO.getTargetBranch())
                 .status(PRStatusEnum.OPEN)
-                .authorId(remoteUserMapper.getUserId(owner))
+                .authorId(authorId)
                 .createTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
                 .isDeleted(0)
@@ -111,21 +119,32 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     }
 
     /**
-     * 合并 Pull Request
+     * 合并 Pull Request：仅仓库 OWNER 可操作，协作者只能提 PR
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @param pullRequestId  (required) pull request 的 id
+     * @param actorId  (optional) 调用者用户 ID；为空视为无权
      * @return 合并 Pull Request 的结果
      */
     @Override
-    public Result<String> mergePullRequest(String owner, String repo, String pullRequestId) {
-        PullRequest pullRequest = remotePullRequestMapper.selectById(pullRequestId);
+    public Result<String> mergePullRequest(String owner, String repo, String pullRequestId, Long actorId) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        // 限定 PR 必须属于 URL 上的仓库，与 getPullRequestById/closePullRequest 保持一致
+        PullRequest pullRequest = findPullRequest(repositoryId, pullRequestId);
         if (pullRequest == null) {
             return Result.fail(ResultCode.BAD_REQUEST, "PR 不存在");
         }
-        
-        log.info("合并 Pull Request {}", pullRequest.getId());
-        
+
+        Result<String> permission = checkOwner(repositoryId, actorId);
+        if (permission != null) {
+            return permission;
+        }
+
+        log.info("合并 Pull Request {} by user {}", pullRequest.getId(), actorId);
+
         // 传递 PR ID，让 MergeHandler 检查暂存区
         Result<String> merge = mergeHandler.merge(pullRequest.getRepositoryId(),
                 pullRequest.getSourceBranch(), pullRequest.getTargetBranch(), 
@@ -264,6 +283,22 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         return remoteRepositoryMapper.getRepositoryId(userId, repo);
     }
 
+    /**
+     * 校验调用者是否为仓库 OWNER（collaborator 表 level=OWNER 的行）。
+     * 通过返回 null，否则返回失败结果；无身份同样视为无权。
+     */
+    private Result<String> checkOwner(Long repositoryId, Long actorId) {
+        if (actorId == null) {
+            return Result.fail(ResultCode.FORBIDDEN, MsgConstant.ONLY_OWNER_CAN_MERGE);
+        }
+        Collaborator self = remoteCollaboratorMapper.getCollaborator(actorId, repositoryId);
+        boolean deleted = self != null && self.getIsDeleted() != null && self.getIsDeleted() == 1;
+        if (self == null || deleted || self.getLevel() == null || !self.getLevel().isOwner()) {
+            return Result.fail(ResultCode.FORBIDDEN, MsgConstant.ONLY_OWNER_CAN_MERGE);
+        }
+        return null;
+    }
+
     /** 按 PR id 查询，且必须属于该仓库（避免跨仓库读别人的 PR） */
     private PullRequest findPullRequest(Long repositoryId, String pullRequestId) {
         if (pullRequestId == null || pullRequestId.isBlank()) {
@@ -324,11 +359,13 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         if (pr == null) {
             return;
         }
+        File tempParentDir = null;
         // 删除冲突文件目录
         if (pr.getStagingPath() != null) {
             File stagingDir = new File(pr.getStagingPath());
             if (stagingDir.exists()) {
                 deleteDirectory(stagingDir);
+                tempParentDir = stagingDir.getParentFile();
                 log.info("清理暂存区：{}", pr.getStagingPath());
             }
         }
@@ -337,7 +374,19 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
             File trackedFile = new File(pr.getStagingPathTracked());
             if (trackedFile.exists()) {
                 trackedFile.delete();
+                if (tempParentDir == null) {
+                    tempParentDir = trackedFile.getParentFile();
+                }
                 log.info("清理 trackedFiles 文件：{}", pr.getStagingPathTracked());
+            }
+        }
+        // 删除父级 temp 目录：File.delete() 仅在目录为空时才会成功，
+        // 因此不会影响同一仓库下其他并发 PR 仍在使用中的临时子目录
+        if (tempParentDir != null && tempParentDir.isDirectory()) {
+            String[] remaining = tempParentDir.list();
+            if (remaining == null || remaining.length == 0) {
+                tempParentDir.delete();
+                log.info("清理临时父目录：{}", tempParentDir.getAbsolutePath());
             }
         }
         // 清空 PR 表的两个暂存区路径

@@ -3,17 +3,22 @@ package org.openapitools;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import common.Result;
 import common.ResultCode;
+import dto.PullRequestDTO;
+import enums.CollaboratorLevelEnum;
 import enums.PRStatusEnum;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.openapitools.handler.MergeHandler;
+import org.openapitools.mapper.RemoteCollaboratorMapper;
 import org.openapitools.mapper.RemotePullRequestMapper;
 import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.service.impl.PullRequestEventListenerImpl;
+import po.Collaborator;
 import po.PullRequest;
 import po.User;
 import vo.PullRequestVO;
@@ -40,6 +45,8 @@ class PullRequestReadApiTest {
     private RemoteRepositoryMapper remoteRepositoryMapper;
     @Mock
     private RemoteUserMapper remoteUserMapper;
+    @Mock
+    private RemoteCollaboratorMapper remoteCollaboratorMapper;
     @Mock
     private MergeHandler mergeHandler;
 
@@ -145,6 +152,114 @@ class PullRequestReadApiTest {
         Result<List<PullRequestVO>> result = listener.listPullRequests(OWNER, "nope", null, 1, 20);
 
         assertEquals(ResultCode.REPOSITORY_NOT_FOUND, result.getCode());
+    }
+
+    // ---------- 作者归属：作者应为发起人，而非仓库 owner（原 bug） ----------
+
+    /** 协作者（userId=2）提的 PR，作者必须记成 2，而不是 owner(1) */
+    @Test
+    void createPullRequest_recordsActorAsAuthorNotOwner() {
+        when(remotePullRequestMapper.insert(any(PullRequest.class))).thenReturn(1);
+
+        Result<String> result = listener.createPullRequest(OWNER, REPO, dto(), 2L);
+
+        assertEquals(ResultCode.OK, result.getCode());
+        ArgumentCaptor<PullRequest> captor = ArgumentCaptor.forClass(PullRequest.class);
+        verify(remotePullRequestMapper).insert(captor.capture());
+        assertEquals(2L, captor.getValue().getAuthorId());
+    }
+
+    /** 未携带身份（无过滤器/未登录）时回退为仓库 owner，保持旧行为 */
+    @Test
+    void createPullRequest_withoutActor_fallsBackToOwner() {
+        when(remotePullRequestMapper.insert(any(PullRequest.class))).thenReturn(1);
+
+        listener.createPullRequest(OWNER, REPO, dto(), null);
+
+        ArgumentCaptor<PullRequest> captor = ArgumentCaptor.forClass(PullRequest.class);
+        verify(remotePullRequestMapper).insert(captor.capture());
+        assertEquals(1L, captor.getValue().getAuthorId());
+    }
+
+    // ---------- 合并权限：仅仓库 OWNER 可合并 ----------
+
+    /** 协作者即便提了 PR 也不能自己合并 */
+    @Test
+    void mergePullRequest_contributor_returnsForbidden() {
+        when(remotePullRequestMapper.selectById(100L)).thenReturn(openPr);
+        when(remoteCollaboratorMapper.getCollaborator(2L, 7L))
+                .thenReturn(collaborator(2L, 7L, CollaboratorLevelEnum.CONTRIBUTOR));
+
+        Result<String> result = listener.mergePullRequest(OWNER, REPO, "100", 2L);
+
+        assertEquals(ResultCode.FORBIDDEN, result.getCode());
+        verify(mergeHandler, never()).merge(anyLong(), anyString(), anyString(), anyLong());
+        verify(remotePullRequestMapper, never()).updateById(any(PullRequest.class));
+    }
+
+    /** 无身份（未登录）一律无权合并 */
+    @Test
+    void mergePullRequest_withoutActor_returnsForbidden() {
+        when(remotePullRequestMapper.selectById(100L)).thenReturn(openPr);
+
+        Result<String> result = listener.mergePullRequest(OWNER, REPO, "100", null);
+
+        assertEquals(ResultCode.FORBIDDEN, result.getCode());
+        verify(mergeHandler, never()).merge(anyLong(), anyString(), anyString(), anyLong());
+    }
+
+    /** owner 合并成功 → PR 状态置为 MERGED */
+    @Test
+    void mergePullRequest_owner_succeeds() {
+        when(remotePullRequestMapper.selectById(100L)).thenReturn(openPr);
+        when(remoteCollaboratorMapper.getCollaborator(1L, 7L))
+                .thenReturn(collaborator(1L, 7L, CollaboratorLevelEnum.OWNER));
+        when(mergeHandler.merge(7L, "feature", "master", 100L)).thenReturn(Result.ok());
+
+        Result<String> result = listener.mergePullRequest(OWNER, REPO, "100", 1L);
+
+        assertEquals(ResultCode.OK, result.getCode());
+        assertEquals(PRStatusEnum.MERGED, openPr.getStatus());
+    }
+
+    /** 被逻辑删除的 owner 行不算 owner，避免"移除后仍可合并" */
+    @Test
+    void mergePullRequest_removedOwner_returnsForbidden() {
+        when(remotePullRequestMapper.selectById(100L)).thenReturn(openPr);
+        Collaborator removed = collaborator(1L, 7L, CollaboratorLevelEnum.OWNER);
+        removed.setIsDeleted(1);
+        when(remoteCollaboratorMapper.getCollaborator(1L, 7L)).thenReturn(removed);
+
+        Result<String> result = listener.mergePullRequest(OWNER, REPO, "100", 1L);
+
+        assertEquals(ResultCode.FORBIDDEN, result.getCode());
+    }
+
+    /** PR 属于别的仓库时不可通过本仓库 URL 合并 */
+    @Test
+    void mergePullRequest_prOfAnotherRepository_isRejected() {
+        PullRequest foreign = PullRequest.builder()
+                .id(100L).repositoryId(999L).status(PRStatusEnum.OPEN).authorId(1L).build();
+        when(remotePullRequestMapper.selectById(100L)).thenReturn(foreign);
+
+        Result<String> result = listener.mergePullRequest(OWNER, REPO, "100", 1L);
+
+        assertEquals(ResultCode.BAD_REQUEST, result.getCode());
+        verify(mergeHandler, never()).merge(anyLong(), anyString(), anyString(), anyLong());
+    }
+
+    private PullRequestDTO dto() {
+        PullRequestDTO dto = new PullRequestDTO();
+        dto.setTitle("t");
+        dto.setDescription("d");
+        dto.setSourceBranch("feature");
+        dto.setTargetBranch("master");
+        return dto;
+    }
+
+    private Collaborator collaborator(Long userId, Long repositoryId, CollaboratorLevelEnum level) {
+        return Collaborator.builder()
+                .userId(userId).repositoryId(repositoryId).level(level).isDeleted(0).build();
     }
 
     private User user(Long id, String username) {

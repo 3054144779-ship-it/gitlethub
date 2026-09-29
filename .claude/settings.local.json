@@ -95,7 +95,19 @@
       "Bash(git *)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am test-compile)",
       "Read(//c/Users/ASUS/AppData/Local/Temp/gitlethub-head2/**)",
-      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am test -Dtest='PushForceUpdateBranchTest,FirstStepPushTest,PushObjectTest,RemoteFlowIntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false)"
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am test -Dtest='PushForceUpdateBranchTest,FirstStepPushTest,PushObjectTest,RemoteFlowIntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q -Duser.language=en -Duser.country=US -pl remote-gitlet -am test-compile)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl remote-gitlet -Dtest=PullRequestReadApiTest -DfailIfNoTests=false test)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl remote-gitlet -am -Dtest=PullRequestReadApiTest -DfailIfNoTests=false test)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl remote-gitlet -am -Dtest=PullRequestReadApiTest -Dsurefire.failIfNoSpecifiedTests=false test)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl remote-gitlet -am -Dsurefire.failIfNoSpecifiedTests=false test)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl remote-gitlet -am test)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -f /d/Job_project/gitlethub/pom.xml -pl remote-gitlet -am test)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q -Duser.language=en -Duser.country=US -f /d/Job_project/gitlethub/pom.xml -pl remote-gitlet -am test-compile)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -f /d/Job_project/gitlethub/pom.xml -pl remote-gitlet -am -Dtest=JwtAuthFilterTest -Dsurefire.failIfNoSpecifiedTests=false test)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -f /d/Job_project/gitlethub/pom.xml -pl remote-gitlet -am -Dtest=ReadEndpointsMockMvcTest -Dsurefire.failIfNoSpecifiedTests=false test)",
+      "Bash(grep -E \"Tests run:.*in org|Tests run:.*Skipped: [0-9]+$|BUILD\" /tmp/rg-final.log)"
     ]
   }
 }
