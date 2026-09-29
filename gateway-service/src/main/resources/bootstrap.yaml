@@ -1,0 +1,19 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        # 远程仓库路由
+        - id: remote_service
+          uri: lb://remote-service
+          predicates:
+            - Path=/api/repos/**
+        # 用户服务路由
+        - id: user_service
+          uri: lb://user-service
+          predicates:
+            - Path=/user/**
+    nacos:
+      server-addr: 192.168.12.168:8848
