@@ -92,7 +92,10 @@
       "Bash(git -C /d/Job_project/gitlethub status --short -- remote-gitlet/src/test)",
       "Bash(git -C /d/Job_project/gitlethub status --short -- '**/Commit.java')",
       "Bash(git -C /d/Job_project/gitlethub diff --stat HEAD -- . ':\\(exclude\\).claude')",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am test-compile)",
+      "Read(//c/Users/ASUS/AppData/Local/Temp/gitlethub-head2/**)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am test -Dtest='PushForceUpdateBranchTest,FirstStepPushTest,PushObjectTest,RemoteFlowIntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false)"
     ]
   }
 }

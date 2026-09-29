@@ -9,6 +9,9 @@ import org.openapitools.model.RefUpdateRequest;
 import org.openapitools.model.RefView;
 
 
+import org.openapitools.service.BlobQueryService;
+import org.openapitools.service.BranchQueryService;
+import org.openapitools.service.CommitQueryService;
 import org.openapitools.service.PullRequestEventListener;
 import org.openapitools.service.RemoteService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +39,12 @@ public class RemoteController {
     private RemoteService remoteService;
     @Autowired
     private PullRequestEventListener pullRequestEventListener;
+    @Autowired
+    private BranchQueryService branchQueryService;
+    @Autowired
+    private CommitQueryService commitQueryService;
+    @Autowired
+    private BlobQueryService blobQueryService;
 
     /**
      * pull 拉取对象
@@ -232,7 +241,7 @@ public class RemoteController {
     @GetMapping("/branches")
     public ResponseEntity<Result<List<BranchPointer>>> listBranches(
             @PathVariable String owner, @PathVariable String repo) {
-        return ResponseEntity.ok(remoteService.listBranches(owner, repo));
+        return ResponseEntity.ok(branchQueryService.listBranches(owner, repo));
     }
 
     /**
@@ -250,7 +259,7 @@ public class RemoteController {
             @Nullable @RequestParam(value = "branch", required = false) String branch,
             @Nullable @RequestParam(value = "page", required = false) Integer page,
             @Nullable @RequestParam(value = "size", required = false) Integer size) {
-        return ResponseEntity.ok(remoteService.listCommits(owner, repo, branch, page, size));
+        return ResponseEntity.ok(commitQueryService.listCommits(owner, repo, branch, page, size));
     }
 
     /**
@@ -263,7 +272,7 @@ public class RemoteController {
     @GetMapping("/commits/{sha}")
     public ResponseEntity<Result<CommitVO>> getCommit(
             @PathVariable String owner, @PathVariable String repo, @PathVariable String sha) {
-        return ResponseEntity.ok(remoteService.getCommit(owner, repo, sha));
+        return ResponseEntity.ok(commitQueryService.getCommit(owner, repo, sha));
     }
 
     /**
@@ -276,7 +285,7 @@ public class RemoteController {
     @GetMapping("/commits/{sha}/diff")
     public ResponseEntity<Result<List<FileChangeVO>>> diffCommit(
             @PathVariable String owner, @PathVariable String repo, @PathVariable String sha) {
-        return ResponseEntity.ok(remoteService.diffCommit(owner, repo, sha));
+        return ResponseEntity.ok(commitQueryService.diffCommit(owner, repo, sha));
     }
 
     /**
@@ -290,7 +299,7 @@ public class RemoteController {
     public ResponseEntity<Result<List<FileEntryVO>>> listTree(
             @PathVariable String owner, @PathVariable String repo,
             @RequestParam("ref") String ref) {
-        return ResponseEntity.ok(remoteService.listTree(owner, repo, ref));
+        return ResponseEntity.ok(blobQueryService.listTree(owner, repo, ref));
     }
 
     /**
@@ -306,7 +315,7 @@ public class RemoteController {
             @PathVariable String owner, @PathVariable String repo,
             @RequestParam("ref") String ref,
             @RequestParam("path") String path) {
-        return ResponseEntity.ok(remoteService.getBlob(owner, repo, ref, path));
+        return ResponseEntity.ok(blobQueryService.getBlob(owner, repo, ref, path));
     }
 
 }

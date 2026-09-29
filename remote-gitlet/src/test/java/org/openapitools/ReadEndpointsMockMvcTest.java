@@ -7,7 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.openapitools.mapper.*;
-import org.openapitools.service.impl.RemoteServiceImpl;
+import org.openapitools.service.support.RepositoryObjectReader;
 import org.openapitools.utils.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -63,7 +63,7 @@ class ReadEndpointsMockMvcTest {
     private RemotePullRequestMapper remotePullRequestMapper;
 
     @Autowired
-    private RemoteServiceImpl remoteService;
+    private RepositoryObjectReader repositoryObjectReader;
 
     @Autowired
     private MockMvc mockMvc;
@@ -75,7 +75,7 @@ class ReadEndpointsMockMvcTest {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(remoteService, "basePath", tempDir.toString());
+        ReflectionTestUtils.setField(repositoryObjectReader, "basePath", tempDir.toString());
 
         // 磁盘对象：一个提交（含一个文本文件）+ 一个 blob
         File commitsDir = tempDir.resolve(".gitlet/" + OWNER + "/" + REPO + "/Objects/commits").toFile();
