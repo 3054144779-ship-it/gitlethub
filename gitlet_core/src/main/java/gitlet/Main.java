@@ -11,7 +11,6 @@ import gitlet.handler.StatusHandler;
 import gitlet.remote.RemoteApiClient;
 import gitlet.remote.result.PullResult;
 import gitlet.remote.result.PushResult;
-import gitlet.repository.ObjectStore;
 import gitlet.repository.Repository;
 import gitlet.repository.RepositoryPaths;
 import gitlet.utils.Utils;
@@ -129,6 +128,7 @@ public class Main {
                 // 检查仓库是否初始化
                 checkGitLet(repo.getPaths());
 
+                // TODO：当前为全量推送，后续优化为增量推送
 
                 // 获取远程仓库仓库路径
                 // gitlet push origin main => origin = 远程仓库别名
@@ -138,7 +138,9 @@ public class Main {
                 Map<String, String> remoteConfig = RepositoryPaths.parseRemoteFile(remoteFile);
                 String currentOwnerName = remoteConfig.get("owner");
                 String currentRepoName = remoteConfig.get("repo");
-                String branch = Utils.readContentsAsString(repo.getPaths().getHeadFile());
+//                String branch = Utils.readContentsAsString(repo.getPaths().getHeadFile());
+                String branch = args.length > 2 ? args[2] : Utils.readContentsAsString(repo.getPaths().getHeadFile());
+                String remotePushName = args[1];
                 String baseUrl = remoteConfig.get("baseUrl");
                 // push 推送的时候需要网关地址
                 RemoteApiClient remoteApiClient = new RemoteApiClient(baseUrl);
@@ -147,7 +149,7 @@ public class Main {
                         Utils.join(repo.getPaths().getBranchDir(), branch));
 
                 // 远程仓库的跟踪分支的 SHA-1 值(本地以为远程指向哪个SHA)
-                String remoteTackingSha = readRemoteTackingSha(repo, currentOwnerName, branch);
+                String remoteTackingSha = readRemoteTackingSha(repo, remotePushName, branch);
                 // 收集本地未推送的 commit（从 HEAD 回溯，直到遇到远程已有的）
                 List<Commit> commitsToPush = collectCommitsToPush(repo, remoteTackingSha);
                 // 收集所有需要推送的 blob SHA-1 值
@@ -181,14 +183,14 @@ public class Main {
                 PushResult pushResult2 = remoteApiClient.updateBranch(
                         currentOwnerName, currentRepoName, branch, currentBranchSha, remoteTackingSha);
 
-                // 获取网关返回结果，判断推送成功或失败。TODO：此处没能正常执行
+                // 获取网关返回结果，判断推送成功或失败。
                 if (pushResult1.isSuccess() && pushResult2.isSuccess()) {
                     // 更新 remote tracing ref:记录本次推送的SHA
-                    File tracking = Utils.join(repo.getPaths().getRemotePushBranchDir(), currentOwnerName, branch);
+                    File tracking = Utils.join(repo.getPaths().getRemotePushBranchDir(), remotePushName, branch);
                     Utils.writeContents(tracking, currentBranchSha);
-                    Utils.message("Push successful.");
+                    Utils.message("推送成功。");
                 } else {
-                    Utils.message("Push failed.");
+                    Utils.message("推送失败。");
                 }
                 break;
             case "remote":
@@ -240,7 +242,7 @@ public class Main {
 
                         // 检查远程仓库名称是否已存在
                         if (new File(repoPaths.getRemoteFile(), remoteName).exists()) {
-                            Utils.message("Remote name already exists.");
+                            Utils.message("远程名称已存在。");
                             System.exit(0);
                         }
 
@@ -296,9 +298,10 @@ public class Main {
 
                 // 2. 获取远程分支当前 SHA
                 String remoteBranchSha = remoteClient.getBranchSha(pullOwner, pullRepo, pullBranch);
+                log.info("远程分支 SHA: {}", remoteBranchSha);
                 if (remoteBranchSha == null) {
-                    Utils.message("Remote branch not found or repository is empty.");
-                    throw new RuntimeException("Remote branch not found or repository is empty.");
+                    Utils.message("未找到远程分支，或者仓库为空。");
+                    throw new RuntimeException("未找到远程分支，或者仓库为空。");
                 }
 
                 // 3. 对比本地，决定是否拉取
@@ -307,7 +310,7 @@ public class Main {
                 String currentBranchSha1 = Utils.readContentsAsString(branchFileToCommit);
                 if (remoteBranchSha.equals(currentBranchSha1)) {
                     // 已经是最新的
-                    Utils.message("Already up to date.");
+                    Utils.message("已经更新完毕。");
                     break;
                 }
 
@@ -315,8 +318,8 @@ public class Main {
                 PullResult pullResult = remoteClient.pullObjects(pullOwner, pullRepo, currentBranchSha1);
                 if (!pullResult.isSuccess()) {
                     // 拉取失败
-                    Utils.message("Pull failed.");
-                    throw new RuntimeException("Pull failed.");
+                    Utils.message("拉取失败。");
+                    throw new RuntimeException("拉取失败。");
                 }
 
                 // 拉取成功
@@ -347,6 +350,7 @@ public class Main {
                 //    那会让本地指针先于 merge 被硬覆盖，导致 mergeBySha 里 nowHead==remote、
                 //    LCA==remote，在 L200 提前 return 变成空操作，同时丢失本地未推送提交。
                 File tracking = Utils.join(repo.getPaths().getRemotePushBranchDir(), pullRemote, pullBranch);
+                log.info("path:{}", tracking.getPath());
                 Utils.writeContents(tracking, remoteBranchSha);
 
                 // 6. 如果拉取的是当前分支，交给 mergeBySha 合并：
@@ -359,7 +363,7 @@ public class Main {
                 break;
             default:
                 // 不存在的指令
-                System.out.println(Utils.error("No command with that name exists.").getMessage());
+                System.out.println(Utils.error("不存在该名称的命令。").getMessage());
                 break;
         }
     }

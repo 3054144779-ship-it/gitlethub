@@ -51,6 +51,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     @EventListener
     public void onPush(PushEvent pushEvent) {
         try {
+            log.info("接收到 Push 事件 {}", pushEvent.isRejected() ? "保护分支" : "非保护分支");
             if (pushEvent.isRejected()) {
                 // 受保护分支被拒 → 不建 PR，提示用户走 feature 分支
                 log.info("分支 {} 受保护，已拒绝推送。请创建 feature 分支并通过 PR 合并",
@@ -65,7 +66,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
 
             // 仓库级开关（null 视为允许，兼容老数据）
             if (repo.getAllowAutoPr() != null && repo.getAllowAutoPr() == 0) {
-                log.info("仓库不允许自动 PR，跳过");
+                log.info("仓库不允许自动 PR，跳过，仓库的Owner除外");
                 return;
             }
 

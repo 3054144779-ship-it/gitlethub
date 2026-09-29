@@ -8,16 +8,7 @@ import gitlet.stag.Staging;
 import gitlet.utils.Utils;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Queue;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
+import java.util.*;
 
 /** 合并逻辑：三路合并、最近公共祖先（LCA）查找、冲突生成。 */
 
@@ -100,13 +91,13 @@ public class MergeHandler {
 
         // 暂存区有未提交的添加或删除
         if (!stage.isEmpty()) {
-            Utils.message("You have uncommitted changes.");
+            Utils.message("您有未提交的更改。");
             return;
         }
 
         // 分割点就是给定分支：什么都不做，合并完成
         if (lcaSha1.equals(givenBranchSha1)) {
-            Utils.message("Given branch is an ancestor of the current branch.");
+            Utils.message("给定分支是当前分支的祖先。");
             return;
         }
 
@@ -187,8 +178,7 @@ public class MergeHandler {
         // 工作区中有未追踪文件
         if (!trackingCheck(objects.getCommit(remoteBranchSha).getTrackedFiles(),
                 objects.getCommit(lcaSha1).getTrackedFiles())) {
-            Utils.message("There is an untracked file in the way"
-                    + "delete it, or add and commit it first.");
+            Utils.message("“有一个未跟踪的文件阻止了，请先删除它，或者先将其添加并提交。");
             return;
         }
 
@@ -202,7 +192,7 @@ public class MergeHandler {
 
         // 分割点就是给定分支：什么都不做，合并完成
         if (lcaSha1.equals(remoteBranchSha)) {
-            Utils.message("Given branch is an ancestor of the current branch.");
+            Utils.message("给定分支是当前分支的祖先。");
             return;
         }
 
@@ -225,7 +215,7 @@ public class MergeHandler {
         // 等用户解决冲突后 add + commit，由 commit() 生成「双父」合并提交收尾。
         if (hasConflict) {
             Utils.writeContents(paths.getMergeHead(), remoteBranchSha);
-            Utils.message("Encountered a merge conflict.");
+            Utils.message("遇到合并冲突。");
             return;
         }
 
