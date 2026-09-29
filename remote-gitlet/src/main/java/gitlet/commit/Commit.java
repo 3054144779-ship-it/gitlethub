@@ -1,4 +1,4 @@
-package org.openapitools.model;
+package gitlet.commit;
 
 
 import lombok.Data;

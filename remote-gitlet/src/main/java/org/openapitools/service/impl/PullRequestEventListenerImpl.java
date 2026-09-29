@@ -1,6 +1,8 @@
 package org.openapitools.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import common.Result;
 import common.ResultCode;
 import dto.PullRequestDTO;
@@ -18,10 +20,13 @@ import po.BranchPointer;
 import po.Collaborator;
 import po.PullRequest;
 import po.Repository;
+import po.User;
 import vo.PullRequestVO;
 
 import java.io.File;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -147,7 +152,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     }
 
     /**
-     * 获取 Pull Request
+     * 获取仓库最近的一条 Pull Request
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
      * @return 获取 Pull Request 的结果
@@ -155,12 +160,150 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     @Override
     public Result<PullRequestVO> getPullRequest(String owner, String repo) {
         log.info("获取 Pull Request {} {}", owner, repo);
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "仓库不存在");
+        }
+        // 修复：原实现是 selectById(repositoryId)，把仓库ID当成PR主键用了
+        PullRequest pullRequest = remotePullRequestMapper.selectOne(
+                Wrappers.<PullRequest>lambdaQuery()
+                        .eq(PullRequest::getRepositoryId, repositoryId)
+                        .orderByDesc(PullRequest::getCreateTime)
+                        .last("LIMIT 1"));
+        log.info("获取 Pull Request 成功 {}", pullRequest);
+        return Result.ok(toVO(pullRequest));
+    }
+
+    /**
+     * 按 id 获取 Pull Request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param pullRequestId  (required) pull request 的 id
+     * @return 获取 Pull Request 的结果
+     */
+    @Override
+    public Result<PullRequestVO> getPullRequestById(String owner, String repo, String pullRequestId) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "仓库不存在");
+        }
+        PullRequest pullRequest = findPullRequest(repositoryId, pullRequestId);
+        if (pullRequest == null) {
+            return Result.fail(ResultCode.BAD_REQUEST, "PR 不存在");
+        }
+        return Result.ok(toVO(pullRequest));
+    }
+
+    /**
+     * 列出仓库的 Pull Request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param status  (optional) 状态：0 open / 1 closed / 2 merged；空表示全部
+     * @param page  (optional) 页码，从 1 开始，缺省 1
+     * @param size  (optional) 每页条数，缺省 20
+     * @return PR 列表
+     */
+    @Override
+    public Result<List<PullRequestVO>> listPullRequests(String owner, String repo,
+                                                        Integer status, Integer page, Integer size) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "仓库不存在");
+        }
+        PRStatusEnum statusEnum = toStatus(status);
+        if (status != null && statusEnum == null) {
+            return Result.fail(ResultCode.BAD_REQUEST, "PR 状态非法");
+        }
+        int p = (page == null || page < 1) ? 1 : page;
+        int s = (size == null || size < 1) ? 20 : size;
+        Page<PullRequest> result = remotePullRequestMapper.selectPage(
+                new Page<>(p, s),
+                Wrappers.<PullRequest>lambdaQuery()
+                        .eq(PullRequest::getRepositoryId, repositoryId)
+                        .eq(statusEnum != null, PullRequest::getStatus, statusEnum)
+                        .orderByDesc(PullRequest::getCreateTime));
+        List<PullRequestVO> list = new ArrayList<>();
+        for (PullRequest pr : result.getRecords()) {
+            list.add(toVO(pr));
+        }
+        return Result.ok(list);
+    }
+
+    /**
+     * 关闭 Pull Request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param pullRequestId  (required) pull request 的 id
+     * @return 关闭结果
+     */
+    @Override
+    public Result<String> closePullRequest(String owner, String repo, String pullRequestId) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "仓库不存在");
+        }
+        PullRequest pullRequest = findPullRequest(repositoryId, pullRequestId);
+        if (pullRequest == null) {
+            return Result.fail(ResultCode.BAD_REQUEST, "PR 不存在");
+        }
+        if (pullRequest.getStatus() != PRStatusEnum.OPEN) {
+            return Result.fail(ResultCode.BAD_REQUEST, "只有 open 状态的 PR 可以关闭");
+        }
+        cleanupStaging(pullRequest.getId());
+        updatePRStatus(pullRequest, PRStatusEnum.CLOSED);
+        return Result.ok();
+    }
+
+    /** owner/repo -> repositoryId；任一环节缺失返回 null */
+    private Long resolveRepositoryId(String owner, String repo) {
         Long userId = remoteUserMapper.getUserId(owner);
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
-        PullRequest pullRequest = remotePullRequestMapper.selectById(repositoryId);
-        PullRequestVO pullRequestVO = BeanUtil.copyProperties(pullRequest, PullRequestVO.class);
-        log.info("获取 Pull Request 成功 {}", pullRequestVO);
-        return Result.ok(pullRequestVO);
+        if (userId == null) {
+            return null;
+        }
+        return remoteRepositoryMapper.getRepositoryId(userId, repo);
+    }
+
+    /** 按 PR id 查询，且必须属于该仓库（避免跨仓库读别人的 PR） */
+    private PullRequest findPullRequest(Long repositoryId, String pullRequestId) {
+        if (pullRequestId == null || pullRequestId.isBlank()) {
+            return null;
+        }
+        PullRequest pullRequest;
+        try {
+            pullRequest = remotePullRequestMapper.selectById(Long.valueOf(pullRequestId));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        if (pullRequest == null || !repositoryId.equals(pullRequest.getRepositoryId())) {
+            return null;
+        }
+        return pullRequest;
+    }
+
+    /** status code -> 枚举；null 表示不过滤，未知 code 返回 null */
+    private PRStatusEnum toStatus(Integer status) {
+        if (status == null) {
+            return null;
+        }
+        for (PRStatusEnum value : PRStatusEnum.values()) {
+            if (value.getValue().equals(status)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    /** PO -> VO，补齐作者名（PO 只有 authorId） */
+    private PullRequestVO toVO(PullRequest pullRequest) {
+        if (pullRequest == null) {
+            return null;
+        }
+        PullRequestVO vo = BeanUtil.copyProperties(pullRequest, PullRequestVO.class);
+        if (pullRequest.getAuthorId() != null) {
+            User author = remoteUserMapper.selectById(pullRequest.getAuthorId());
+            vo.setAuthorName(author == null ? null : author.getUsername());
+        }
+        return vo;
     }
 
     /**

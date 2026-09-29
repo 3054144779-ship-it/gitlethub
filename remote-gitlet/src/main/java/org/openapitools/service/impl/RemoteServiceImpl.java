@@ -2,11 +2,13 @@ package org.openapitools.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import common.Result;
 import common.ResultCode;
 import dto.PullRequestDTO;
 import dto.RepositoryCreateDTO;
 import enums.CollaboratorLevelEnum;
+import gitlet.commit.Commit;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.mapper.*;
@@ -28,10 +30,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import bo.ObjectBundle;
 import bo.GitletObject;
+import vo.BlobVO;
+import vo.CommitVO;
+import vo.FileChangeVO;
+import vo.FileEntryVO;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 
@@ -506,5 +513,350 @@ public class RemoteServiceImpl implements RemoteService {
         return true;
     }
 
+    /* ==================== 读取接口 ==================== */
+
+    /** 历史遍历的最大节点数，防止异常数据导致无界遍历 */
+    private static final int MAX_HISTORY = 1000;
+
+    /** 提交列表的默认每页条数 */
+    private static final int DEFAULT_PAGE_SIZE = 20;
+
+    @Override
+    public Result<List<BranchPointer>> listBranches(String owner, String repo) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        List<BranchPointer> branches = remoteBranchPointer.selectList(
+                Wrappers.<BranchPointer>lambdaQuery()
+                        .eq(BranchPointer::getRepositoryId, repositoryId)
+                        .orderByDesc(BranchPointer::getIsDefault)
+                        .orderByAsc(BranchPointer::getBranchName));
+        return Result.ok(branches);
+    }
+
+    @Override
+    public Result<List<CommitVO>> listCommits(String owner, String repo,
+                                              String branch, Integer page, Integer size) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        if (branch == null || branch.isBlank()) {
+            Repository repository = remoteRepositoryMapper.selectById(repositoryId);
+            branch = (repository != null && repository.getDefaultBranch() != null)
+                    ? repository.getDefaultBranch() : MsgConstant.MAIN_BRANCH;
+        }
+        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(repositoryId, branch);
+        if (branchPointer == null) {
+            return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
+        }
+        if (branchPointer.getCommitSha() == null) {
+            // 空仓库（建库时分支无指向）
+            return Result.ok(new ArrayList<>());
+        }
+
+        List<CommitVO> all = walkHistory(resolvePaths(owner, repo), branchPointer.getCommitSha());
+        enrichAuthors(all, repositoryId);
+
+        // 内存分页：项目规模够用，且历史遍历本就一次性走完
+        int p = (page == null || page < 1) ? 1 : page;
+        int s = (size == null || size < 1) ? DEFAULT_PAGE_SIZE : size;
+        int from = Math.min((p - 1) * s, all.size());
+        int to = Math.min(from + s, all.size());
+        return Result.ok(new ArrayList<>(all.subList(from, to)));
+    }
+
+    @Override
+    public Result<CommitVO> getCommit(String owner, String repo, String sha) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        Commit commit = readCommitObject(resolvePaths(owner, repo), sha);
+        if (commit == null) {
+            return Result.fail(ResultCode.SHA1_MISMATCH, MsgConstant.THIS_SUBMISSION_DOES_NOT_EXIST);
+        }
+        CommitVO vo = toCommitVO(sha, commit);
+        vo.setTrackedFiles(commit.getTrackedFiles());
+        enrichAuthors(List.of(vo), repositoryId);
+        return Result.ok(vo);
+    }
+
+    @Override
+    public Result<List<FileChangeVO>> diffCommit(String owner, String repo, String sha) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        RepositoryPaths paths = resolvePaths(owner, repo);
+        Commit commit = readCommitObject(paths, sha);
+        if (commit == null) {
+            return Result.fail(ResultCode.SHA1_MISMATCH, MsgConstant.THIS_SUBMISSION_DOES_NOT_EXIST);
+        }
+
+        Map<String, String> newer = commit.getTrackedFiles() == null
+                ? Collections.emptyMap() : commit.getTrackedFiles();
+        // 与第一父提交比较；根提交视为全部新增
+        Map<String, String> older = Collections.emptyMap();
+        if (commit.getParent() != null) {
+            Commit parent = readCommitObject(paths, commit.getParent());
+            if (parent != null && parent.getTrackedFiles() != null) {
+                older = parent.getTrackedFiles();
+            }
+        }
+
+        List<FileChangeVO> changes = new ArrayList<>();
+        for (Map.Entry<String, String> entry : newer.entrySet()) {
+            String path = entry.getKey();
+            String newSha = entry.getValue();
+            String oldSha = older.get(path);
+            if (Objects.equals(newSha, oldSha)) {
+                continue;
+            }
+            FileChangeVO change = new FileChangeVO();
+            change.setPath(path);
+            change.setNewSha(newSha);
+            change.setOldSha(oldSha);
+            boolean added = oldSha == null;
+            change.setChangeType(added ? "ADDED" : "MODIFIED");
+            change.setNewContent(readTextBlob(paths, newSha));
+            if (!added) {
+                change.setOldContent(readTextBlob(paths, oldSha));
+            }
+            changes.add(change);
+        }
+        for (Map.Entry<String, String> entry : older.entrySet()) {
+            if (newer.containsKey(entry.getKey())) {
+                continue;
+            }
+            FileChangeVO change = new FileChangeVO();
+            change.setPath(entry.getKey());
+            change.setChangeType("DELETED");
+            change.setOldSha(entry.getValue());
+            change.setOldContent(readTextBlob(paths, entry.getValue()));
+            changes.add(change);
+        }
+        changes.sort(Comparator.comparing(FileChangeVO::getPath));
+        return Result.ok(changes);
+    }
+
+    @Override
+    public Result<List<FileEntryVO>> listTree(String owner, String repo, String ref) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        Commit commit = resolveCommit(resolvePaths(owner, repo), ref, repositoryId);
+        if (commit == null) {
+            return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
+        }
+        List<FileEntryVO> entries = new ArrayList<>();
+        if (commit.getTrackedFiles() != null) {
+            for (Map.Entry<String, String> entry : commit.getTrackedFiles().entrySet()) {
+                entries.add(new FileEntryVO(entry.getKey(), entry.getValue()));
+            }
+            entries.sort(Comparator.comparing(FileEntryVO::getPath));
+        }
+        return Result.ok(entries);
+    }
+
+    @Override
+    public Result<BlobVO> getBlob(String owner, String repo, String ref, String path) {
+        Long repositoryId = resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        RepositoryPaths paths = resolvePaths(owner, repo);
+        Commit commit = resolveCommit(paths, ref, repositoryId);
+        if (commit == null) {
+            return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
+        }
+        Map<String, String> tracked = commit.getTrackedFiles();
+        String blobSha = tracked == null ? null : tracked.get(path);
+        if (blobSha == null) {
+            return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_FILE_DOES_NOT_EXIST);
+        }
+
+        byte[] bytes = readBlobBytes(paths, blobSha);
+        if (bytes == null) {
+            return Result.fail(ResultCode.SHA1_MISMATCH, MsgConstant.THIS_SUBMISSION_DOES_NOT_EXIST);
+        }
+        BlobVO vo = new BlobVO();
+        vo.setPath(path);
+        vo.setBlobSha(blobSha);
+        if (isBinary(bytes)) {
+            vo.setIsBinary(true);
+            vo.setContent("");
+        } else {
+            vo.setIsBinary(false);
+            vo.setContent(new String(bytes, StandardCharsets.UTF_8));
+        }
+        return Result.ok(vo);
+    }
+
+    /* ==================== 读取接口的私有辅助 ==================== */
+
+    /** owner/repo -> repositoryId；任一环节缺失返回 null */
+    private Long resolveRepositoryId(String owner, String repo) {
+        Long ownerId = remoteUserMapper.getUserId(owner);
+        if (ownerId == null) {
+            return null;
+        }
+        return remoteRepositoryMapper.getRepositoryId(ownerId, repo);
+    }
+
+    private RepositoryPaths resolvePaths(String owner, String repo) {
+        return new RepositoryPaths(owner + "/" + repo, new File(basePath));
+    }
+
+    /** 读取磁盘上的提交对象；文件缺失或反序列化失败返回 null */
+    private Commit readCommitObject(RepositoryPaths paths, String sha) {
+        if (sha == null) {
+            return null;
+        }
+        File commitFile = Utils.join(paths.getCommits(), sha);
+        if (!commitFile.isFile()) {
+            return null;
+        }
+        try {
+            return Utils.readObject(commitFile, Commit.class);
+        } catch (IllegalArgumentException e) {
+            log.warn("读取提交对象 {} 失败: {}", sha, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 按父链倒序遍历提交（提交图以 commit 对象内的 parent/secondParent 为准，
+     * 不依赖 commit_parent 表——该表每次推送只写一条边，批量推送的中间提交没有记录）。
+     */
+    private List<CommitVO> walkHistory(RepositoryPaths paths, String startSha) {
+        List<CommitVO> result = new ArrayList<>();
+        Deque<String> stack = new ArrayDeque<>();
+        Set<String> visited = new HashSet<>();
+        stack.push(startSha);
+        while (!stack.isEmpty() && result.size() < MAX_HISTORY) {
+            String sha = stack.pop();
+            if (!visited.add(sha)) {
+                continue;
+            }
+            Commit commit = readCommitObject(paths, sha);
+            if (commit == null) {
+                continue;
+            }
+            result.add(toCommitVO(sha, commit));
+            // 栈后进先出：先压第二父，再压第一父，保证主链先被遍历
+            if (commit.getSecondParent() != null) {
+                stack.push(commit.getSecondParent());
+            }
+            if (commit.getParent() != null) {
+                stack.push(commit.getParent());
+            }
+        }
+        return result;
+    }
+
+    /** ref 既可能是提交 SHA，也可能是分支名 */
+    private Commit resolveCommit(RepositoryPaths paths, String ref, Long repositoryId) {
+        if (ref == null || ref.isBlank()) {
+            return null;
+        }
+        BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(repositoryId, ref);
+        String sha = (branchPointer != null && branchPointer.getCommitSha() != null)
+                ? branchPointer.getCommitSha() : ref;
+        return readCommitObject(paths, sha);
+    }
+
+    /** 补齐作者信息：submission_record 通常只有分支 tip 有记录，其余为 null，前端按 null 降级 */
+    private void enrichAuthors(List<CommitVO> commits, Long repositoryId) {
+        if (CollUtil.isEmpty(commits)) {
+            return;
+        }
+        List<String> shas = commits.stream().map(CommitVO::getSha).collect(Collectors.toList());
+        List<SubmissionRecord> records = remoteSubmissionRecordMapper.selectList(
+                Wrappers.<SubmissionRecord>lambdaQuery()
+                        .eq(SubmissionRecord::getRepositoryId, repositoryId)
+                        .in(SubmissionRecord::getCommitSha, shas));
+
+        Map<String, SubmissionRecord> bySha = new HashMap<>();
+        for (SubmissionRecord record : records) {
+            bySha.merge(record.getCommitSha(), record, (a, b) -> {
+                if (a.getSubmitTime() == null) {
+                    return b;
+                }
+                if (b.getSubmitTime() == null) {
+                    return a;
+                }
+                return b.getSubmitTime().isAfter(a.getSubmitTime()) ? b : a;
+            });
+        }
+
+        Map<Long, String> usernameCache = new HashMap<>();
+        for (CommitVO vo : commits) {
+            SubmissionRecord record = bySha.get(vo.getSha());
+            if (record == null) {
+                continue;
+            }
+            vo.setAuthorId(record.getUserId());
+            vo.setBranchName(record.getBranchName());
+            if (record.getUserId() != null) {
+                String username = usernameCache.get(record.getUserId());
+                if (username == null) {
+                    User user = remoteUserMapper.selectById(record.getUserId());
+                    username = user == null ? null : user.getUsername();
+                    usernameCache.put(record.getUserId(), username);
+                }
+                vo.setAuthorName(username);
+            }
+        }
+    }
+
+    private CommitVO toCommitVO(String sha, Commit commit) {
+
+        CommitVO vo = new CommitVO();
+        vo.setSha(sha);
+        vo.setMessage(commit.getMessage());
+        vo.setTime(commit.getTime());
+        vo.setParent(commit.getParent());
+        vo.setSecondParent(commit.getSecondParent());
+        vo.setMergeFiles(commit.getMergeFiles());
+        return vo;
+    }
+
+    private byte[] readBlobBytes(RepositoryPaths paths, String blobSha) {
+        if (blobSha == null) {
+            return null;
+        }
+        File blobFile = Utils.join(paths.getObject(), blobSha);
+        if (!blobFile.isFile()) {
+            return null;
+        }
+        try {
+            return Utils.readContents(blobFile);
+        } catch (IllegalArgumentException e) {
+            log.warn("读取 Blob {} 失败: {}", blobSha, e.getMessage());
+            return null;
+        }
+    }
+
+    /** diff 里只回文本；二进制返回 null（不把二进制塞进 JSON） */
+    private String readTextBlob(RepositoryPaths paths, String blobSha) {
+        byte[] bytes = readBlobBytes(paths, blobSha);
+        if (bytes == null || isBinary(bytes)) {
+            return null;
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    /** 简易二进制探测：出现 NUL 字节即视为二进制 */
+    private boolean isBinary(byte[] bytes) {
+        for (byte b : bytes) {
+            if (b == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
 
 }

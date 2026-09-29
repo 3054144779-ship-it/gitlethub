@@ -8,6 +8,13 @@ import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.model.RefUpdateRequest;
 import org.openapitools.model.RefView;
+import po.BranchPointer;
+import vo.BlobVO;
+import vo.CommitVO;
+import vo.FileChangeVO;
+import vo.FileEntryVO;
+
+import java.util.List;
 
 public interface RemoteService {
     /**
@@ -77,6 +84,61 @@ public interface RemoteService {
     Result<RefView> pushForceUpdateBranch(String owner, String repo,
                                                  String branch, RefUpdateRequest refUpdateRequest);
 
+    /**
+     * 列出仓库的所有分支
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return 分支列表
+     */
+    Result<List<BranchPointer>> listBranches(String owner, String repo);
 
+    /**
+     * 列出某个分支的提交历史（按父链倒序，合并 DAG 去重）
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param branch  (optional) 分支名，缺省用仓库默认分支
+     * @param page  (optional) 页码，从 1 开始，缺省 1
+     * @param size  (optional) 每页条数，缺省 20
+     * @return 提交列表（不含 trackedFiles/mergeFiles）
+     */
+    Result<List<CommitVO>> listCommits(String owner, String repo,
+                                       String branch, Integer page, Integer size);
+
+    /**
+     * 查看单个提交的详情
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param sha  (required) 提交 SHA
+     * @return 提交详情（含 trackedFiles/mergeFiles）
+     */
+    Result<CommitVO> getCommit(String owner, String repo, String sha);
+
+    /**
+     * 比较某个提交与其第一父提交的差异
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param sha  (required) 提交 SHA
+     * @return 文件变更列表
+     */
+    Result<List<FileChangeVO>> diffCommit(String owner, String repo, String sha);
+
+    /**
+     * 列出某个提交（或分支）对应的文件树（扁平 path -> blobSha）
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param ref  (required) 提交 SHA 或分支名
+     * @return 文件条目列表
+     */
+    Result<List<FileEntryVO>> listTree(String owner, String repo, String ref);
+
+    /**
+     * 读取某个文件的内容
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param ref  (required) 提交 SHA 或分支名
+     * @param path  (required) 文件路径
+     * @return 文件内容（二进制时 content 为空）
+     */
+    Result<BlobVO> getBlob(String owner, String repo, String ref, String path);
 
 }

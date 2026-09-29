@@ -1,6 +1,6 @@
 package vo;
 
-import com.baomidou.mybatisplus.annotation.TableField;
+
 import enums.PRStatusEnum;
 import lombok.Data;
 
@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 
 @Data
 public class PullRequestVO {
+    private Long id;
+
     private Long repositoryId;
 
     private String title;
@@ -21,6 +23,8 @@ public class PullRequestVO {
     private PRStatusEnum status;
 
     private Long authorId;
+
+    private String authorName;
 
     private LocalDateTime createTime;
 

@@ -1,8 +1,8 @@
 server:
-  port: 8081
+  port: 8080
 spring:
   application:
-    name: user-service
+    name: remote-gitlet
   profiles:
     active: local
   cloud:

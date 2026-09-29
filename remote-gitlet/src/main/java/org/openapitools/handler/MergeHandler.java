@@ -8,7 +8,7 @@ import org.openapitools.mapper.RemoteCommitPointerMapper;
 import org.openapitools.mapper.RemotePullRequestMapper;
 import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
-import org.openapitools.model.Commit;
+import gitlet.commit.Commit;
 import org.openapitools.model.RepositoryPaths;
 import org.openapitools.utils.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,7 +49,7 @@ public class MergeHandler {
     @Autowired
     private RemoteUserMapper remoteUserMapper;
 
-    @Value("${gitlet.storage.base-path:./storage}")
+    @Value("${storage.base-path:${user.dir}}")
     private String basePath;
 
     /**

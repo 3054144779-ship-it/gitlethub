@@ -7,6 +7,12 @@ import java.time.LocalDateTime;
 
 @Data
 public class RepositoryVO {
+    private Long id;
+
+    private Long ownerId;
+
+    private String ownerName;
+
     private String name;
 
     private String description;

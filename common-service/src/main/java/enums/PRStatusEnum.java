@@ -8,8 +8,8 @@ import lombok.Getter;
  */
 public enum PRStatusEnum {
     OPEN(0, "open"),
-    CLOSED(1, "merged"),
-    MERGED(2, "closed");
+    CLOSED(1, "closed"),
+    MERGED(2, "merged");
 
     @EnumValue
     private Integer value;

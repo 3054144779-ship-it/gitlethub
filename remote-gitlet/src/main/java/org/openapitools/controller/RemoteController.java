@@ -17,9 +17,15 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.Generated;
+import po.BranchPointer;
+import vo.BlobVO;
+import vo.CommitVO;
+import vo.FileChangeVO;
+import vo.FileEntryVO;
 import vo.PullRequestVO;
 
 import javax.annotation.Nullable;
+import java.util.List;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-09-21T20:19:28.153831200+08:00[Asia/Shanghai]", comments = "Generator version: 7.25.0")
 @Controller
@@ -163,6 +169,144 @@ public class RemoteController {
             @PathVariable String owner, @PathVariable String repo) {
         Result<PullRequestVO> response = pullRequestEventListener.getPullRequest(owner, repo);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 查看单个 pull request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param pullRequestId  (required) pull request 的 id
+     * @return pull request 详情
+     */
+    @GetMapping("/pull-request/{pullRequestId}")
+    public ResponseEntity<Result<PullRequestVO>> getPullRequestById(
+            @PathVariable String owner, @PathVariable String repo,
+            @PathVariable String pullRequestId) {
+        Result<PullRequestVO> response =
+                pullRequestEventListener.getPullRequestById(owner, repo, pullRequestId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 列出仓库的 pull request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param status  (optional) 0 open / 1 closed / 2 merged；空表示全部
+     * @param page  (optional) 页码，从 1 开始
+     * @param size  (optional) 每页条数
+     * @return pull request 列表
+     */
+    @GetMapping("/pull-requests")
+    public ResponseEntity<Result<List<PullRequestVO>>> listPullRequests(
+            @PathVariable String owner, @PathVariable String repo,
+            @Nullable @RequestParam(value = "status", required = false) Integer status,
+            @Nullable @RequestParam(value = "page", required = false) Integer page,
+            @Nullable @RequestParam(value = "size", required = false) Integer size) {
+        Result<List<PullRequestVO>> response =
+                pullRequestEventListener.listPullRequests(owner, repo, status, page, size);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 关闭 pull request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param pullRequestId  (required) pull request 的 id
+     * @return 关闭结果
+     */
+    @PostMapping("/pull-request/{pullRequestId}/close")
+    public ResponseEntity<Result<String>> closePullRequest(
+            @PathVariable String owner, @PathVariable String repo,
+            @PathVariable String pullRequestId) {
+        Result<String> response =
+                pullRequestEventListener.closePullRequest(owner, repo, pullRequestId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 列出仓库的所有分支
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return 分支列表
+     */
+    @GetMapping("/branches")
+    public ResponseEntity<Result<List<BranchPointer>>> listBranches(
+            @PathVariable String owner, @PathVariable String repo) {
+        return ResponseEntity.ok(remoteService.listBranches(owner, repo));
+    }
+
+    /**
+     * 列出某个分支的提交历史
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param branch  (optional) 分支名，缺省用仓库默认分支
+     * @param page  (optional) 页码，从 1 开始
+     * @param size  (optional) 每页条数
+     * @return 提交列表
+     */
+    @GetMapping("/commits")
+    public ResponseEntity<Result<List<CommitVO>>> listCommits(
+            @PathVariable String owner, @PathVariable String repo,
+            @Nullable @RequestParam(value = "branch", required = false) String branch,
+            @Nullable @RequestParam(value = "page", required = false) Integer page,
+            @Nullable @RequestParam(value = "size", required = false) Integer size) {
+        return ResponseEntity.ok(remoteService.listCommits(owner, repo, branch, page, size));
+    }
+
+    /**
+     * 查看单个提交
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param sha  (required) 提交 SHA
+     * @return 提交详情
+     */
+    @GetMapping("/commits/{sha}")
+    public ResponseEntity<Result<CommitVO>> getCommit(
+            @PathVariable String owner, @PathVariable String repo, @PathVariable String sha) {
+        return ResponseEntity.ok(remoteService.getCommit(owner, repo, sha));
+    }
+
+    /**
+     * 查看提交与其第一父提交的差异
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param sha  (required) 提交 SHA
+     * @return 文件变更列表
+     */
+    @GetMapping("/commits/{sha}/diff")
+    public ResponseEntity<Result<List<FileChangeVO>>> diffCommit(
+            @PathVariable String owner, @PathVariable String repo, @PathVariable String sha) {
+        return ResponseEntity.ok(remoteService.diffCommit(owner, repo, sha));
+    }
+
+    /**
+     * 列出某个提交（或分支）对应的文件树
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param ref  (required) 提交 SHA 或分支名
+     * @return 文件条目列表
+     */
+    @GetMapping("/tree")
+    public ResponseEntity<Result<List<FileEntryVO>>> listTree(
+            @PathVariable String owner, @PathVariable String repo,
+            @RequestParam("ref") String ref) {
+        return ResponseEntity.ok(remoteService.listTree(owner, repo, ref));
+    }
+
+    /**
+     * 读取某个文件的内容
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param ref  (required) 提交 SHA 或分支名
+     * @param path  (required) 文件路径
+     * @return 文件内容
+     */
+    @GetMapping("/blob")
+    public ResponseEntity<Result<BlobVO>> getBlob(
+            @PathVariable String owner, @PathVariable String repo,
+            @RequestParam("ref") String ref,
+            @RequestParam("path") String path) {
+        return ResponseEntity.ok(remoteService.getBlob(owner, repo, ref, path));
     }
 
 }

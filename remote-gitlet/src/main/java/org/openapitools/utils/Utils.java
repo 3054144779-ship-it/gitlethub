@@ -131,16 +131,34 @@ public class Utils {
         }
     }
 
+    /** 反序列化白名单：只放行 Commit 与 JDK 基础类型/集合。
+     *  对象字节由客户端 push 上传，读时若不限制，构造的流可携带 gadget 类。 */
+    private static final ObjectInputFilter SAFE_FILTER = info -> {
+        Class<?> clazz = info.serialClass();
+        if (clazz == null) {
+            return ObjectInputFilter.Status.UNDECIDED;
+        }
+        while (clazz.isArray()) {
+            clazz = clazz.getComponentType();
+        }
+        String name = clazz.getName();
+        if (name.equals("gitlet.commit.Commit")
+                || name.startsWith("java.lang.")
+                || name.startsWith("java.util.")) {
+            return ObjectInputFilter.Status.ALLOWED;
+        }
+        return ObjectInputFilter.Status.REJECTED;
+    };
+
     /** 返回从 FILE 读取的类型为 T 的对象，并将其转换为 expectedClass。
      * 在出现问题时投掷IllegalArgumentException。 */
     public static <T extends Serializable> T readObject(File file,
                                                  Class<T> expectedClass) {
-        try {
-            ObjectInputStream in =
-                new ObjectInputStream(new FileInputStream(file));
-            T result = expectedClass.cast(in.readObject());
-            in.close();
-            return result;
+        // try-with-resources：白名单拒绝或读取失败时也必须关闭流，
+        // 否则每次失败都会泄漏一个文件句柄（Windows 上还锁住文件无法删除）
+        try (ObjectInputStream in = new ObjectInputStream(new FileInputStream(file))) {
+            in.setObjectInputFilter(SAFE_FILTER);
+            return expectedClass.cast(in.readObject());
         } catch (IOException | ClassCastException
                  | ClassNotFoundException excp) {
             throw new IllegalArgumentException(excp.getMessage());

@@ -5,9 +5,13 @@
 | 状态 | draft |
 | Owner | 花火 |
 | Reviewer | 待指派 |
-| 最后更新 | 2026-09-25 |
+| 最后更新 | 2026-09-29 |
 | 接口冻结 | 未冻结（`docs/openapi.yaml` 定稿后填日期） |
 | 取代 | `gitlethub 设计文档.md`（无状态草稿，保留作参考） |
+
+> 2026-09-29 增补：新增 Web 前端 `gitlethub-frontend`，并补齐其所需的只读接口（见 §6、§13）。
+> 这两项推翻了 §2 原来的两条非目标（「不做 Web UI」「不做 PR」），相关条目已就地更新。
+> 本次改动**不含 `gitlet_core`**（见 §13.4）。
 
 **怎么读这份文档**
 
@@ -66,15 +70,19 @@ CommandHandler commands = new CommandHandler(repo);   // 四个 Handler 均只�
 - 一个仓库 = 一个独立实例，同一进程内多个仓库互不干扰。**（已完成）**
 - 用户可以把本地 gitlet 仓库推送到云端、从云端拉取。
 - 提供 AI 辅助：生成提交信息 / 代码审查 / 解释代码。
+- **提供 Web 前端**：浏览仓库文件 / 提交 / 分支，管理 PR 与协作者。**（2026-09-29 新增，见 §13）**
 
 ### 非目标
 
 - 不实现 Git 线协议（smart HTTP / packfile），不追求与真 git 互通。
-- 不做 Web UI，交互一律走 CLI。
+- ~~不做 Web UI，交互一律走 CLI。~~ **2026-09-29 取消**：改为「Web 只读浏览 + PR/协作者管理」，
+  写操作（push/pull/clone/冲突解决）仍走 CLI（见 §13.4）。
 - 不做分布式部署，先单机单盘。
 - 不做细粒度权限模型，先只区分 owner / 非 owner。
 - 不做断点续传、增量打包等传输优化。
-- 不做仓库可视化、issue、PR、CI 等，只做托管 + AI。
+- ~~不做仓库可视化、issue、PR、CI 等，只做托管 + AI。~~ **2026-09-29 部分取消**：
+  仓库可视化（文件/提交/分支）与 PR 已实现；issue、CI 仍不做。
+- **Web 端不做冲突解决可视化编辑器**（合并冲突仅在 UI 提示，解决走 CLI）。
 
 > 非目标比目标重要：它是防止范围蔓延的唯一手段。
 
@@ -109,8 +117,11 @@ CommandHandler commands = new CommandHandler(repo);   // 四个 Handler 均只�
 gitlethub (parent, packaging=pom)
 ├── gitlet_core/       纯库，无 Spring。CLI 与 remote-gitlet 依赖它
 ├── gateway-service/   Spring Cloud Gateway：路由 + 鉴权过滤 + 限流
-└── remote-gitlet/     实现 /api/repos/**，依赖 gitlet_core
+├── user-service/      用户注册 / 登录 / 用户信息（端口 8081）
+├── common-service/    共享 po / dto / vo / bo / enums / jwt / exception
+└── remote-gitlet/     实现 /api/repos/**，依赖 gitlet_core（端口 8080）
 
+gitlethub-frontend      Vue3 + Vite Web 前端，独立工程，在 D:\Job_project\gitlethub-frontend
 gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
 ```
 
@@ -147,10 +158,14 @@ gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
 | 模块 | 磁盘 | 已加入父 pom `<modules>` | 状态 |
 | --- | --- | --- | --- |
 | `gitlet_core` | ✅ | ✅ | 1802 行，21 个集成测试全绿 |
-| `gateway-service` | ✅ | ❌ | 4 个文件，`application.yaml` 无路由，**尚不可用**（见 §10） |
-| `remote-gitlet` | ✅（仅 pom） | ❌ | 空壳，接口契约已定（见 §6） |
+| `common-service` | ✅ | ✅ | 共享 po/dto/vo/bo/enums/jwt/exception |
+| `gateway-service` | ✅ | ✅ | 4 个文件，`application.yaml` 无路由，**尚不可用**（见 §10） |
+| `user-service` | ✅ | ✅ | 端口 8081，注册/登录/用户信息可用 |
+| `remote-gitlet` | ✅ | ✅ | 端口 8080，push/pull/clone + PR + 本次新增只读接口（见 §6、§13） |
+| `gitlethub-frontend` | ✅ | —（独立工程，非 Maven 模块） | Vue3 + Vite，见 §13 |
 
-父 pom 目前只注册了 `gitlet_core`，所以 `mvn validate` 看不到另外两个模块——它们的问题因此一直被掩盖。
+父 pom `<modules>` 已注册 `gitlet_core`、`gateway-service`、`remote-gitlet`、`user-service`、`common-service` 五个模块
+（§10 阻塞级 4 已解决）；`gateway-service` 虽已注册但内容仍是空壳。
 
 ### 进程与并发模型
 
@@ -244,6 +259,36 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | POST | `/api/repos/{owner}/{repo}/pull-request` | 手动创建PR |
 | POST | `/api/repos/{owner}/{repo}/pull-request/{pullRequestId}` | 允许分支合并，合并进入targe分支 |
 
+**前端只读接口（2026-09-29 新增，同样由 `remote-gitlet` 实现）**
+
+前端需要读取仓库内容来渲染页面，这部分此前不存在。实现时统一返回 `Result<T>`，
+`owner/repo` 由路径传入，`repositoryId` 用 `remoteUserMapper.getUserId(owner)` +
+`remoteRepositoryMapper.getRepositoryId(ownerId, repo)` 解析。
+
+| 方法 | 路径 | 返回 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/repos/{owner}/{repo}` | `RepositoryVO` | 按 owner/repo 取仓库信息 |
+| GET | `/api/repos/{owner}/{repo}/branches` | `List<BranchPointer>` | 分支列表（复用 PO） |
+| GET | `/api/repos/{owner}/{repo}/commits?branch=&page=&size=` | `List<CommitVO>` | 提交历史（父链遍历，内存分页） |
+| GET | `/api/repos/{owner}/{repo}/commits/{sha}` | `CommitVO` | 含 `trackedFiles` / `mergeFiles` |
+| GET | `/api/repos/{owner}/{repo}/commits/{sha}/diff` | `List<FileChangeVO>` | 与第一父提交比 |
+| GET | `/api/repos/{owner}/{repo}/tree?ref=` | `List<FileEntryVO>` | `trackedFiles` 是**扁平** `path→blobSha` |
+| GET | `/api/repos/{owner}/{repo}/blob?ref=&path=` | `BlobVO` | 按字节读；`isBinary` 按是否含 `\0` 判断 |
+| GET | `/api/repos/{owner}/{repo}/pull-requests?status=&page=&size=` | `List<PullRequestVO>` | status：0 open / 1 closed / 2 merged，空=全部 |
+| GET | `/api/repos/{owner}/{repo}/pull-request/{id}` | `PullRequestVO` | 单个 PR 详情 |
+| POST | `/api/repos/{owner}/{repo}/pull-request/{id}/close` | `String` | 关闭 PR（status=CLOSED） |
+| GET | `/api/repos/{owner}/{repo}/collaborators` | `List<CollaboratorVO>` | join 用户名 |
+| POST | `/api/repos/{owner}/{repo}/collaborators` | `String` | body `CollaboratorCreateDTO{username,level}`，仅 owner |
+| DELETE | `/api/repos/{owner}/{repo}/collaborators/{userId}` | `String` | 逻辑删除 |
+
+约定（前端依赖，改动前请同步前端）：
+
+- **枚举序列化成枚举名**（`"OPEN"` / `"OWNER"`），不是数字；但**请求参数用数字码**（status 0/1/2，level 2/1/0）。
+- `BlobVO.isBinary` 的 JSON 键就是 `isBinary`（Lombok 对 `Boolean` 字段生成 `getIsBinary()`）。
+- 提交历史**以 commit 对象的 `parent`/`secondParent` 为准**遍历，不依赖 `commit_parent` 表
+  （`pushWrite` 每次推送只写一条边，批量推送的中间提交没有记录，DB 不可靠）。
+- 作者信息多数为 `null`（`submission_record` 通常只有 tip 有记录），前端按 null 优雅降级。
+
 **不在 spec 里的**
 
 | 方法 | 路径 | 实现方 | 契约在哪 |
@@ -302,6 +347,14 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 > `Commit` 是 Java 序列化对象（`serialVersionUID = 1L`），不是文本。服务端**必须原样落盘**，不能反序列化再重新序列化，否则 SHA-1 会变、所有引用失效。
 
+> **序列化兼容（2026-09-29 修正）**：CLI 把 commit 序列化成 `gitlet.commit.Commit`（Java 原生序列化），
+> 而 `remote-gitlet` 原来用重复类 `org.openapitools.model.Commit` 反序列化 → `ClassNotFoundException`，
+> 导致提交历史 / 文件浏览 / 合并路径在真实数据上都跑不通。修法：把服务端的重复类**移到与 CLI 相同的包名**
+> （`remote-gitlet/src/main/java/gitlet/commit/Commit.java`）。必须同名同包（而非「读时重映射」），
+> 因为**写**方向也得输出 `gitlet.commit.Commit` 类名，否则服务端合并产生的 commit 客户端读不了。
+> 同时给 `Utils.readObject` 加了 JEP-290 `ObjectInputFilter` 白名单——`pushObject` 落盘的是客户端原始字节，
+> 只读接口会去反序列化它们，这是新引入的攻击面。
+
 #### 数据库表设计
 
 | 表名                          | 字段                                                         | 备注                                                         |
@@ -311,7 +364,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 分支指针（branch_pointer）    | id, branch_name, commit_sha(分支指针指向的commit的SHA1值), repository_id(属于哪个仓库), is_protected(是否为保护分支), version(版本号用于乐观锁), update_time, is_deleted(逻辑删除) |                                                              |
 | 协作者权限（collaborator）    | id, level(权限等级), user_id(协作者的用户id), repository_id(属于哪个仓库), create_time, is_deleted(逻辑删除), allow_auto_pr |                                                              |
 | 提交记录（submission_record） | id, submit_time, commit_sha1(关联对象存储中真实的 SHA-1), user_id(提交的用户id), repository_id(仓库id), branch_name(提交到了哪个分支) | 在 Git 的世界里，没有 `branch_id` 这个概念，用branch_name更合理 |
-| 提交图谱索引(commit_parent)   | id, repository_id, commit_sha, parent_sha                    | 记录 commit 之间的父子关系，git log 遍历提交历史时需要，否则每次都要去对象存储读文件解析 |
+| 提交图谱索引(commit_parent)   | id, repository_id, commit_sha, parent_sha                    | 记录 commit 之间的父子关系。**注意：目前不可靠**——`pushWrite` 每次推送只写一条边（parent 指向推送前的分支 tip），批量推送的中间提交没有记录。遍历历史一律以 commit 对象内的 `parent`/`secondParent` 为准 |
 | 标签（tag）                   | id, repository_id, tag_name, commit_sha, user_id, create_time, is_deleted | 标签功能                                                     |
 | PR机制表（pull_request）      | id, repository_id, title, description, source_branch, target_branch, status, author_id, create_time, update_time, is_deleted, allow_auto_pr(自动生成PR) | PR 机制（合并请求）                                          |
 
@@ -470,6 +523,7 @@ sequenceDiagram
 | 校验是网关做还是服务做？ | 优先放在网关层做验签；业务服务只做兜底校验，或者业务层不做校验。详见附录 |
 | PR两版处理方法：无条件自动建 PR, 纯手动建 PR | 第一版<br/>无条件自动建 PR<br/>用户没控制权<br/>第二版<br/>纯手动建 PR<br/>多一步操作<br/>第三版（你的）<br/>可配置的自动建 PR<br/>兼顾便利和控制 |
 | PR 合并采用哪种策略？1.直接改远程仓库中的文件，2.生成暂存区拷贝文件，3.暂存区只存对应的冲突文件。4.暂存区只存对应的冲突文件，以及允许合并的文件 | 暂存区只存对应的冲突文件，以及允许合并的文件。直接改仓库中的文件会污染远程仓库，生成暂存区拷贝文件IO开销+储存消耗过大。所以采用只在暂存区存对应的冲突文件，但是如果只存冲突文件会导致之前通过并且允许合并的文件遗失，所以一并存入暂存区 |
+| 新建的Commit由于和客服端序列化不同，采用读取时重定向 | Java 原生序列化有一个死板的规则：**它只认“包名 + 类名”这个字符串。只要字符串完全一样，它才不管这个类具体是什么内容，就能反序列化。**在远程服务建立一个相同的包即可 |
 
 > 这一节比「做什么」更值得维护：半年后你不会记得为什么当时没选 JGit。
 
@@ -484,7 +538,7 @@ sequenceDiagram
 | 1 | `gitlet_core` 用 `System.exit` + `System.out` 渲染，无法跑在服务端 | 服务端无法复用核心，只能重写逻辑。见 §5 |
 | 2 | `gateway-service` 同时引入 `spring-boot-starter-web`（Servlet）和 `spring-cloud-starter-gateway`（WebFlux） | 二者互斥，Spring Cloud Gateway 要求 classpath 上没有 Spring MVC，启动即失败 |
 | 3 | `gateway-service` 的两个 spring-cloud 依赖没有 BOM 管版本 | 父 pom 只继承了 `spring-boot-starter-parent`，缺 `spring-cloud-dependencies` 和 Alibaba 的 BOM，依赖无法解析 |
-| 4 | `gateway-service` / `remote-gitlet` 未注册进父 pom `<modules>` | 从不参与构建，上述问题无人发现 |
+| 4 | ~~`gateway-service` / `remote-gitlet` 未注册进父 pom `<modules>`~~ | **已解决**：父 pom 现已注册五个模块（见 §4 落地状态） |
 
 > 2 和 3 怎么解 → D16
 
@@ -497,7 +551,7 @@ sequenceDiagram
 | 7 | `gateway-service` 用包名 `com.hanabi`，与父 groupId `com.huahuo` 不一致 | 坐标混乱 |
 | 8 | gateway 的鉴权 / 限流 / 日志过滤都还没实现 | 安全 → D9、D19 |
 | 9 | 建仓是显式接口（手动建仓，push 不建仓 → D27），但任何认证用户仍能无限建仓，配额 / 频率限制没定 | 滥用风险 → D21 |
-| 10 | `remote-gitlet` 只有 pom，`/api/repos/**` 一个接口都没实现 | 见 §11 的 M2 / M3 |
+| 10 | ~~`remote-gitlet` 只有 pom，`/api/repos/**` 一个接口都没实现~~ | **已解决**：push/pull/clone + PR + 只读接口见 §6 |
 | 11 | `Repository` 的 `Staging` 内存缓存只在单线程下成立 | 并发正确性 → D12，已定（按 `repoId` 加锁后该缓存受锁保护） |
 | 12 | 模块命名 `gitlet_core` vs `gitlet-core` 未统一 | 可读性 → D4 |
 | 13 | `gitlet/dump/`（`DumpObj`、`Dumpable`）疑似死代码 | 待确认后删除 |
@@ -509,10 +563,14 @@ sequenceDiagram
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | M0 | 核心静态 → 实例化，一个仓库一个实例 | **已完成** |
-| M1 | 核心去 `System.out` / `System.exit`，暴露 §5 的契约 | 未开始 |
-| M2 | 修好 `gateway-service`（依赖 + 路由 + 鉴权/限流），按 spec 生成 `remote-gitlet` 骨架并跑通 `/health` 和第一个真实接口 | 未开始 |
-| M3 | push / pull 全链路 | 未开始 |
+| M1 | 核心去 `System.out` / `System.exit`，暴露 §5 的契约 | 部分（服务端已能复用核心，见 §13.4） |
+| M2 | 修好 `gateway-service`（依赖 + 路由 + 鉴权/限流），按 spec 生成 `remote-gitlet` 骨架并跑通 `/health` 和第一个真实接口 | `remote-gitlet` 已可用；gateway 仍未修 |
+| M3 | push / pull 全链路 | **已完成**（CLI 侧 push/pull/clone 均已跑通） |
 | M4 | AI 服务接入（独立 project） | 未开始 |
+| M5 | **Web 前端**：登录/注册/个人中心、仓库详情（文件/提交/分支）、PR 全流程、协作者/设置 | **已完成**（见 §13） |
+
+> M3 验收标准里「两个客户端同 expectedOldSha 先后 push」的并发用例尚未端到端跑过
+> （依赖 `192.168.12.168` 上的 Nacos/MySQL/Redis，见 §12）。
 
 ### M1 验收标准
 
@@ -552,16 +610,101 @@ make check       # 21/21 必须全绿
 1. Windows 上 javac 的 `-cp` 分隔符是 `;`，且 classpath 必须用 Windows 形式路径（`cygpath -w`）。用 `:` 或 POSIX 路径会让 Lombok 静默失效，报出一堆 `找不到符号 getXxx()`，看起来像源码 bug。
 2. `PYTHON = python3 -X utf8`。`.in` 测试文件是 UTF-8，但 Python 在这个中文 locale 下默认用 cp936 读，不加 `-X utf8` 会全部报 `FAILED (gbk)`。
 
-服务端侧（未开始）：
+服务端侧：
 
-| 层次 | 方式 |
-| --- | --- |
-| 契约 | `npx @redocly/cli lint docs/openapi.yaml`（改接口后必跑） |
-| 骨架 | `openapi-generator ... -o remote-gitlet`，生成物只当接口签名用，实现手写 |
-| 单元测试 | `remote-gitlet` 侧 Spring Boot Test，覆盖 controller 与 `ObjectStore` 边界 |
-| 策略 | gateway 的鉴权 filter / 限流单独测：无 token、过期 token、超阈值 |
-| 端到端 | 起 gateway + remote-gitlet，用真实 CLI 跑 init → push → clone → pull |
-| 并发 | 按 M3 的验收标准做双客户端冲突用例 |
+| 层次 | 方式 | 状态 |
+| --- | --- | --- |
+| 契约 | `npx @redocly/cli lint docs/openapi.yaml`（改接口后必跑） | — |
+| 骨架 | `openapi-generator ... -o remote-gitlet`，生成物只当接口签名用，实现手写 | — |
+| 单元/集成测试 | `remote-gitlet` 侧 Spring Boot Test + Mockito `@MockBean` + `@TempDir` 真实对象文件 | **已建**（见下） |
+| 策略 | gateway 的鉴权 filter / 限流单独测：无 token、过期 token、超阈值 | 未开始（gateway 未修） |
+| 端到端 | 起 gateway + remote-gitlet，用真实 CLI 跑 init → push → clone → pull | **阻塞**：依赖 `192.168.12.168` 的 Nacos/MySQL/Redis |
+| 并发 | 按 M3 的验收标准做双客户端冲突用例 | 未开始 |
+| 前端 | `npm run dev` 浏览器走通「注册→登录→建仓→浏览→建 PR→合并→改设置」 | 构建/dev server 已验证；**真实数据交互未验证** |
+
+### 后端测试工具链（2026-09-29 补充）
+
+Windows 中文 locale 下必须显式指定 JDK 与 locale，否则 javac 用 GBK、测试输出乱码：
+
+```bash
+JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot" \
+mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am test
+```
+
+> 注意：`./mvnw` 在 Git Bash 下不可用；系统 Maven 默认 Java 11。必须用上面的 `JAVA_HOME`。
+
+本次新增的测试类（`remote-gitlet/src/test/java/org/openapitools/`）：
+
+| 测试类 | 类型 | 覆盖 |
+| --- | --- | --- |
+| `CommitSerializationCompatTest` | 单元 | commit 序列化往返、类名为 `gitlet.commit.Commit`、白名单拒绝非法类 |
+| `CommitReadApiTest` | 单元（mock mapper） | 合并 DAG 历史遍历、分页、tree/blob、diff |
+| `RepositoryReadApiTest` | 单元（mock mapper） | owner/repo 查仓、协作者增删改、权限校验 |
+| `PullRequestReadApiTest` | 单元（mock mapper） | PR 详情/列表/关闭、跨仓拒绝 |
+| `ReadEndpointsMockMvcTest` | 集成（`@SpringBootTest @AutoConfigureMockMvc`） | HTTP 路径映射、参数绑定、Result 外层、前端依赖的 JSON 字段名 |
+
+共 39 个用例全绿。另有 8 个**已存在的**失败用例（`FirstStepPushTest`、`PushForceUpdateBranchTest`、
+`PushObjectTest`、`RemoteFlowIntegrationTest`），经 `git worktree` 对照确认是本次改动前就存在的，非回归。
+
+---
+
+## 13. Web 前端（2026-09-29 新增）
+
+### 13.1 定位
+
+一个 Vue3 + Vite 的**独立前端工程**，位于 `D:\Job_project\gitlethub-frontend`
+（**不在 `gitlethub` 仓库内**，前后端分离开发）。
+
+技术栈：Vue 3 + Vite + Vue Router 4 + Pinia + axios + Element Plus（全量引入）。
+
+### 13.2 与后端如何连
+
+- **零改动接入**：开发期用 Vite dev proxy 转发（页面与后端同源 → 无 CORS）。
+  `gateway-service` 目前不可用，所以**不经网关，直连两个服务**：
+
+  | 前端路径前缀 | 目标 | 对应服务 |
+  | --- | --- | --- |
+  | `/api` | `http://localhost:8080` | `remote-gitlet` |
+  | `/user` | `http://localhost:8081` | `user-service` |
+
+  目标地址可用 `.env.development` 的 `VITE_API_TARGET` / `VITE_USER_TARGET` 覆盖。
+- axios 拦截器统一注入 `Authorization: Bearer <token>`，并解包 `Result`（`code === 0` → 返回 `data`）。
+- 注意：**gateway 未启用，服务端目前不校验 token**，前端按最终形态先把头带上。
+
+### 13.3 目录结构
+
+```
+gitlethub-frontend/
+├── vite.config.js        # 两个 proxy + build.commonjsOptions.exclude 修复（见下）
+├── .env.development      # VITE_API_TARGET / VITE_USER_TARGET
+├── index.html  package.json
+└── src/
+    ├── main.js  App.vue  styles.css
+    ├── router/index.js   # 路由 + 登录守卫
+    ├── stores/auth.js    # Pinia：token/userId/username，localStorage 持久化
+    ├── api/{http.js,user.js,repo.js,pr.js,collab.js}
+    ├── utils/dict.js     # 枚举名/数字码双向归一（PR 状态、协作者等级）
+    ├── views/            # Login/Register/Profile/RepoList/RepoDetail/CommitDetail/PRList/PRCreate/PRDetail
+    └── components/       # RepoHeader/FileBrowser/CommitList/BranchList/PRList/CollaboratorPanel/RepoSettings
+```
+
+> `vite.config.js` 的 `build.commonjsOptions.exclude: [/node_modules[\\/]@vueuse[\\/]/]` 是**必需**的：
+> `@vueuse/*` 是纯 ESM（`type: module`，只是文件名用了 `.js`），但 commonjs 插件仍逐文件解析它，
+> 在 Node 24 + rollup 4.63 上会 `Maximum call stack size exceeded`。排除后按 ESM 原生处理。
+
+### 13.4 边界（明确不做）
+
+- **不依赖、不修改 `gitlet_core`**：为保持本地 CLI 轻量，本次所有兼容性 / 只读接口工作
+  **自包含在 `remote-gitlet`**（见 §7 的序列化兼容说明）。
+- **不做冲突解决可视化编辑器**：合并冲突仅在 UI 提示，解决走 CLI。
+- 不做标签、AI 三接口（`gitlet_ai_helper` 尚不存在）、网关改造。
+
+### 13.5 验证状态
+
+- ✅ 前端 `npm run build` 通过；Vite dev server 返回 HTTP 200；关键模块 transform 无错。
+- ✅ 后端 39 个新测试全绿。
+- ❌ **未做真实端到端**：`192.168.12.168` 上的 Nacos/MySQL/Redis 不可达（TCP 超时），后端无法真正启动；
+  且无浏览器自动化，**未验证任何真实数据下的 UI 交互**。修好环境后需按 §12 的「前端」行补跑。
 
 ---
 
@@ -599,7 +742,12 @@ make check       # 21/21 必须全绿
 | D26 | push / pull 失败与 `50001` 冲突在 CLI 侧的表现（退出码 / 是否自动 pull 重试） | | |
 | D27 | 顺序改成 refs 在先之后，「自动建仓」挂在哪一步（refs 步自动建，还是保留 `POST /repo` 单独开仓） | 保留 `POST /repo` 单独建仓 | 不做自动建仓：仓库只能手动建，push 两步都不建仓（否则任何认证用户 push 任意 owner/repo 就能凭空开仓） |
 | D28 | gitlet pull应该拉取哪个仓库？多个绑定呢？ |  | 一个本地分支同一时间只能选其中一个作为上游。 |
-| D29 | 循环生成合并冲突文件问题：如果说生成了暂存区的合并冲突文件的话，修改改这个文件，假设把远程仓库的文件内容删了，这个时候文件中的内容和未生成合并冲突时候提交的文件内容一样，再提交的时候依然生成冲突文件 | | 加一个校验，如果当前文件在暂存区中有优先采用暂存区中的文件，并对暂存区中的文件进行冲突检查即 |
+| D29 | 循环生成合并冲突文件问题：如果说生成了暂存区的合并冲突文件的话，修改改这个文件，假设把远程仓库的文件内容删了，这个时候文件内容和未生成合并冲突时候提交的文件内容一样，再提交的时候依然生成冲突文件 | | 加一个校验，如果当前文件在暂存区中有优先采用暂存区中的文件，并对暂存区中的文件进行冲突检查即 |
+| D30 | 是否做 Web 前端（推翻 §2「不做 Web UI」的非目标） | 做 | 做：Vue3 + Vite 独立工程 `gitlethub-frontend`，前后端分离，前端不放进 `gitlethub` 仓库 |
+| D31 | Web 端做什么、不做什么 | 只读浏览 + PR/协作者管理 | 登录/注册/个人中心、仓库详情（文件/提交/分支）、PR 全流程、协作者/仓库设置；**不做**冲突解决可视化编辑器 |
+| D32 | 为解决序列化兼容，是否允许改 `gitlet_core` | 不改 | **不允许**：为保持本地 CLI 轻量，兼容性工作全部自包含在 `remote-gitlet`（把重复类移到 `gitlet.commit` 包） |
+| D33 | `remote-gitlet` 端口 | 修正为 8080（`user-service` 保持 8081） | 同建议，已在 `bootstrap.yaml` 修正 |
+| D34 | 前端在 gateway 不可用时怎么连后端 | Vite dev proxy 直连两个服务 | 同建议（`/api`→8080，`/user`→8081），后端零改动 |
 
 ### D12附：
 
