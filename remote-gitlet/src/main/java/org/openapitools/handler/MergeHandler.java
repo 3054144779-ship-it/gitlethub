@@ -9,6 +9,7 @@ import org.openapitools.mapper.RemotePullRequestMapper;
 import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
 import gitlet.commit.Commit;
+import org.openapitools.message.MsgConstant;
 import org.openapitools.model.RepositoryPaths;
 import org.openapitools.utils.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +22,7 @@ import po.User;
 
 import java.io.File;
 import java.io.Serializable;
+import java.sql.Wrapper;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -110,6 +112,7 @@ public class MergeHandler {
 
         // 3. 判断合并类型
         if (lcaSha.equals(sourceSha)) {
+            log.info("源分支是目标分支的祖先，不需要执行合并操作: {} -> {}", sourceBranch, targetBranch);
             // source 是 target 的祖先，target 已包含 source 的所有提交
             return Result.ok(targetSha + " 已经更新完毕。");
         }
@@ -118,8 +121,15 @@ public class MergeHandler {
             // 快进：target 是 source 的祖先，直接将 target 指向 source
             target.setCommitSha(sourceSha);
             target.setUpdateTime(LocalDateTime.now());
-            branchPointerMapper.updateBranchPointer(repositoryId, sourceSha, target.getVersion());
-            log.info("快进合并: {} -> {}, new SHA: {}", sourceBranch, targetBranch, sourceSha);
+
+            BranchPointer branchPointer = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
+            int line = branchPointerMapper.updateBranchPointer(branchPointer.getId(), sourceSha, target.getVersion());
+            if (line <= 0) {
+                return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, MsgConstant.SYSTEM_ERROR);
+            }
+            log.info("repostoryId: {}, sourceSha: {}, targetSha: {}", repositoryId, sourceSha, targetSha);
+            log.info("影响了 {} 行", line);
+            log.info("快进合并: {} -> {}, 新 SHA: {}", sourceBranch, targetBranch, sourceSha);
             return Result.ok(sourceSha + " 快进合并成功。");
         }
 

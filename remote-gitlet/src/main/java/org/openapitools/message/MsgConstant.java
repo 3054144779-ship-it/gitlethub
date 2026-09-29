@@ -18,4 +18,5 @@ public class MsgConstant {
     public static final String THE_COLLABORATOR_LEVEL_IS_INVALID = "协作者等级非法";
     public static final String THE_COLLABORATOR_DOES_NOT_EXIST = "协作者不存在";
     public static final String NOT_REPOSITORY_OWNER = "只有仓库所有者可以管理协作者";
+    public static final String SYSTEM_ERROR = "系统错误";
 }
