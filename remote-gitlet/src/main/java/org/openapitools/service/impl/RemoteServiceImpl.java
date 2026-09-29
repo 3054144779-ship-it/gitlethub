@@ -2,6 +2,9 @@ package org.openapitools.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.db.sql.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import common.Result;
 import common.ResultCode;
 import dto.PullRequestDTO;
@@ -14,6 +17,7 @@ import org.openapitools.mapper.*;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
 import org.openapitools.service.RemoteService;
+import org.openapitools.service.support.RepositoryObjectReader;
 import org.openapitools.utils.Utils;
 import org.openapitools.verification.BranchVerification;
 import org.openapitools.verification.PermissionValidation;
@@ -73,6 +77,9 @@ public class RemoteServiceImpl implements RemoteService {
 
     @Autowired
     private RemotePullRequestMapper remotePullRequestMapper;
+
+    @Autowired
+    private RepositoryObjectReader repositoryObjectReader;
 
     /**
      * push 到远程仓库
@@ -397,27 +404,101 @@ public class RemoteServiceImpl implements RemoteService {
     }
 
     /**
-     * 拉取远程仓库
-     * TODO：全量拉取（临时）后续需要改为增量拉取
+     * 拉取远程仓库（增量；since 为空时为全量，等价 clone）
+     * 增量更新
      * @param owner  (required) 当前仓库的所有者
      * @param repo  (required) 当前仓库的名称
-     * @param since  (required) 从哪个提交开始拉取
+     * @param since  (optional) 客户端已有的最新提交 sha；为空表示全量拉取
      * @return 拉取的提交列表
      */
     @Override
     public Result<ObjectBundle> pull(String owner, String repo, String since) {
         log.info("拉取 {} / {} 从 {} 开始的提交", owner, repo, since);
-        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
 
+        // 获取仓库路径
+        RepositoryPaths repositoryPaths = repositoryObjectReader.resolvePaths(owner, repo);
         // 检查仓库是否存在(不存在则报错)
         if (!RepositoryVerification.repositoryExists(repositoryPaths)) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
 
-        // 读取仓库中所有的提交(存的是提交SHA1值)
-        List<String> commitNames = Utils.plainFilenamesIn(repositoryPaths.getCommits());
-        // 读取仓库中所有的Blobs(存的是BlobHA1值)
-        List<String> blobNames = Utils.plainFilenamesIn(repositoryPaths.getObject());
+        Long repositoryId = repositoryObjectReader.resolveRepositoryId(owner, repo);
+
+        // 仓库ID不能为空
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+
+        // 读取增量/全量提交与 Blob，用 Set 天然去重
+        Set<String> commitNames = new LinkedHashSet<>();
+        // 跨提交引用同一 blob 时去重，避免重复传输
+        Set<String> blobNames = new LinkedHashSet<>();
+
+        // since 为空 = 首次全量拉取（等价 clone 语义）：直接收下对象库全部提交与 Blob
+        if (StrUtil.isEmpty(since)) {
+            List<String> allCommits = Utils.plainFilenamesIn(repositoryPaths.getCommits());
+            List<String> allBlobs = Utils.plainFilenamesIn(repositoryPaths.getObject());
+            if (allCommits != null) {
+                commitNames.addAll(allCommits);
+            }
+            if (allBlobs != null) {
+                blobNames.addAll(allBlobs);
+            }
+        } else {
+            // 获取当前提交的提交记录：同一 sha 可能推到多个分支，用 selectList 取首条，
+            // 避免 selectOne 命中多行直接抛 TooManyResultsException；同时用 repository_id 限定范围
+            List<SubmissionRecord> records = remoteSubmissionRecordMapper.selectList(
+                    new QueryWrapper<SubmissionRecord>()
+                            .eq("repository_id", repositoryId)
+                            .eq("commit_sha", since));
+            SubmissionRecord submissionRecord = CollUtil.isEmpty(records) ? null : records.get(0);
+
+            // 提交记录不能为空且仓库ID必须一致
+            if (submissionRecord == null || !submissionRecord.getRepositoryId().equals(repositoryId)) {
+                return Result.fail(ResultCode.PULL_FAILED, MsgConstant.REJECT_MERGING_IRRELEVANT_HISTORY);
+            }
+
+            // 获取提交分支指向的 commit Sha1
+            String branchName = submissionRecord.getBranchName();
+            BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(repositoryId, branchName);
+            if (branchPointer == null) {
+                return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
+            }
+
+            log.info("分支 {} 的指向为 {}", branchName, branchPointer.getCommitSha());
+
+            // 从分支 tip 反向回溯到 since（不含）为止
+            Deque<String> stack = new ArrayDeque<>();
+            stack.push(branchPointer.getCommitSha());
+
+            while (!stack.isEmpty()) {
+                String nowCommitSha = stack.pop();
+                // 走到 since 即截断（since 客户端已有，不下发）；null 保护防止走到根提交的空父导致 NPE
+                if (nowCommitSha == null || nowCommitSha.equals(since)) {
+                    continue;
+                }
+                // 合并提交两条父链交汇时防止重复处理
+                if (commitNames.contains(nowCommitSha)) {
+                    continue;
+                }
+                Commit commit = repositoryObjectReader.readCommitObject(repositoryPaths, nowCommitSha);
+                if (commit == null) {
+                    continue;
+                }
+                commitNames.add(nowCommitSha);
+                if (commit.getTrackedFiles() != null) {
+                    blobNames.addAll(commit.getTrackedFiles().values());
+                }
+                // 双父都入栈：合并提交的 secondParent 侧历史同样需要下发（原来只走 parent 会漏）
+                if (commit.getSecondParent() != null) {
+                    stack.push(commit.getSecondParent());
+                }
+                if (commit.getParent() != null) {
+                    stack.push(commit.getParent());
+                }
+            }
+        }
+
         // 提交不能为空（可能有commit但是没有blob，但是不可能有blob但是没有commit，Blob是只增不删）
         if (CollUtil.isEmpty(commitNames) && CollUtil.isEmpty(blobNames)) {
             log.info("仓库 {} / {} 中没有提交", owner, repo);

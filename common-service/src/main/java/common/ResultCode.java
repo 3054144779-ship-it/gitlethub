@@ -60,6 +60,9 @@ public final class ResultCode {
     /** 不能与自己合并 */
     public static final Integer CANNOT_MERGE_WITH_ITSELF = 3007;
 
+    /** 拉取失败 */
+    public static final int PULL_FAILED = 3009;
+
     /** 分支已被别人推进（乐观锁失败） */
     public static final int VERSION_CONFLICT = 50001;
 

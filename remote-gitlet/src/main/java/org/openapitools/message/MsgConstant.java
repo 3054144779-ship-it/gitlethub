@@ -19,4 +19,5 @@ public class MsgConstant {
     public static final String THE_COLLABORATOR_DOES_NOT_EXIST = "协作者不存在";
     public static final String NOT_REPOSITORY_OWNER = "只有仓库所有者可以管理协作者";
     public static final String SYSTEM_ERROR = "系统错误";
+    public static final String REJECT_MERGING_IRRELEVANT_HISTORY = "拒绝合并无关历史";
 }
