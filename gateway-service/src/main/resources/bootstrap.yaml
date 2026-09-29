@@ -7,7 +7,7 @@ spring:
       routes:
         # 远程仓库路由
         - id: remote_service
-          uri: lb://remote-service
+          uri: lb://remote-gitlet
           predicates:
             - Path=/api/repos/**
         # 用户服务路由
