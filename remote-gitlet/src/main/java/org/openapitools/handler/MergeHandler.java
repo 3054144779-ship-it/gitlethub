@@ -104,8 +104,13 @@ public class MergeHandler {
         }
 
         log.info("Merging branches: {} -> {}", sourceBranch, targetBranch);
-        // 2. 找 LCA
-        String lcaSha = findLCA(repositoryId, sourceSha, targetSha);
+        // 2. 找 LCA（遍历 commit 对象的父链，不依赖不完整的 commit_parent 表）
+        RepositoryPaths paths = getRepositoryPaths(repositoryId);
+        if (paths == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "无法获取仓库路径。");
+        }
+        log.info("sourceSha: {}, targetSha: {}", sourceSha, targetSha);
+        String lcaSha = findLCA(paths, sourceSha, targetSha);
         if (lcaSha == null) {
             return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, "拒绝合并无关的历史记录。");
         }
@@ -113,6 +118,7 @@ public class MergeHandler {
         // 3. 判断合并类型
         if (lcaSha.equals(sourceSha)) {
             log.info("源分支是目标分支的祖先，不需要执行合并操作: {} -> {}", sourceBranch, targetBranch);
+            log.info("lcaSha:{}, sourceSha:{}", lcaSha, sourceSha);
             // source 是 target 的祖先，target 已包含 source 的所有提交
             return Result.ok(targetSha + " 已经更新完毕。");
         }
@@ -135,7 +141,7 @@ public class MergeHandler {
 
         // 4. 非快进合并：执行三路合并
         log.info("三路合并: {} -> {}, LCA: {}", sourceBranch, targetBranch, lcaSha);
-        return threeWayMerge(repositoryId, sourceSha, targetSha, lcaSha, sourceBranch, targetBranch);
+        return threeWayMerge(repositoryId, paths, sourceSha, targetSha, lcaSha, sourceBranch, targetBranch);
     }
 
     /**
@@ -148,13 +154,9 @@ public class MergeHandler {
     /**
      * 三路合并核心逻辑
      */
-    private Result<String> threeWayMerge(Long repositoryId, String sourceSha, String targetSha,
-                                          String lcaSha, String sourceBranch, String targetBranch) {
-        RepositoryPaths paths = getRepositoryPaths(repositoryId);
-        if (paths == null) {
-            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "无法获取仓库路径。");
-        }
-
+    private Result<String> threeWayMerge(Long repositoryId, RepositoryPaths paths, String sourceSha,
+                                          String targetSha, String lcaSha,
+                                          String sourceBranch, String targetBranch) {
         Commit sourceCommit = readCommit(paths, sourceSha);
         Commit targetCommit = readCommit(paths, targetSha);
         Commit lcaCommit = readCommit(paths, lcaSha);
@@ -461,26 +463,23 @@ public class MergeHandler {
 
     /**
      * 查找两个提交的最近公共祖先 (LCA)
-     * 通过 BFS 遍历提交图（使用数据库的 commit_parent 表）
+     * 以 commit 对象内的 parent/secondParent 为准 BFS 遍历提交 DAG。
+     * 不依赖 commit_parent 表：该表只记录推送事件的「tip → 分支旧指向」边，
+     * 批量推送的中间提交、新分支首推（旧指向为 null）、客户端合并提交的第二父均缺边，
+     * 强推还会写入假边
      */
-    private String findLCA(Long repositoryId, String sourceSha, String targetSha) {
+    private String findLCA(RepositoryPaths paths, String sourceSha, String targetSha) {
         // 收集 target 的所有祖先
         Set<String> targetAncestors = new HashSet<>();
-        Queue<String> queue = new LinkedList<>();
+        Deque<String> queue = new ArrayDeque<>();
         queue.add(targetSha);
 
         while (!queue.isEmpty()) {
             String sha = queue.poll();
-            if (sha == null || targetAncestors.contains(sha)) {
+            if (sha == null || !targetAncestors.add(sha)) {
                 continue;
             }
-            targetAncestors.add(sha);
-
-            // 查找父提交（从数据库）
-            List<String> parents = commitPointerMapper.getParents(repositoryId, sha);
-            if (parents != null) {
-                queue.addAll(parents);
-            }
+            queue.addAll(parentShas(paths, sha));
         }
 
         log.info("Target 祖先: {}", targetAncestors);
@@ -492,25 +491,36 @@ public class MergeHandler {
 
         while (!queue.isEmpty()) {
             String sha = queue.poll();
-
-            log.info("Checking commit: {}", sha);
-
-            if (sha == null || visited.contains(sha)) {
+            if (sha == null || !visited.add(sha)) {
                 continue;
             }
-            visited.add(sha);
 
             if (targetAncestors.contains(sha)) {
                 return sha;
             }
 
-            List<String> parents = commitPointerMapper.getParents(repositoryId, sha);
-            if (parents != null) {
-                queue.addAll(parents);
-            }
+            queue.addAll(parentShas(paths, sha));
         }
 
         return null;
+    }
+
+    /**
+     * 反序列化 commit 对象，返回其全部父提交 SHA（第一父 + 第二父）；对象缺失返回空列表
+     */
+    private List<String> parentShas(RepositoryPaths paths, String sha) {
+        Commit commit = readCommit(paths, sha);
+        if (commit == null) {
+            return Collections.emptyList();
+        }
+        List<String> parents = new ArrayList<>(2);
+        if (commit.getParent() != null) {
+            parents.add(commit.getParent());
+        }
+        if (commit.getSecondParent() != null) {
+            parents.add(commit.getSecondParent());
+        }
+        return parents;
     }
 
     /**
