@@ -6,7 +6,6 @@ import gitlet.repository.Repository;
 import gitlet.repository.RepositoryPaths;
 import gitlet.stag.Staging;
 import gitlet.utils.Utils;
-import jdk.jshell.execution.Util;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -158,7 +157,7 @@ public class CommandHandler {
 
         // 合并已收尾，清除 MERGE_HEAD 状态
         if (mergeHead.exists()) {
-            Utils.restrictedDelete(mergeHead);
+            mergeHead.delete();
         }
 
         // 清空暂存区

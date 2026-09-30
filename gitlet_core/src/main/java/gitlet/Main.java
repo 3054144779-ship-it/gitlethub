@@ -1,7 +1,6 @@
 package gitlet;
 
 
-import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import gitlet.bo.GitletObject;
 import gitlet.bo.ObjectBundle;
@@ -328,6 +327,9 @@ public class Main {
 
                 // 拉取成功
                 List<ObjectBundle> commits = pullResult.getCommits();
+                int pulledObjects = commits.stream()
+                        .mapToInt(b -> b.getObjects() == null ? 0 : b.getObjects().size()).sum();
+                log.info("拉取到 {} 个对象", pulledObjects);
                 commits.forEach(object -> {
                     List<@Valid GitletObject> objects = object.getObjects();
                     objects.forEach(gitletObject -> {
@@ -348,6 +350,14 @@ public class Main {
                         }
                     });
                 });
+
+                // 拉取后校验：远程最新提交的对象必须已落盘，否则不能进入 merge
+                File remoteHeadCommit = Utils.join(repo.getPaths().getCommits(), remoteBranchSha);
+                if (!remoteHeadCommit.exists()) {
+                    Utils.message("未拉取到远程最新提交 " + remoteBranchSha
+                            + " 的对象（服务端返回 0 个对象？），合并已中止。");
+                    break;
+                }
 
                 // 5. 只更新远程跟踪分支指针（fetch 语义：记录“远程在哪”，绝不动本地分支指针）
                 //    不要在这里 writeContents(branchFileToCommit, remoteBranchSha)：

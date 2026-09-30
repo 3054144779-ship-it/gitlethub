@@ -126,6 +126,7 @@ public class RemoteApiClient {
 
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            log.info("pull 原始响应: status={}, body={}", response.statusCode(), response.body());
             return parsePullResult(response);
         } catch (Exception e) {
             log.info("拉取失败: {}", e);

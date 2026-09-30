@@ -6,13 +6,7 @@ import gitlet.repository.RepositoryPaths;
 import gitlet.stag.Staging;
 import gitlet.utils.Utils;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 /** 状态查询：工作目录 / 暂存区 / 分支状态的各种派生查询与打印。 */
 public class StatusHandler {

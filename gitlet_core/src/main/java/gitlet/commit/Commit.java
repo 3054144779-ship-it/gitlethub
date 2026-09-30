@@ -1,7 +1,6 @@
 package gitlet.commit;
 
 
-import gitlet.utils.Utils;
 import lombok.Data;
 
 import java.io.Serial;

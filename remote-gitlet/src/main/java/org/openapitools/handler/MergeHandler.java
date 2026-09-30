@@ -329,10 +329,19 @@ public class MergeHandler {
         Commit mergeCommit = new Commit(message, mergeFiles, targetSha, sourceSha, mergedTrackedFiles);
         String mergeSha = saveCommit(paths, mergeCommit);
 
+        log.info("创建合并提交: {}", mergeSha);
+
         BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
         target.setCommitSha(mergeSha);
         target.setUpdateTime(LocalDateTime.now());
-        branchPointerMapper.updateBranchPointer(repositoryId, mergeSha, target.getVersion());
+//        int line = branchPointerMapper.updateBranchPointer(repositoryId, mergeSha, target.getVersion());
+        log.info("更新分支指针: {}", target.toString());
+        int line = branchPointerMapper.updateById(target);
+
+        if (line < 1) {
+            log.warn("更新分支指针失败: {}", targetBranch);
+            return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, MsgConstant.REMOTE_REPOSITORY_UPDATE_FAILED);
+        }
 
         commitPointerMapper.insertCommitParent(repositoryId, mergeSha, targetSha);
         commitPointerMapper.insertCommitParent(repositoryId, mergeSha, sourceSha);

@@ -29,6 +29,6 @@ public class CommitParent {
     @TableField("parent_sha")
     private String parentSha;
 
-    @TableField("parent_sha")
+    @TableField("parent_second_sha")
     private String parentSecondSha;
 }
