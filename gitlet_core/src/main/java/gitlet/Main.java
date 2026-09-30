@@ -526,9 +526,7 @@ public class Main {
     // .gitlet 目录是否存在，存在true，不存在false
     private static void checkGitLet(RepositoryPaths paths) {
         if (!paths.getGitletDir().exists()) {
-            Utils.message("Not in an initialized Gitlet directory.");
-            // TODO: 这些 System.exit 和直接写 stdout 是把核心接进网关时的真正阻塞点，
-            //       会直接杀掉服务进程。改造 API 层之前先不要删。
+            Utils.message("已初始化的 Gitlet 目录不存在。");
             System.exit(0);
         }
     }
