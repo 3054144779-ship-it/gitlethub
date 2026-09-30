@@ -46,12 +46,14 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
      * @return 更新结果
      */
     @Override
-    public Result<String> updateRemoteRepository(RepositoryCreateDTO repositoryCreateDTO) {
-        String owner = repositoryCreateDTO.getOwner();
+    public Result<String> updateRemoteRepository(Long userId, RepositoryCreateDTO repositoryCreateDTO) {
+//        String owner = repositoryCreateDTO.getOwner();
         String repo = repositoryCreateDTO.getRepo();
         // 获取当前用户ID(根据用户名字查)
-        Long ownerId = remoteUserMapper.getUserId(owner);
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
+//        Long ownerId = remoteUserMapper.getUserId(owner);
+//        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
+
 
         boolean success = lambdaUpdate()
                 .set(Repository::getName, repositoryCreateDTO.getRepo())
@@ -62,7 +64,7 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
                 .update();
 
         if (!success) {
-            return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, MsgConstant.REMOTE_REPOSITORY_UPDATE_FAILED);
+            return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, MsgConstant.NOT_THE_OWNER_OF_THE_WAREHOUSE);
         }
 
         return Result.ok();
@@ -171,7 +173,7 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result<String> addCollaborator(String owner, String repo, CollaboratorCreateDTO collaboratorCreateDTO) {
+    public Result<String> addCollaborator(Long userId, String owner, String repo, CollaboratorCreateDTO collaboratorCreateDTO) {
         if (collaboratorCreateDTO == null || StrUtil.isBlank(collaboratorCreateDTO.getUsername())) {
             return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_USER_DOES_NOT_EXIST);
         }
@@ -179,7 +181,7 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
         if (repository == null) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
-        Result<String> permission = checkOwner(repository, owner);
+        Result<String> permission = checkOwner(repository, userId);
         if (permission != null) {
             return permission;
         }
@@ -219,12 +221,12 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result<String> removeCollaborator(String owner, String repo, Long userId) {
+    public Result<String> removeCollaborator(Long operatorId, String owner, String repo, Long userId) {
         Repository repository = findRepository(owner, repo);
         if (repository == null) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
-        Result<String> permission = checkOwner(repository, owner);
+        Result<String> permission = checkOwner(repository, operatorId);
         if (permission != null) {
             return permission;
         }
@@ -254,9 +256,9 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
     }
 
     /** 校验调用者是否为仓库 OWNER；通过返回 null，否则返回失败结果 */
-    private Result<String> checkOwner(Repository repository, String owner) {
-        Long ownerId = remoteUserMapper.getUserId(owner);
-        Collaborator self = remoteCollaboratorMapper.getCollaborator(ownerId, repository.getId());
+    private Result<String> checkOwner(Repository repository, Long userId) {
+//        Long ownerId = remoteUserMapper.getUserId(owner);
+        Collaborator self = remoteCollaboratorMapper.getCollaborator(userId, repository.getId());
         if (self == null || self.getLevel() == null || !self.getLevel().isOwner()) {
             return Result.fail(ResultCode.FORBIDDEN, MsgConstant.NOT_REPOSITORY_OWNER);
         }

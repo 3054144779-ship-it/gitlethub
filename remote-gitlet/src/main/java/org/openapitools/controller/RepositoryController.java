@@ -4,6 +4,7 @@ import common.Result;
 import dto.CollaboratorCreateDTO;
 import dto.PageDTO;
 import dto.RepositoryCreateDTO;
+import org.openapitools.filter.JwtAuthFilter;
 import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.service.RemoteService;
 import org.openapitools.service.RepositoryService;
@@ -44,8 +45,9 @@ public class RepositoryController {
      */
     @PutMapping
     public ResponseEntity<Result<String>> updateRemoteRepository(
+            @RequestAttribute(value = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long userId,
             @RequestBody RepositoryCreateDTO repositoryCreateDTO) {
-        Result<String> response = repositoryService.updateRemoteRepository(repositoryCreateDTO);
+        Result<String> response = repositoryService.updateRemoteRepository(userId, repositoryCreateDTO);
         return ResponseEntity.ok(response);
     }
 
@@ -110,9 +112,10 @@ public class RepositoryController {
      */
     @PostMapping("/{owner}/{repo}/collaborators")
     public ResponseEntity<Result<String>> addCollaborator(
+            @RequestAttribute(value = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long userId,
             @PathVariable String owner, @PathVariable String repo,
             @RequestBody CollaboratorCreateDTO collaboratorCreateDTO) {
-        return ResponseEntity.ok(repositoryService.addCollaborator(owner, repo, collaboratorCreateDTO));
+        return ResponseEntity.ok(repositoryService.addCollaborator(userId, owner, repo, collaboratorCreateDTO));
     }
 
     /**
@@ -124,8 +127,9 @@ public class RepositoryController {
      */
     @DeleteMapping("/{owner}/{repo}/collaborators/{userId}")
     public ResponseEntity<Result<String>> removeCollaborator(
+            @RequestAttribute(value = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long operatorId,
             @PathVariable String owner, @PathVariable String repo,
             @PathVariable Long userId) {
-        return ResponseEntity.ok(repositoryService.removeCollaborator(owner, repo, userId));
+        return ResponseEntity.ok(repositoryService.removeCollaborator(operatorId, owner, repo, userId));
     }
 }

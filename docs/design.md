@@ -146,7 +146,7 @@ gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
 | `gitlet_core` | 仓库操作核心 + CLI（含 `api/GitletClient` 远程客户端） | — |
 | `gateway-service` | 唯一入口。路由、鉴权、限流、日志过滤，**不含业务接口** | ❌ 不得依赖 |
 | `remote-gitlet` | 仓库与对象传输的服务端实现 | ✅ |
-| `gitlet_ai_helper` | AI 三类接口。独立 project，契约跟着那个项目走 | ❌ |
+| `gitlet_ai_helper` | AI 三类接口。独立 project，契约跟着那个项目走（1.历史代码讲述，可以根据提交历史对代码设计原因进行讲述2.语义化代码搜索3.代码知识图谱（可选）） | ❌ |
 
 `gateway-service` 是**策略层不是业务层**：它不该出现任何 `/api/repos/**` 的 controller。
 把业务 spec 生成到 gateway 是错的——生成目标是 `remote-gitlet`。

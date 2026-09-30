@@ -14,10 +14,11 @@ import java.util.List;
 public interface RepositoryService extends IService<Repository> {
     /**
      * 更新远程仓库配置
+     * @param userId 用户ID
      * @param repositoryCreateDTO 远程仓库配置DTO
      * @return 更新结果
      */
-    Result<String> updateRemoteRepository(RepositoryCreateDTO repositoryCreateDTO);
+    Result<String> updateRemoteRepository(Long userId, RepositoryCreateDTO repositoryCreateDTO);
 
     /**
      * 获取远程仓库配置
@@ -58,7 +59,7 @@ public interface RepositoryService extends IService<Repository> {
      * @param collaboratorCreateDTO 待添加的协作者
      * @return 添加结果
      */
-    Result<String> addCollaborator(String owner, String repo, CollaboratorCreateDTO collaboratorCreateDTO);
+    Result<String> addCollaborator(Long userId, String owner, String repo, CollaboratorCreateDTO collaboratorCreateDTO);
 
     /**
      * 移除协作者，仅仓库 OWNER 可操作
@@ -67,5 +68,5 @@ public interface RepositoryService extends IService<Repository> {
      * @param userId 被移除的协作者用户ID
      * @return 移除结果
      */
-    Result<String> removeCollaborator(String owner, String repo, Long userId);
+    Result<String> removeCollaborator(Long operatorId, String owner, String repo, Long userId);
 }

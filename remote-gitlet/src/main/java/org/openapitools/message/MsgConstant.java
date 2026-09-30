@@ -14,6 +14,7 @@ public class MsgConstant {
     public static final String THE_USER_DOES_NOT_EXIST = "用户不存在";
     public static final String VERSION_CONFLICT = "分支已被其他人更新，请先拉取合并后再推送";
     public static final String REMOTE_REPOSITORY_UPDATE_FAILED = "远程仓库更新失败";
+    public static final String NOT_THE_OWNER_OF_THE_WAREHOUSE = "远程仓库更新失败，不是仓库的所有者";
     public static final String THE_FILE_DOES_NOT_EXIST = "文件不存在";
     public static final String THE_COLLABORATOR_LEVEL_IS_INVALID = "协作者等级非法";
     public static final String THE_COLLABORATOR_DOES_NOT_EXIST = "协作者不存在";
