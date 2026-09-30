@@ -1,6 +1,8 @@
 package gitlet;
 
 
+import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.StrUtil;
 import gitlet.bo.GitletObject;
 import gitlet.bo.ObjectBundle;
 import gitlet.commit.Commit;
@@ -17,6 +19,7 @@ import gitlet.utils.Utils;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.Console;
 import java.io.File;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -38,7 +41,7 @@ public class Main {
     public static void main(String[] args) {
         // 如果是空返回Please enter a command.
         if (args.length == 0) {
-            System.out.println(Utils.error("Please enter a command.").getMessage());
+            System.out.println(Utils.error("请输入一条命令。").getMessage());
             return ;
         }
 
@@ -178,10 +181,11 @@ public class Main {
                 log.info("objectBundle: {}", objectBundle);
 
                 // 发起请求，申请文件存储
-                PushResult pushResult1 = remoteApiClient.pushObjects(currentOwnerName, currentRepoName, objectBundle);
+                PushResult pushResult1 = remoteApiClient.pushObjects(
+                        currentOwnerName, currentRepoName, objectBundle, getToken(repo));
                 // 发起请求，申请推送分支更新
                 PushResult pushResult2 = remoteApiClient.updateBranch(
-                        currentOwnerName, currentRepoName, branch, currentBranchSha, remoteTackingSha);
+                        currentOwnerName, currentRepoName, branch, currentBranchSha, remoteTackingSha, getToken(repo));
 
                 // 获取网关返回结果，判断推送成功或失败。
                 if (pushResult1.isSuccess() && pushResult2.isSuccess()) {
@@ -297,7 +301,7 @@ public class Main {
                 RemoteApiClient remoteClient = new RemoteApiClient(pullBase);
 
                 // 2. 获取远程分支当前 SHA
-                String remoteBranchSha = remoteClient.getBranchSha(pullOwner, pullRepo, pullBranch);
+                String remoteBranchSha = remoteClient.getBranchSha(pullOwner, pullRepo, pullBranch, getToken(repo));
                 log.info("远程分支 SHA: {}", remoteBranchSha);
                 if (remoteBranchSha == null) {
                     Utils.message("未找到远程分支，或者仓库为空。");
@@ -315,7 +319,7 @@ public class Main {
                 }
 
                 // 4. 拉对象并写入本地
-                PullResult pullResult = remoteClient.pullObjects(pullOwner, pullRepo, currentBranchSha1);
+                PullResult pullResult = remoteClient.pullObjects(pullOwner, pullRepo, currentBranchSha1, getToken(repo));
                 if (!pullResult.isSuccess()) {
                     // 拉取失败
                     Utils.message("拉取失败。");
@@ -361,11 +365,83 @@ public class Main {
                 }
 
                 break;
+            case "login":
+                checkGitLet(repo.getPaths());
+                doLogin(repo);
+                break;
+            case "logout":
+                checkGitLet(repo.getPaths());
+                doLogout(repo);
+                break;
+
             default:
                 // 不存在的指令
                 System.out.println(Utils.error("不存在该名称的命令。").getMessage());
                 break;
         }
+    }
+
+    private static void doLogout(Repository repo) {
+        // 登录走网关地址：优先用已配置的 origin，否则用默认网关
+        File originFile = Utils.join(repo.getPaths().getRemoteFile(), "origin");
+        String baseUrl;
+        if (originFile.exists()) {
+            baseUrl = RepositoryPaths.parseRemoteFile(originFile).get("url");
+        } else {
+            baseUrl = "http://192.168.12.168:8080";   // 默认网关
+        }
+        new RemoteApiClient(baseUrl).logout(getToken(repo));
+    }
+
+    /**
+     * 本地登录
+     * @param repo 仓库
+     */
+    private static void doLogin(Repository repo) {
+        String username;
+        char[] password;
+        // 获取控制台对象
+        Console console = System.console();
+        if (console == null) {
+//            System.out.println("控制台不可用。若控制台在 IDE 中运行，请切换到真实终端。");
+            // IDE 里 System.console() == null，降级读取（注意：密码会回显，建议到真实终端跑）
+            Scanner sc = new Scanner(System.in);
+            System.out.print("username: ");
+            username = sc.nextLine();
+            System.out.print("password: ");
+            password = sc.nextLine().toCharArray();
+        } else {
+            username = console.readLine("请输入用户名：");
+            password = console.readPassword("请输入密码：");
+        }
+
+        if (StrUtil.isEmpty(username) || password == null || password.length == 0) {
+            Utils.message("用户名或密码不能为空。");
+            return;
+        }
+
+        // 登录走网关地址：优先用已配置的 origin，否则用默认网关
+        File originFile = Utils.join(repo.getPaths().getRemoteFile(), "origin");
+        String baseUrl;
+        if (originFile.exists()) {
+            baseUrl = RepositoryPaths.parseRemoteFile(originFile).get("url");
+        } else {
+            baseUrl = "http://192.168.12.168:8080";   // 默认网关
+        }
+
+        // 获取 token
+        String token = new RemoteApiClient(baseUrl).login(username, new String(password));
+        // 立即清除内存中的密码
+        Arrays.fill(password, '0');
+
+        if (StrUtil.isEmpty(token)) {
+            Utils.message("登录失败：用户名/密码错误，或服务不可达。");
+            return;
+        }
+
+        File credentials = repo.getPaths().getCredentials();
+        Utils.writeContents(credentials, token);
+        Utils.message("登录成功。");
     }
 
     /**
@@ -466,5 +542,9 @@ public class Main {
             return false;
         }
         return true;
+    }
+
+    private static String getToken(Repository repo) {
+        return Utils.readContentsAsString(repo.getPaths().getCredentials());
     }
 }

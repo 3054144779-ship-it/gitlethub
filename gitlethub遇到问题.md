@@ -1085,3 +1085,8 @@ HTTP 的响应 body 可以分块输出（chunked）：
 问题：
 
 可观测:访问日志 + 关键接口耗时打点 + dashboard 连上——出事能秒定位 ？这是啥，网关和校验倒是配好了，话说加了网关校验之后客户端push是不是也要校验？
+
+问题：
+
+为什么 readPassword 返回 char[] 而不是 String
+这是 Java 官方故意的安全设计:String 不可变、会驻留在内存/字符串池里,你没法主动清掉;char[] 用完 Arrays.fill(password, '\0') 能立刻擦除,减少密码在内存里的残留窗口。所以别嫌 char[] 麻烦,它比 String 更该用。

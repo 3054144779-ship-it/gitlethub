@@ -37,6 +37,8 @@ public class RepositoryPaths {
     private final File remotePushBranchDir;
     /** 合并进行中时记录「第二父提交」(被合并进来的 SHA)；文件存在即代表有一次未完成的合并。 */
     private final File mergeHead;
+    /** 存储远程仓库 token 信息。 */
+    private final File credentials;
 
     public RepositoryPaths(String repoId, File cwd) {
         this.repoId = repoId;
@@ -50,6 +52,7 @@ public class RepositoryPaths {
         this.remoteFile = join(gitletDir, "remotes");
         this.remotePushBranchDir = join(gitletDir, "refs", "remotes");
         this.mergeHead = join(gitletDir, "MERGE_HEAD");
+        this.credentials = join(gitletDir, "credentials");
     }
 
     /**

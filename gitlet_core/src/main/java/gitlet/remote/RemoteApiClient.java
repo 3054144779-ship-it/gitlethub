@@ -40,7 +40,7 @@ public class RemoteApiClient {
      * 推送对象（blobs + commits）到远程。
      * POST /api/repos/{owner}/{repo}/objects
      */
-    public PushResult pushObjects(String owner, String repo, ObjectBundle objects) {
+    public PushResult pushObjects(String owner, String repo, ObjectBundle objects, String token) {
         // 构造JSON：把每个commit的SHA + 内容（base64）打包\
         /*
         {
@@ -61,6 +61,7 @@ public class RemoteApiClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/objects"))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
 
@@ -82,7 +83,7 @@ public class RemoteApiClient {
      * @param expectedOldSha：本地认为远程现在指向哪
      */
     public PushResult updateBranch(String owner, String repo, String branch,
-                                   String newSha, String expectedOldSha) {
+                                   String newSha, String expectedOldSha, String token) {
         // 构造 JSON：{ "sha": "xxx", "expectedOldSha": "yyy" }
         // 有 tracking 才带 expectedOldSha（做非快进校验）；首次推送省略该字段，让服务端放行。
         // 不然如果, expectedOldSha 为 null 会被非快进校验进行校验, 导致找不到null这个提交。
@@ -94,6 +95,7 @@ public class RemoteApiClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/refs/" + branch))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
 
@@ -101,7 +103,7 @@ public class RemoteApiClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             return parsePushResult(response);
         } catch (Exception e) {
-            return new PushResult(false, "网络错误: " + e.getMessage());
+            return new PushResult(false, "网络错误: " + e);
         }
     }
 
@@ -109,7 +111,7 @@ public class RemoteApiClient {
      * 从远程拉取对象（全量或增量）。
      * GET /api/repos/{owner}/{repo}/pull?since={commitSha}
      */
-    public PullResult pullObjects(String owner, String repo, String sinceCommitSha) {
+    public PullResult pullObjects(String owner, String repo, String sinceCommitSha, String token) {
         String url = baseUrl + "/api/repos/" + owner + "/" + repo + "/objects";
         if (sinceCommitSha != null && !sinceCommitSha.isEmpty()) {
             url += "?since=" + sinceCommitSha;
@@ -118,6 +120,7 @@ public class RemoteApiClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
                 .GET()
                 .build();
 
@@ -125,8 +128,8 @@ public class RemoteApiClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             return parsePullResult(response);
         } catch (Exception e) {
-            log.info("拉取失败: {}", e.getMessage());
-            return new PullResult(false, "网络错误: " + e.getMessage(), null);
+            log.info("拉取失败: {}", e);
+            return new PullResult(false, "网络错误: " + e, null);
         }
     }
 
@@ -137,10 +140,11 @@ public class RemoteApiClient {
      * @param branch 远程分支名
      * @return 远程分支指向的 SHA 值，如果读取失败则返回 null
      */
-    public String getBranchSha(String owner, String repo, String branch) {
+    public String getBranchSha(String owner, String repo, String branch, String token) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/repos/" + owner + "/" + repo + "/refs/" + branch))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
                 .GET()
                 .build();
         try {
@@ -167,6 +171,33 @@ public class RemoteApiClient {
             return null;
         }
     }
+
+    /**
+     * 登录远程仓库
+     * @return 登录令牌
+     */
+    public String login(String username, String password) {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/user/login"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(String.format("{\"username\":\"%s\",\"password\":\"%s\",\"rememberMe\":\"true\"}", username, new String(password))))
+                .build();
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            String body = response.body();
+            Integer code = extractJsonInt(body, "code");
+            if (response.statusCode() == 200 && code != null && code == 0) {
+                log.info("登录成功: {}", body);
+                return extractJsonString(body, "data");
+            }
+            log.warn("登录失败: {}", code);
+        } catch (Exception e) {
+            log.error("登录请求异常", e);
+        }
+        return null;
+    }
+
 
     /**
      * 构建对象上传的 JSON（对象中不存在转义，选择手写 JSON 字符串，保证轻量纯库）
@@ -319,4 +350,27 @@ public class RemoteApiClient {
         return m.find() ? m.group(1) : null;
     }
 
+    /**
+     * 登出远程仓库
+     */
+    public void logout(String token) {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/user/logout"))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            String body = response.body();
+            String code = extractJsonString(body, "code");
+            if (response.statusCode() == 200 && "0".equals(code)) {
+                log.info("登出成功: {}", body);
+                return;
+            }
+            log.warn("登出失败: {}", extractJsonString(body, "message"));
+        } catch (Exception e) {
+            log.error("登出请求异常", e);
+        }
+    }
 }
