@@ -107,7 +107,9 @@
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -q -Duser.language=en -Duser.country=US -f /d/Job_project/gitlethub/pom.xml -pl remote-gitlet -am test-compile)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -f /d/Job_project/gitlethub/pom.xml -pl remote-gitlet -am -Dtest=JwtAuthFilterTest -Dsurefire.failIfNoSpecifiedTests=false test)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -B -Duser.language=en -Duser.country=US -f /d/Job_project/gitlethub/pom.xml -pl remote-gitlet -am -Dtest=ReadEndpointsMockMvcTest -Dsurefire.failIfNoSpecifiedTests=false test)",
-      "Bash(grep -E \"Tests run:.*in org|Tests run:.*Skipped: [0-9]+$|BUILD\" /tmp/rg-final.log)"
+      "Bash(grep -E \"Tests run:.*in org|Tests run:.*Skipped: [0-9]+$|BUILD\" /tmp/rg-final.log)",
+      "Bash(grep *)",
+      "Bash(echo \"--- exit=$? ---\")"
     ]
   }
 }

@@ -94,6 +94,11 @@ public class KeyPairManager {
      * @return 是否验证通过
      */
     public boolean verifyToken(String token) {
-        return JWTUtil.verify(token, JWTSignerUtil.rs256(keyPair.getPublic()));
+        try {
+            return JWTUtil.verify(token, JWTSignerUtil.rs256(keyPair.getPublic()));
+        } catch (Exception e) {
+            log.info("JWT 验证失败", e);
+            return false;
+        }
     }
 }

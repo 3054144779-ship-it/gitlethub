@@ -5,13 +5,18 @@
 | 状态 | draft |
 | Owner | 花火 |
 | Reviewer | 待指派 |
-| 最后更新 | 2026-09-29 |
+| 最后更新 | 2026-09-30 |
 | 接口冻结 | 未冻结（`docs/openapi.yaml` 定稿后填日期） |
 | 取代 | `gitlethub 设计文档.md`（无状态草稿，保留作参考） |
 
 > 2026-09-29 增补：新增 Web 前端 `gitlethub-frontend`，并补齐其所需的只读接口（见 §6、§13）。
 > 这两项推翻了 §2 原来的两条非目标（「不做 Web UI」「不做 PR」），相关条目已就地更新。
 > 本次改动**不含 `gitlet_core`**（见 §13.4）。
+>
+> 2026-09-30 增补：修复「PR 作者显示成 owner、协作者能合并自己的 PR」——
+> 根因是 `remote-gitlet` **原先没有任何调用者身份概念**，所有写路径都把 URL 上的 `owner` 当操作者。
+> 现新增 `JwtAuthFilter` 注入调用者身份、建 PR 记录真实创建者、合并仅限仓库 OWNER（见 §6「调用者身份」、D35–D37）。
+> 本次同样**不含 `gitlet_core`**，也**未改动 `docs/openapi.yaml`**。
 
 ---
 
@@ -154,7 +159,7 @@ gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
 | `common-service` | ✅ | ✅ | 共享 po/dto/vo/bo/enums/jwt/exception |
 | `gateway-service` | ✅ | ✅ | 4 个文件，`application.yaml` 无路由，**尚不可用**（见 §10） |
 | `user-service` | ✅ | ✅ | 端口 8081，注册/登录/用户信息可用 |
-| `remote-gitlet` | ✅ | ✅ | 端口 8080，push/pull/clone + PR + 本次新增只读接口（见 §6、§13） |
+| `remote-gitlet` | ✅ | ✅ | 端口 8080，push/pull/clone + PR + 只读接口（见 §6、§13）+ 自验签的 `JwtAuthFilter`（只注入身份、不拦截，见 §6「调用者身份」） |
 | `gitlethub-frontend` | ✅ | —（独立工程，非 Maven 模块） | Vue3 + Vite，见 §13 |
 
 父 pom `<modules>` 已注册 `gitlet_core`、`gateway-service`、`remote-gitlet`、`user-service`、`common-service` 五个模块
@@ -249,8 +254,8 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | GET | `/api/repos/{owner}/{repo}/refs/{branch}` | 读取分支指向 |
 | POST | `/api/repos` | 创建仓库（**不在 `openapi.yaml` 里，是手写端点** `RepositoryController`；owner/repo 走 body 的 `RepositoryCreateDTO`。建仓的唯一入口 → D27） |
 | GET | `/api/repos/{owner}/{repo}/clone` | clone 拉取对象 |
-| POST | `/api/repos/{owner}/{repo}/pull-request` | 手动创建PR |
-| POST | `/api/repos/{owner}/{repo}/pull-request/{pullRequestId}` | 允许分支合并，合并进入targe分支 |
+| POST | `/api/repos/{owner}/{repo}/pull-request` | 手动创建PR。**作者 = 调用者身份**（无身份时回退 owner）→ D35 |
+| POST | `/api/repos/{owner}/{repo}/pull-request/{pullRequestId}` | 合并进入 target 分支。**仅仓库 OWNER 可合并**，否则 `code 20002` → D37 |
 
 **前端只读接口（2026-09-29 新增，同样由 `remote-gitlet` 实现）**
 
@@ -309,19 +314,45 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 **gateway 承担的策略**（不在 spec 里，因为不产生业务 controller）：
 
-| 策略 | 行为 |
-| --- | --- |
-| 鉴权过滤 | 校验 Bearer JWT，失败直接返回 `401` + `code 20001`，不透传到后端 |
-| 限流 | 超阈值返回 `429` + `code 10005` |
-| 日志过滤 | 记录 method / path / 耗时 / 状态码 |
+| 策略 | 行为 | 现状 |
+| --- | --- | --- |
+| 鉴权过滤 | 校验 Bearer JWT，失败直接返回 `401` + `code 20001`，不透传到后端 | **未实现**（gateway 仍是空壳，见 §10-8） |
+| 限流 | 超阈值返回 `429` + `code 10005` | 未实现 |
+| 日志过滤 | 记录 method / path / 耗时 / 状态码 | 未实现 |
 
-> 请求到达 `remote-gitlet` 时**已被假定通过鉴权**。它自己不再校验 token，只校验 owner 归属（`403` / `code 20002`）。
+### 调用者身份（2026-09-30 新增）
+
+**背景**：`remote-gitlet` 原先**没有任何调用者身份概念**——controller 不读 `Authorization`，
+所有写路径（建 PR / 合并 / 建协作者）一律把 URL 上的 `owner` 当成操作者。于是出现了
+「协作者 huahuo 提的 PR 显示作者为 owner alice，且他能合并自己的 PR」这个 bug。
+
+**现状（gateway 未就绪期间，`remote-gitlet` 自行验签）**：
+
+- `org.openapitools.filter.JwtAuthFilter`（`OncePerRequestFilter`）解析 `Authorization: Bearer <JWT>`：
+  签名校验 → 过期校验 → Redis 黑名单（`jwt:blacklist:<token>`，user-service 登出时写入），
+  然后把 `request.setAttribute("userId", <Long>)`。密钥对复用 `common-service` 的 `jwt.KeyPairManager`
+  （RSA256，公私钥存共享 Redis）。
+- **只注入身份、不拦截**：无 token / 非法 / 过期 / 已登出 / Redis 异常一律**匿名放行**，
+  由 service 层按需判权。这样公开读接口和 CLI 的无 token push/clone 不受影响；
+  代价是**无效 token 返回 200 而非 401**（与 `openapi.yaml` 里「由 gateway 拦截」的注释不一致，见 §10-14）。
+- controller 用 `@RequestAttribute(name = "userId", required = false) Long actorId` 读身份，作为参数传给 service。
+- 行为：**建 PR 作者 = actorId**（无身份回退 owner）；**合并 = 仅 `level=OWNER` 的协作者**，否则 `20002`。
+- 这是 **§6「gateway 承担的策略」的临时替代**：等 gateway 修好、统一验签落地后，
+  `remote-gitlet` 的这套过滤应退回为「信任网关透传的身份」，或按 D36 的取舍保留。
+
+| 约定 | 值 |
+| --- | --- |
+| 身份载体 | `HttpServletRequest` attribute（**不用 ThreadLocal**：线程池复用会拿到脏数据、且有内存泄漏风险）→ D36 |
+| attribute key | `userId` |
+| 类型 | `Long`（claim 里可能是 Integer，过滤器内做转换） |
+| 缺失身份 | 匿名（`actorId == null`），由 service 决定是回退还是拒绝 |
 
 | 决策 | ID |
 | --- | --- |
 | 鉴权：JWT 怎么签发、密钥放哪 | → D9 |
 | 限流阈值与维度（按 IP / 按用户 / 按仓库） | → D19 |
 | AI 服务：独立进程 vs 同进程；是否流式；喂 diff 还是整份文件 | → D15 |
+| PR 作者归属、身份接缝、合并权限 | → D35、D36、D37 |
 
 ---
 
@@ -543,12 +574,14 @@ sequenceDiagram
 | 5 | `HealthController.healthCheck()` 没有方法级 `@RequestMapping`，且用 `@Controller` 返回 String（会被当视图名）；`import javax.xml.transform.Result` 是误导入 | 健康检查打不通 |
 | 6 | `gateway-service` 的 `application.yaml` 空的，一条路由都没配 | 所有请求无处转发 |
 | 7 | `gateway-service` 用包名 `com.hanabi`，与父 groupId `com.huahuo` 不一致 | 坐标混乱 |
-| 8 | gateway 的鉴权 / 限流 / 日志过滤都还没实现 | 安全 → D9、D19 |
+| 8 | gateway 的鉴权 / 限流 / 日志过滤都还没实现 | 安全 → D9、D19。**期间 `remote-gitlet` 用 `JwtAuthFilter` 自行验签兜底**（只注入身份、不拦截，见 §6「调用者身份」） |
 | 9 | 建仓是显式接口（手动建仓，push 不建仓 → D27），但任何认证用户仍能无限建仓，配额 / 频率限制没定 | 滥用风险 → D21 |
 | 10 | ~~`remote-gitlet` 只有 pom，`/api/repos/**` 一个接口都没实现~~ | **已解决**：push/pull/clone + PR + 只读接口见 §6 |
 | 11 | `Repository` 的 `Staging` 内存缓存只在单线程下成立 | 并发正确性 → D12，已定（按 `repoId` 加锁后该缓存受锁保护） |
 | 12 | 模块命名 `gitlet_core` vs `gitlet-core` 未统一 | 可读性 → D4 |
 | 13 | `gitlet/dump/`（`DumpObj`、`Dumpable`）疑似死代码 | 待确认后删除 |
+| 14 | `remote-gitlet` 自行验签是 gateway 未就绪期的临时方案，与 §6「gateway 承担的策略」的最终形态（网关统一验签）不一致；且无效 token 走**匿名放行**（返回 `200` 而非 `401`），与 `openapi.yaml` 中 `Unauthorized` 的「由 gateway 拦截」注释矛盾 | 待 gateway 修好后收敛 → D36 |
+| 15 | `closePullRequest` 仍**无权限校验**（任何人可关任意 PR）；push 仍把操作者记成 `owner`（`submission_record` 的作者归属） | 越权关闭 / 作者归属错误 → D35 |
 
 ---
 
@@ -611,7 +644,7 @@ make check       # 21/21 必须全绿
 | 契约 | `npx @redocly/cli lint docs/openapi.yaml`（改接口后必跑） | — |
 | 骨架 | `openapi-generator ... -o remote-gitlet`，生成物只当接口签名用，实现手写 | — |
 | 单元/集成测试 | `remote-gitlet` 侧 Spring Boot Test + Mockito `@MockBean` + `@TempDir` 真实对象文件 | **已建**（见下） |
-| 策略 | gateway 的鉴权 filter / 限流单独测：无 token、过期 token、超阈值 | 未开始（gateway 未修） |
+| 策略 | 鉴权 filter / 限流单独测：无 token、过期 token、超阈值 | gateway 侧**未开始**（未修）；`remote-gitlet` 侧 `JwtAuthFilterTest` 已覆盖鉴权 |
 | 端到端 | 起 gateway + remote-gitlet，用真实 CLI 跑 init → push → clone → pull | **阻塞**：依赖 `192.168.12.168` 的 Nacos/MySQL/Redis |
 | 并发 | 按 M3 的验收标准做双客户端冲突用例 | 未开始 |
 | 前端 | `npm run dev` 浏览器走通「注册→登录→建仓→浏览→建 PR→合并→改设置」 | 构建/dev server 已验证；**真实数据交互未验证** |
@@ -634,11 +667,16 @@ mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am
 | `CommitSerializationCompatTest` | 单元 | commit 序列化往返、类名为 `gitlet.commit.Commit`、白名单拒绝非法类 |
 | `CommitReadApiTest` | 单元（mock mapper） | 合并 DAG 历史遍历、分页、tree/blob、diff |
 | `RepositoryReadApiTest` | 单元（mock mapper） | owner/repo 查仓、协作者增删改、权限校验 |
-| `PullRequestReadApiTest` | 单元（mock mapper） | PR 详情/列表/关闭、跨仓拒绝 |
-| `ReadEndpointsMockMvcTest` | 集成（`@SpringBootTest @AutoConfigureMockMvc`） | HTTP 路径映射、参数绑定、Result 外层、前端依赖的 JSON 字段名 |
+| `PullRequestReadApiTest` | 单元（mock mapper） | PR 详情/列表/关闭、跨仓拒绝；**作者=创建者、合并仅 OWNER、无身份/已移除 owner 被拒** |
+| `ReadEndpointsMockMvcTest` | 集成（`@SpringBootTest @AutoConfigureMockMvc`） | HTTP 路径映射、参数绑定、Result 外层、前端依赖的 JSON 字段名；**携带 owner/协作者真实 JWT 的合并链路（`verifiesToken` mock + hutool 真实签出）** |
+| `JwtAuthFilterTest` | 单元（mock `KeyPairManager` / `StringRedisTemplate`） | 有效 token 注入、Integer claim 转 Long、缺失/非 Bearer 头匿名、签名失败不查 Redis、过期、黑名单、Redis 故障不断链 |
 
-共 39 个用例全绿。另有 8 个**已存在的**失败用例（`FirstStepPushTest`、`PushForceUpdateBranchTest`、
-`PushObjectTest`、`RemoteFlowIntegrationTest`），经 `git worktree` 对照确认是本次改动前就存在的，非回归。
+`remote-gitlet` 全部 **72** 个用例，其中 **62 绿**。其余 **6 失败 + 4 错误**（`FirstStepPushTest` 4F、
+`PushForceUpdateBranchTest` 1F/1E、`PushObjectTest` 3E、`RemoteFlowIntegrationTest` 1F）经 `git worktree`
+对照确认是**本次改动前就存在**的，且失败集合前后逐字节一致、需真实 Nacos/MySQL/Redis，**非回归**。
+
+> 鉴权过滤的测试现在**落在 `remote-gitlet`**（`JwtAuthFilterTest` + `ReadEndpointsMockMvcTest` 的 E2E），
+> 而非 §12 表格「策略」行原设想的 gateway——因为 gateway 尚未可用，验签实际在 `remote-gitlet` 内完成（见 §6「调用者身份」）。
 
 ---
 
@@ -663,7 +701,8 @@ mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am
 
   目标地址可用 `.env.development` 的 `VITE_API_TARGET` / `VITE_USER_TARGET` 覆盖。
 - axios 拦截器统一注入 `Authorization: Bearer <token>`，并解包 `Result`（`code === 0` → 返回 `data`）。
-- 注意：**gateway 未启用，服务端目前不校验 token**，前端按最终形态先把头带上。
+- `remote-gitlet` 的 `JwtAuthFilter` 现在会**解析这个 Bearer 头并注入调用者身份**（只注入、不拦截，见 §6「调用者身份」）：
+  建 PR 作者、合并权限都据此判定。无 token / 无效 token 仍走匿名（后端按需降级或拒绝）。
 
 ### 13.3 目录结构
 
@@ -696,7 +735,9 @@ gitlethub-frontend/
 ### 13.5 验证状态
 
 - ✅ 前端 `npm run build` 通过；Vite dev server 返回 HTTP 200；关键模块 transform 无错。
-- ✅ 后端 39 个新测试全绿。
+- ✅ 后端新测试全绿（`remote-gitlet` 72 个用例 / 62 绿，非绿项均为改动前既有、需真实中间件）。
+- ✅ PR 合并入口前端已按身份收敛：`PRDetailView.vue` 仅当 `repoInfo.ownerId === auth.userId` 时才渲染「合并」按钮，
+  非 owner 显示「只有仓库所有者可以合并该 PR」（**服务端仍做最终裁定**，前端只是不给出无效入口）。
 - ❌ **未做真实端到端**：`192.168.12.168` 上的 Nacos/MySQL/Redis 不可达（TCP 超时），后端无法真正启动；
   且无浏览器自动化，**未验证任何真实数据下的 UI 交互**。修好环境后需按 §12 的「前端」行补跑。
 
@@ -742,6 +783,9 @@ gitlethub-frontend/
 | D32 | 为解决序列化兼容，是否允许改 `gitlet_core` | 不改 | **不允许**：为保持本地 CLI 轻量，兼容性工作全部自包含在 `remote-gitlet`（把重复类移到 `gitlet.commit` 包） |
 | D33 | `remote-gitlet` 端口 | 修正为 8080（`user-service` 保持 8081） | 同建议，已在 `bootstrap.yaml` 修正 |
 | D34 | 前端在 gateway 不可用时怎么连后端 | Vite dev proxy 直连两个服务 | 同建议（`/api`→8080，`/user`→8081），后端零改动 |
+| D35 | PR 表的作者应该是谁：创建者还是仓库 owner（推而广之：写路径的操作者怎么归属） | 创建者（调用者身份） | **创建者**：建 PR 记录 `actorId`，无身份时回退 owner。push 路径的作者归属仍待修（§10-15） |
+| D36 | 调用者身份怎么在过滤器与业务层之间传递 | request attribute（key `userId`，`Long`） | **用 request attribute**：显式否掉 ThreadLocal（线程池复用会拿到脏数据、且有内存泄漏风险）。gateway 未就绪期由 `remote-gitlet` 的 `JwtAuthFilter` 自验签并注入；待 gateway 统一验签后按此收敛 |
+| D37 | 谁可以合并 PR | 仅仓库 OWNER | **仅 `level=OWNER` 的协作者**；其余（含 PR 作者本人）返回 `code 20002` |
 
 ### D12附：
 

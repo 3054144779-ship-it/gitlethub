@@ -4,3 +4,15 @@ spring:
       transport:
         dashboard: http://localhost:8090
       http-method-specify: true # 开启请求前缀
+      datasource:
+        gateway-flow:
+          nacos:
+            server-addr: 192.168.12.168:8848
+            dataId: gitelethub-gateway-flow-rules.json
+            groupId: GITLETHUB_GATEWAY
+            rule-type: gw-flow
+  data:
+    redis:
+          host: 192.168.12.168
+          port: 6379
+          database: 1
