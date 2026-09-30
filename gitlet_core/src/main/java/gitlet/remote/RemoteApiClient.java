@@ -188,8 +188,9 @@ public class RemoteApiClient {
             String body = response.body();
             Integer code = extractJsonInt(body, "code");
             if (response.statusCode() == 200 && code != null && code == 0) {
-                log.info("登录成功: {}", body);
-                return extractJsonString(body, "data");
+                log.info("登录成功");
+                // 注意：data 是对象，token 在 data.token，取 "data" 会拿到 null
+                return extractJsonString(body, "token");
             }
             log.warn("登录失败: {}", code);
         } catch (Exception e) {
@@ -351,9 +352,9 @@ public class RemoteApiClient {
     }
 
     /**
-     * 登出远程仓库
+     * 登出远程仓库：吊销服务端 token，返回是否成功。
      */
-    public void logout(String token) {
+    public boolean logout(String token) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/user/logout"))
                 .header("Content-Type", "application/json")
@@ -362,15 +363,15 @@ public class RemoteApiClient {
                 .build();
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            String body = response.body();
-            String code = extractJsonString(body, "code");
-            if (response.statusCode() == 200 && "0".equals(code)) {
-                log.info("登出成功: {}", body);
-                return;
+            Integer code = extractJsonInt(response.body(), "code");
+            if (response.statusCode() == 200 && code != null && code == 0) {
+                log.info("登出成功");
+                return true;
             }
-            log.warn("登出失败: {}", extractJsonString(body, "message"));
+            log.warn("登出失败: code={}", code);
         } catch (Exception e) {
             log.error("登出请求异常", e);
         }
+        return false;
     }
 }

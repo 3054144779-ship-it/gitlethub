@@ -382,15 +382,21 @@ public class Main {
     }
 
     private static void doLogout(Repository repo) {
-        // 登录走网关地址：优先用已配置的 origin，否则用默认网关
         File originFile = Utils.join(repo.getPaths().getRemoteFile(), "origin");
         String baseUrl;
         if (originFile.exists()) {
-            baseUrl = RepositoryPaths.parseRemoteFile(originFile).get("url");
+            // parseRemoteFile 存的 "baseUrl" 
+            baseUrl = RepositoryPaths.parseRemoteFile(originFile).get("baseUrl");
         } else {
             baseUrl = "http://192.168.12.168:8080";   // 默认网关
         }
-        new RemoteApiClient(baseUrl).logout(getToken(repo));
+        boolean ok = new RemoteApiClient(baseUrl).logout(getToken(repo));
+        // 无论服务端是否成功，本地登录态都要清掉
+        File credentials = repo.getPaths().getCredentials();
+        if (credentials.exists()) {
+            credentials.delete();
+        }
+        Utils.message(ok ? "已登出。" : "登出请求未成功，但已清除本地登录状态。");
     }
 
     /**
@@ -424,7 +430,7 @@ public class Main {
         File originFile = Utils.join(repo.getPaths().getRemoteFile(), "origin");
         String baseUrl;
         if (originFile.exists()) {
-            baseUrl = RepositoryPaths.parseRemoteFile(originFile).get("url");
+            baseUrl = RepositoryPaths.parseRemoteFile(originFile).get("baseUrl");   // 不是 "url"
         } else {
             baseUrl = "http://192.168.12.168:8080";   // 默认网关
         }
@@ -432,7 +438,7 @@ public class Main {
         // 获取 token
         String token = new RemoteApiClient(baseUrl).login(username, new String(password));
         // 立即清除内存中的密码
-        Arrays.fill(password, '0');
+        Arrays.fill(password, '\0');
 
         if (StrUtil.isEmpty(token)) {
             Utils.message("登录失败：用户名/密码错误，或服务不可达。");
@@ -545,6 +551,11 @@ public class Main {
     }
 
     private static String getToken(Repository repo) {
-        return Utils.readContentsAsString(repo.getPaths().getCredentials());
+        File credentials = repo.getPaths().getCredentials();
+        if (!credentials.exists()) {
+            Utils.message("尚未登录，请先执行 gitlet login。");
+            System.exit(0);
+        }
+        return Utils.readContentsAsString(credentials).trim();
     }
 }
