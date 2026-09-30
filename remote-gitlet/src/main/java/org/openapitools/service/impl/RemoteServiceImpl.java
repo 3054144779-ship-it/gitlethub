@@ -90,23 +90,25 @@ public class RemoteServiceImpl implements RemoteService {
      */
     @Override
     public Result<ObjectUploadResult> pushObject(
-            String owner, String repo, ObjectUploadRequest objectUploadRequest) {
+            String owner, String repo, ObjectUploadRequest objectUploadRequest, Long actorId) {
 
         if (objectUploadRequest == null) {
             // 沿用原 Post200Response 枚举里标注为「提交的文件不能为空」的 30002
             return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_SUBMITTED_FILE_CANNOT_BE_EMPTY);
         }
 
-        // 获取用户id
-        Long userId = remoteUserMapper.getUserId(owner);
-        // 获取仓库id
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
-        // 获取提交者信息
-        Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
+        // 定位仓库：owner 是「仓库属主」(path 提供)，只用来找到 repositoryId，不代表调用者
+        Long ownerId = remoteUserMapper.getUserId(owner);
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
 
-        // 检查用户权限
+        // 识别调用者：用 JwtAuthFilter 验签后注入的 actorId，绝不拿 path owner 当身份
+        if (actorId == null) {
+            log.warn("匿名 push 被拒：{}/{}", owner, repo);
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+        Collaborator collaborator = remoteCollaborator.getCollaborator(actorId, repositoryId);
         if (!PermissionValidation.identityVerification(collaborator)) {
-            log.warn("用户 {} 没有权限更新分支", owner);
+            log.warn("调用者(id={}) 无权推送到 {}/{}", actorId, owner, repo);
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
 
@@ -170,7 +172,7 @@ public class RemoteServiceImpl implements RemoteService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<RefView> pushUpdateBranch(
-            String owner, String repo, String branch, RefUpdateRequest refUpdateRequest) {
+            String owner, String repo, String branch, RefUpdateRequest refUpdateRequest, Long actorId) {
 
         log.info("更新分支 {} {}", branch, refUpdateRequest);
 
@@ -185,25 +187,27 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.SHA1_MISMATCH, MsgConstant.THIS_SUBMISSION_DOES_NOT_EXIST);
         }
 
-        // 获取用户id
-        Long userId = remoteUserMapper.getUserId(owner);
-        // 获取仓库id
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
+        // 定位仓库：owner 只用于找 repositoryId
+        Long ownerId = remoteUserMapper.getUserId(owner);
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
         // 获取分支指针
         BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(repositoryId, branch);
-        // 获取提交者信息
-        Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
-        log.info("userId:{}, repositoryId:{}", userId, repositoryId);
 
-        // 检查用户权限
+        // 识别调用者：actorId（验签注入），不再用 owner 冒充
+        if (actorId == null) {
+            log.warn("匿名 push 被拒：{}/{} 分支 {}", owner, repo, branch);
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+        Collaborator collaborator = remoteCollaborator.getCollaborator(actorId, repositoryId);
+        log.info("actorId:{}, repositoryId:{}", actorId, repositoryId);
+
+        // 检查调用者权限
         if (!PermissionValidation.identityVerification(collaborator)) {
-            log.warn("用户 {} 没有权限更新分支 {}", owner, branch);
-//            log.info("协作者信息：{}", collaborator.toString());
+            log.warn("调用者(id={}) 没有权限更新分支 {}", actorId, branch);
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
 
         // 分支不存在则创建：支持推送到新分支（如 dev/feature），不再只限于建库时的 master。
-        // 放在权限校验之后（无权用户不能建分支）、非快进校验之前（保证 branchPointer 非 null）。
         if (branchPointer == null) {
             branchPointer = BranchPointer.builder()
                     .repositoryId(repositoryId)
@@ -225,27 +229,20 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
         }
 
-        // 如果没有提交记录就不会进入保护状态，不需要拉取
-        log.info("用户 {} 允许更新分支 {}", owner, branch);
-
         // 分支保护：受保护分支且已有历史时，禁止直接 push（须走 PR 流程）。
-        // 例外：仓库 OWNER 可绕过（对应设计中的 bypass 白名单）。
+        // 例外：仓库 OWNER 可绕过。此处的 collaborator 现在是「调用者」的记录，判断才成立。
         if (!collaborator.getLevel().equals(CollaboratorLevelEnum.OWNER)
                 && BranchVerification.isProtectedBranch(branchPointer)
                 && branchPointer.getCommitSha() != null) {
-            log.warn("分支 {} 受保护，且用户 {} 非 OWNER，拒绝直接推送", branch, owner);
-            // 发布推送事件(分支被保护)
-            applicationEventPublisher.publishEvent(new PushEvent(this, repositoryId, branch, sha1, userId, true));
+            log.warn("分支 {} 受保护，且调用者(id={}) 非 OWNER，拒绝直接推送", branch, actorId);
+            applicationEventPublisher.publishEvent(new PushEvent(this, repositoryId, branch, sha1, actorId, true));
             return Result.fail(ResultCode.BRANCH_PROTECTED, MsgConstant.THE_BRANCH_IS_PROTECTED);
         }
 
-        // 用户权限通过，分支不受保护，更新分支指向提交
         if (!pushWrite(branchPointer, sha1, repositoryId, collaborator, branch, repositoryPaths)) {
-            // 更新失败，返回版本冲突
             return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
         }
-        // 发布推送事件(分支更新)
-        applicationEventPublisher.publishEvent(new PushEvent(this, repositoryId, branch, sha1, userId, false));
+        applicationEventPublisher.publishEvent(new PushEvent(this, repositoryId, branch, sha1, actorId, false));
 
         return Result.ok();
     }
@@ -263,15 +260,12 @@ public class RemoteServiceImpl implements RemoteService {
     @Override
     @Transactional
     public Result<RefView> pushForceUpdateBranch(String owner, String repo,
-                                                 String branch, RefUpdateRequest refUpdateRequest) {
-        // 获取用户id
-        Long userId = remoteUserMapper.getUserId(owner);
-        // 获取仓库id
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
+                                                 String branch, RefUpdateRequest refUpdateRequest, Long actorId) {
+        // 定位仓库：owner 只用于找 repositoryId
+        Long ownerId = remoteUserMapper.getUserId(owner);
+        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
         // 获取分支指针
         BranchPointer branchPointer = remoteBranchPointer.getBranchPointer(repositoryId, branch);
-        // 获取提交者信息
-        Collaborator collaborator = remoteCollaborator.getCollaborator(userId, repositoryId);
 
         // 强制推送只针对已存在的分支；分支不存在直接报错（新分支请用普通 push 创建）
         if (branchPointer == null) {
@@ -279,10 +273,15 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);
         }
 
-        // 检查用户权限
+        // 识别调用者：actorId（验签注入）
+        if (actorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+        Collaborator collaborator = remoteCollaborator.getCollaborator(actorId, repositoryId);
+
+        // 检查调用者权限
         if (!PermissionValidation.identityVerification(collaborator)) {
-            log.warn("用户 {} 没有权限更新分支 {}", owner, branch);
-//            log.info("协作者信息：{}", collaborator.toString());
+            log.warn("调用者(id={}) 没有权限更新分支 {}", actorId, branch);
             return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
         }
         // 检查是否允许强制推送

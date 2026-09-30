@@ -74,9 +74,10 @@ public class RemoteController {
     public ResponseEntity<Result<RefView>> pushForceUpdateBranch(
             @PathVariable String owner, @PathVariable String repo,
             @PathVariable String branch,
+            @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId,
             @RequestBody RefUpdateRequest refUpdateRequest) {
         Result<RefView> response =
-                remoteService.pushForceUpdateBranch(owner, repo, branch, refUpdateRequest);
+                remoteService.pushForceUpdateBranch(owner, repo, branch, refUpdateRequest, actorId);
         return ResponseEntity.ok(response);
     }
 
@@ -93,9 +94,10 @@ public class RemoteController {
     public ResponseEntity<Result<RefView>> pushUpdateBranch(
             @PathVariable String owner, @PathVariable String repo,
             @PathVariable String branch,
+            @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId,
             @RequestBody RefUpdateRequest refUpdateRequest) {
         Result<RefView> response =
-                remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest);
+                remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest, actorId);
         return ResponseEntity.ok(response);
     }
 
@@ -109,9 +111,11 @@ public class RemoteController {
      */
     @PostMapping("/objects")
     public ResponseEntity<Result<ObjectUploadResult>> pushObject(
-            @PathVariable String owner, @PathVariable String repo, @RequestBody ObjectUploadRequest objectUploadRequest) {
+            @PathVariable String owner, @PathVariable String repo,
+            @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId,
+            @RequestBody ObjectUploadRequest objectUploadRequest) {
         Result<ObjectUploadResult> response =
-                remoteService.pushObject(owner, repo, objectUploadRequest);
+                remoteService.pushObject(owner, repo, objectUploadRequest, actorId);
         return ResponseEntity.ok(response);
     }
 

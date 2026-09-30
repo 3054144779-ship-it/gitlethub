@@ -22,7 +22,7 @@ public interface RemoteService {
      * @return 上传结果
      */
     Result<ObjectUploadResult> pushObject(
-            String owner, String repo, ObjectUploadRequest objectUploadRequest);
+            String owner, String repo, ObjectUploadRequest objectUploadRequest, Long actorId);
 
     /**
      * push 到远程仓库
@@ -34,7 +34,7 @@ public interface RemoteService {
      * @return 更新后的分支指向
      */
     Result<RefView> pushUpdateBranch(
-            String owner, String repo, String branch, RefUpdateRequest refUpdateRequest);
+            String owner, String repo, String branch, RefUpdateRequest refUpdateRequest, Long actorId);
 
     /**
      * 创建当前用户的远程仓库
@@ -78,6 +78,6 @@ public interface RemoteService {
      * @return 更新后的分支指向
      */
     Result<RefView> pushForceUpdateBranch(String owner, String repo,
-                                                 String branch, RefUpdateRequest refUpdateRequest);
+                                                 String branch, RefUpdateRequest refUpdateRequest, Long actorId);
 
 }

@@ -10,6 +10,7 @@ import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
@@ -44,11 +45,22 @@ public class GateWayFilter implements GlobalFilter, Ordered {
         // 获取请求头中的Authorization字段(token)
         String token = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         token = extractToken(token);
-        log.info("token: {}", token);
-        if (StrUtil.isNotEmpty(token) && keyPairManager.verifyToken(token)) {
+        // 校验通过：验签 OK 且 未被吊销（黑名单）
+        if (StrUtil.isNotEmpty(token) && keyPairManager.verifyToken(token)
+                && !keyPairManager.isBlacklisted(token)) {
             log.info("token校验通过");
-            // 校验通过放行
-            return chain.filter(exchange);
+            // 验签通过后，把已认证的 userId 透传给下游；
+            // 注意：先无条件移除客户端可能自带的 X-User-Id，防止伪造身份
+            Long userId = keyPairManager.getUserId(token);
+            ServerHttpRequest request = exchange.getRequest().mutate()
+                    .headers(httpHeaders -> {
+                        httpHeaders.remove(KeyPairManager.USER_ID_HEADER);
+                        if (userId != null) {
+                            httpHeaders.set(KeyPairManager.USER_ID_HEADER, String.valueOf(userId));
+                        }
+                    })
+                    .build();
+            return chain.filter(exchange.mutate().request(request).build());
         }
 
         // 校验失败返回未授权

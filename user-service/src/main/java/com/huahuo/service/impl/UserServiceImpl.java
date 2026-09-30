@@ -94,24 +94,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     /**
-     * 用户登出
-     * @param token 用户token
+     * 用户登出：剥前缀 / 解析 exp / 写黑名单统一交给 KeyPairManager，
+     * 保证与网关查询黑名单用的是同一个 key。
+     * @param token 来自 Authorization 头（可能带 "Bearer " 前缀）
      */
     @Override
     public void logout(String token) {
-        JWT jwt = JWTUtil.parseToken(token);
-        Date exp = (Date) jwt.getPayload().getClaim("exp");
-        // 计算token剩余有效期
-        long remaining = exp.getTime() - System.currentTimeMillis();
-        // 如果token还有剩余有效期，则加入黑名单
-        if (remaining > 0) {
-            stringRedisTemplate.opsForValue().set(
-                    "jwt:blacklist:" + token,
-                    "logout",
-                    remaining,
-                    TimeUnit.MILLISECONDS
-            );
-        }
+        keyPairManager.blacklist(token);
     }
 
     /**

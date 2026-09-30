@@ -34,16 +34,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     public static final String USER_ID_ATTRIBUTE = "userId";
 
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String BLACKLIST_PREFIX = "jwt:blacklist:";
 
     // @Lazy：KeyPairManager 的 @PostConstruct 要连 Redis 加载密钥对，延迟到首次请求才实例化，
     // 避免应用启动 / @SpringBootTest 上下文加载在 Redis 不可用时直接失败
     @Lazy
     @Autowired
     private KeyPairManager keyPairManager;
-
-    @Autowired
-    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -78,7 +74,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (isExpired(jwt)) {
             return null;
         }
-        if (isBlacklisted(token)) {
+        // 黑名单 key 统一由 KeyPairManager 定义(sha256)，与 user-service 写入、网关查询三端对齐
+        if (keyPairManager.isBlacklisted(token)) {
             return null;
         }
         return toLong(jwt.getPayload().getClaim("userId"));
@@ -95,11 +92,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return false;
         }
         return System.currentTimeMillis() > epochSeconds * 1000;
-    }
-
-    /** user-service 登出时会写 jwt:blacklist:<token>，被登出的 token 不能再算身份 */
-    private boolean isBlacklisted(String token) {
-        return Boolean.TRUE.equals(stringRedisTemplate.hasKey(BLACKLIST_PREFIX + token));
     }
 
     private Long toLong(Object value) {
