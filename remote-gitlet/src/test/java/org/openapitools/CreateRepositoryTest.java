@@ -26,6 +26,7 @@ import static org.mockito.Mockito.*;
 
 import po.BranchPointer;
 import po.Repository;
+import po.User;
 
 @SpringBootTest
 public class CreateRepositoryTest {
@@ -61,7 +62,7 @@ public class CreateRepositoryTest {
      */
     @Test
     void createRepository_success() {
-        when(remoteUserMapper.getUserId("alice")).thenReturn(1L);
+        when(remoteUserMapper.selectById(1L)).thenReturn(user(1L, "alice"));
         when(remoteRepositoryMapper.insert(any(Repository.class))).thenReturn(1);
         when(remoteBranchPointerMapper.insert(any(BranchPointer.class))).thenReturn(1);
 
@@ -70,7 +71,7 @@ public class CreateRepositoryTest {
         dto.setRepo("test-repo");
         dto.setDescription("A test repository");
 
-        Result<ObjectUploadResult> result = remoteService.createRemoteRepository(dto);
+        Result<ObjectUploadResult> result = remoteService.createRemoteRepository(1L, dto);
 
         assertEquals(ResultCode.OK, result.getCode());
         verify(remoteRepositoryMapper, times(1)).insert(any(Repository.class));
@@ -90,16 +91,39 @@ public class CreateRepositoryTest {
     void createRepository_duplicate_returnsAlreadyExists() {
         File repoDir = tempDir.resolve(".gitlet/alice/test-repo").toFile();
         repoDir.mkdirs();
+        when(remoteUserMapper.selectById(1L)).thenReturn(user(1L, "alice"));
 
         RepositoryCreateDTO dto = new RepositoryCreateDTO();
         dto.setOwner("alice");
         dto.setRepo("test-repo");
         dto.setDescription("A test repository");
 
-        Result<ObjectUploadResult> result = remoteService.createRemoteRepository(dto);
+        Result<ObjectUploadResult> result = remoteService.createRemoteRepository(1L, dto);
 
         assertEquals(ResultCode.REPOSITORY_ALREADY_EXISTS, result.getCode());
         verify(remoteRepositoryMapper, never()).insert(any(Repository.class));
         verify(remoteBranchPointerMapper, never()).insert(any(BranchPointer.class));
+    }
+
+    /**
+     * 未带身份（无 token）建仓：所有者以 token 为准，拿不到身份直接拒绝
+     */
+    @Test
+    void createRepository_withoutIdentity_returnsUnauthorized() {
+        RepositoryCreateDTO dto = new RepositoryCreateDTO();
+        dto.setOwner("alice");
+        dto.setRepo("test-repo");
+
+        Result<ObjectUploadResult> result = remoteService.createRemoteRepository(null, dto);
+
+        assertEquals(ResultCode.UNAUTHORIZED, result.getCode());
+        verify(remoteRepositoryMapper, never()).insert(any(Repository.class));
+    }
+
+    private User user(Long id, String username) {
+        User user = new User();
+        user.setId(id);
+        user.setUsername(username);
+        return user;
     }
 }

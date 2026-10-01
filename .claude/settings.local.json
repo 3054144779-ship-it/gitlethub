@@ -120,7 +120,11 @@
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test-compile -Duser.language=en -Duser.country=US -Dmaven.compiler.useIncrementalCompilation=false)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test -Duser.language=en -Duser.country=US -Dtest='RepositoryReadApiTest,PushForceUpdateBranchTest,PushObjectTest' -DfailIfNoTests=false)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test -Duser.language=en -Duser.country=US -Dtest='RepositoryReadApiTest,PushForceUpdateBranchTest,PushObjectTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false)",
-      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test -Duser.language=en -Duser.country=US)"
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test -Duser.language=en -Duser.country=US)",
+      "Bash(ls,)",
+      "Bash(grep -rln \"visibility\\\\|Repositor\\\\|keyword\" gitlethub-frontend/src)",
+      "Bash(sed -n '315,360p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
+      "Bash(sed -n '1,60p' remote-gitlet/src/main/java/org/openapitools/mapper/RemoteCollaboratorMapper.java)"
     ]
   }
 }

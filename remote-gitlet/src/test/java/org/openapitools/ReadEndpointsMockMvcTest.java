@@ -104,9 +104,10 @@ class ReadEndpointsMockMvcTest {
         // DB：用户名、仓库、分支、协作者、用户详情
         when(remoteUserMapper.getUserId(OWNER)).thenReturn(1L);
         when(remoteRepositoryMapper.getRepositoryId(1L, REPO)).thenReturn(7L);
+        // 默认公开：读接口的可见性拦截器放行所有调用者，专注验证读取逻辑本身
         when(remoteRepositoryMapper.selectById(7L)).thenReturn(
                 Repository.builder().id(7L).ownerId(1L).name(REPO).description("demo")
-                        .visibility(0).defaultBranch("master").allowAutoPr(1).build());
+                        .visibility(1).defaultBranch("master").allowAutoPr(1).build());
         when(remoteBranchPointer.getBranchPointer(7L, "master")).thenReturn(
                 BranchPointer.builder().id(3L).repositoryId(7L).branchName("master")
                         .commitSha(COMMIT_SHA).isDefault(1).isProtected(1).version(0).build());
@@ -246,6 +247,36 @@ class ReadEndpointsMockMvcTest {
         mockMvc.perform(get("/api/repos/" + OWNER + "/missing/commits"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(30001));
+    }
+
+    /** 私有仓库对匿名/非协作者一律按「仓库不存在」拒绝：详情与子资源都拦 */
+    @Test
+    void privateRepo_isHiddenFromNonCollaborator() throws Exception {
+        when(remoteRepositoryMapper.selectById(7L)).thenReturn(privateRepo());
+
+        mockMvc.perform(get(BASE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(30001));
+
+        mockMvc.perform(get(BASE + "/branches"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(30001));
+    }
+
+    /** 私有仓库对 OWNER 仍然可见（token 里的 userId 即 ownerId） */
+    @Test
+    void privateRepo_visibleToOwner() throws Exception {
+        when(remoteRepositoryMapper.selectById(7L)).thenReturn(privateRepo());
+
+        mockMvc.perform(get(BASE).header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.name").value(REPO));
+    }
+
+    private Repository privateRepo() {
+        return Repository.builder().id(7L).ownerId(1L).name(REPO).description("demo")
+                .visibility(0).defaultBranch("master").allowAutoPr(1).build();
     }
 
     /**

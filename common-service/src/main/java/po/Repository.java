@@ -33,6 +33,7 @@ public class Repository {
     @TableField("description")
     private String description;
 
+    // 0=私有, 1=公开
     @TableField("visibility")
     private Integer visibility;
 

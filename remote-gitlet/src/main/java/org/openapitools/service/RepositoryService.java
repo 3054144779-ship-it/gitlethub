@@ -34,7 +34,7 @@ public interface RepositoryService extends IService<Repository> {
      * @param pageDTO 分页参数
      * @return 远程仓库列表
      */
-    Result<List<RepositoryVO>> getAllRemoteRepository(String owner, String keyword, PageDTO pageDTO);
+    Result<List<RepositoryVO>> getAllRemoteRepository(String owner, String keyword, PageDTO pageDTO, Long userId);
 
     /**
      * 按 owner/repo 获取远程仓库配置（前端路由 /:owner/:repo 使用）

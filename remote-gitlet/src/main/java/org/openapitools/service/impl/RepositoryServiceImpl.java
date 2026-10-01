@@ -103,16 +103,16 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
      * @return 远程仓库列表
      */
     @Override
-    public Result<List<RepositoryVO>> getAllRemoteRepository(String owner, String keyword, PageDTO pageDTO) {
+    public Result<List<RepositoryVO>> getAllRemoteRepository(
+            String owner, String keyword, PageDTO pageDTO, Long userId) {
         Page<Repository> page = new Page<>(pageDTO.getPage(), pageDTO.getSize());
         Long ownerId = remoteUserMapper.getUserId(owner);
-        Page<Repository> repositoryPage = lambdaQuery()
-                .eq(Repository::getOwnerId, ownerId)
-                // like(condition, column, value)：keyword 为空时不追加该条件
-                .like(StrUtil.isNotBlank(keyword), Repository::getName, keyword)
-                .page(page);
+        // 可见性条件下推到 SQL：分页与 total 才准确，也避免逐行查协作者表
+        List<Repository> records =
+                remoteRepositoryMapper.selectVisibleByOwner(page, ownerId, StrUtil.trim(keyword), userId);
+
         Map<Long, String> usernameCache = new HashMap<>();
-        List<RepositoryVO> repositoryVOList = repositoryPage.getRecords().stream()
+        List<RepositoryVO> repositoryVOList = records.stream()
                 .map(repository -> {
                     RepositoryVO vo = BeanUtil.copyProperties(repository, RepositoryVO.class);
                     vo.setOwnerName(usernameOf(repository.getOwnerId(), usernameCache));

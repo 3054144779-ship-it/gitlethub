@@ -27,14 +27,16 @@ public class RepositoryController {
 
     /**
      * 创建当前用户的远程仓库
+     * @param userId 调用者ID（来自 JWT），仓库所有者以它为准
      * @param repositoryCreateDTO  (required) 创建仓库的DTO
      * @return 创建结果
      */
     @PostMapping
     public ResponseEntity<Result<ObjectUploadResult>> createRemoteRepository(
+            @RequestAttribute(value = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long userId,
             @RequestBody RepositoryCreateDTO repositoryCreateDTO) {
 
-        Result<ObjectUploadResult> response = remoteService.createRemoteRepository(repositoryCreateDTO);
+        Result<ObjectUploadResult> response = remoteService.createRemoteRepository(userId, repositoryCreateDTO);
         return ResponseEntity.ok(response);
     }
 
@@ -64,7 +66,7 @@ public class RepositoryController {
     }
 
     /**
-     * 获取远程仓库配置
+     * 获取远程仓库信息
      * @param owner 远程仓库所有者
      * @param keyword 远程仓库关键字
      * @param pageDTO 分页参数
@@ -72,10 +74,13 @@ public class RepositoryController {
      * @return 远程仓库列表
      */
     @GetMapping
-    public ResponseEntity<Result<List<RepositoryVO>>> getAllRemoteRepository(@RequestParam("owner") String owner,
-                                                               @RequestParam("keyword") String keyword,
-                                                               PageDTO pageDTO) {
-        Result<List<RepositoryVO>> response = repositoryService.getAllRemoteRepository(owner, keyword, pageDTO);
+    public ResponseEntity<Result<List<RepositoryVO>>> getAllRemoteRepository(
+            @RequestParam("owner") String owner,
+            @RequestParam("keyword") String keyword,
+            PageDTO pageDTO,
+            @RequestAttribute(value = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long userId) {
+
+        Result<List<RepositoryVO>> response = repositoryService.getAllRemoteRepository(owner, keyword, pageDTO, userId);
         return ResponseEntity.ok(response);
     }
 

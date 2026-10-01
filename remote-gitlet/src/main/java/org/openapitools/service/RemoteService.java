@@ -38,10 +38,11 @@ public interface RemoteService {
 
     /**
      * 创建当前用户的远程仓库
+     * @param userId  (required) 调用者ID（来自验签注入的 JWT claim），仓库所有者以此为准
      * @param repositoryCreateDTO  (required) 创建仓库的信息
      * @return 创建结果
      */
-    Result<ObjectUploadResult> createRemoteRepository(RepositoryCreateDTO repositoryCreateDTO);
+    Result<ObjectUploadResult> createRemoteRepository(Long userId, RepositoryCreateDTO repositoryCreateDTO);
 
     /**
      * 读取分支指向

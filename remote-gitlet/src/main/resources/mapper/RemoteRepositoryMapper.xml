@@ -7,4 +7,29 @@
         WHERE owner_id = #{ownerId}
           AND name = #{repo}
     </select>
+
+    <!-- 可见性条件下推到 SQL：level 2=OWNER, 1=CONTRIBUTOR（见 CollaboratorLevelEnum） -->
+    <select id="selectVisibleByOwner" resultType="po.Repository">
+        SELECT r.*
+        FROM repository r
+        WHERE r.owner_id = #{ownerId}
+          AND r.is_deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND r.name LIKE CONCAT('%', #{keyword}, '%')
+        </if>
+          AND (
+            r.visibility = 1
+        <if test="userId != null">
+            OR r.owner_id = #{userId}
+            OR EXISTS (
+                SELECT 1
+                FROM collaborator c
+                WHERE c.repository_id = r.id
+                  AND c.user_id = #{userId}
+                  AND c.level IN (2, 1)
+                  AND c.is_deleted = 0
+            )
+        </if>
+          )
+    </select>
 </mapper>

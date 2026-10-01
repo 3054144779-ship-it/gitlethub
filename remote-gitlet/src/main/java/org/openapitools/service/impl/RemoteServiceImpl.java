@@ -314,22 +314,25 @@ public class RemoteServiceImpl implements RemoteService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result<ObjectUploadResult> createRemoteRepository(RepositoryCreateDTO repositoryCreateDTO) {
-        String owner = repositoryCreateDTO.getOwner();
+    public Result<ObjectUploadResult> createRemoteRepository(Long userId, RepositoryCreateDTO repositoryCreateDTO) {
+        // 所有者以 token 解析出的 userId 为准，忽略请求体里的 owner，避免冒充他人建仓
+        if (userId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+        User owner = remoteUserMapper.selectById(userId);
+        if (owner == null) {
+            return Result.fail(ResultCode.USER_NOT_FOUND, MsgConstant.THE_USER_DOES_NOT_EXIST);
+        }
         String repo = repositoryCreateDTO.getRepo();
 
-        RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
+        RepositoryPaths repositoryPaths = new RepositoryPaths(owner.getUsername() + "/" + repo, new File(basePath));
         // 校验仓库是否存在
         if (RepositoryVerification.repositoryExists(repositoryPaths)) {
             // 仓库存在则禁止重复创建
             return Result.fail(ResultCode.REPOSITORY_ALREADY_EXISTS, MsgConstant.THE_WAREHOUSE_ALREADY_EXISTS);
         }
 
-        // 获取当前用户ID(根据用户名字查)
-        Long ownerId = remoteUserMapper.getUserId(owner);
-        if (ownerId == null) {
-            return Result.fail(ResultCode.USER_NOT_FOUND, MsgConstant.THE_USER_DOES_NOT_EXIST);
-        }
+        Long ownerId = userId;
         log.info("当前仓库 {} 的所有者ID为 {}", repo, ownerId);
         // 创建仓库对象
         Repository repository = Repository.builder()

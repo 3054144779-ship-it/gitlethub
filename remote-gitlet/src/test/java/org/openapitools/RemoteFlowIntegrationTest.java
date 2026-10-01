@@ -20,6 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import po.BranchPointer;
 import po.Collaborator;
 import po.Repository;
+import po.User;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -78,6 +79,8 @@ class RemoteFlowIntegrationTest {
     void fullPushPullFlow() {
         // ===== 1. 创建仓库 =====
         when(remoteUserMapper.getUserId(OWNER)).thenReturn(1L);
+        // 建仓所有者以 token 的 userId 为准，需要能反查出用户名
+        when(remoteUserMapper.selectById(1L)).thenReturn(user(1L, OWNER));
         when(remoteRepositoryMapper.insert(any(Repository.class))).thenAnswer(inv -> {
             inv.getArgument(0, Repository.class).setId(1L);
             return 1;
@@ -88,7 +91,7 @@ class RemoteFlowIntegrationTest {
         dto.setRepo(REPO);
         dto.setDescription("integration test repo");
 
-        Result<ObjectUploadResult> createResult = remoteService.createRemoteRepository(dto);
+        Result<ObjectUploadResult> createResult = remoteService.createRemoteRepository(1L, dto);
         assertEquals(ResultCode.OK, createResult.getCode());
         assertTrue(tempDir.resolve(".gitlet/" + OWNER + "/" + REPO).toFile().exists());
         verify(remoteBranchPointer, times(1)).insert(any(BranchPointer.class));
@@ -136,5 +139,12 @@ class RemoteFlowIntegrationTest {
         Result<bo.ObjectBundle> cloneResult = remoteService.cloneRepository(OWNER, REPO);
         assertEquals(ResultCode.OK, cloneResult.getCode());
         assertEquals(2, cloneResult.getData().getObjects().size());
+    }
+
+    private User user(Long id, String username) {
+        User user = new User();
+        user.setId(id);
+        user.setUsername(username);
+        return user;
     }
 }
