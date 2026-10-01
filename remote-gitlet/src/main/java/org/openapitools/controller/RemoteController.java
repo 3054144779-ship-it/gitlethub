@@ -181,6 +181,12 @@ public class RemoteController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 查看仓库的 pull request
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @return 仓库的 pull request 详情
+     */
     @GetMapping("/pull-request")
     public ResponseEntity<Result<PullRequestVO>> getPullRequest(
             @PathVariable String owner, @PathVariable String repo) {

@@ -69,4 +69,12 @@ public interface RepositoryService extends IService<Repository> {
      * @return 移除结果
      */
     Result<String> removeCollaborator(Long operatorId, String owner, String repo, Long userId);
+
+    /**
+     * 更新协作者，仅仓库 OWNER 可操作
+     * @param userId 操作者用户ID
+      * @param autoCreatePr 是否自动创建 PR
+      * @return 操作结果
+     */
+    Result<String> updateCollaborator(Long userId, boolean autoCreatePr);
 }

@@ -256,10 +256,11 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | GET | `/api/repos/{owner}/{repo}/clone` | clone 拉取对象 |
 | POST | `/api/repos/{owner}/{repo}/pull-request` | 手动创建PR。**作者 = 调用者身份**（无身份时回退 owner）→ D35 |
 | POST | `/api/repos/{owner}/{repo}/pull-request/{pullRequestId}` | 合并进入 target 分支。**仅仓库 OWNER 可合并**，否则 `code 20002` → D37 |
+| PUT | `/api/repos?auto_create_pr=` | 更新用户开启自动PR功能 |
 
 **前端只读接口（2026-09-29 新增，同样由 `remote-gitlet` 实现）**
 
-前端需要读取仓库内容来渲染页面，这部分此前不存在。实现时统一返回 `Result<T>`，
+前端需要读取仓库内容来渲染页面。实现时统一返回 `Result<T>`，
 `owner/repo` 由路径传入，`repositoryId` 用 `remoteUserMapper.getUserId(owner)` +
 `remoteRepositoryMapper.getRepositoryId(ownerId, repo)` 解析。
 

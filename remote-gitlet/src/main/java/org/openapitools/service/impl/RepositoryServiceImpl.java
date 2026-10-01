@@ -2,6 +2,9 @@ package org.openapitools.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -239,6 +242,24 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
             return Result.fail(ResultCode.FORBIDDEN, MsgConstant.NOT_REPOSITORY_OWNER);
         }
         remoteCollaboratorMapper.deleteById(target.getId());
+        return Result.ok();
+    }
+
+    /**
+     * 更新协作者信息
+     * @param userId 操作者用户ID
+     * @param autoCreatePr 是否自动创建 PR
+     * @return 更新结果
+     */
+    @Override
+    public Result<String> updateCollaborator(Long userId, boolean autoCreatePr) {
+        LambdaUpdateWrapper<Collaborator> wrapper = Wrappers.lambdaUpdate();
+        wrapper.eq(Collaborator::getUserId, userId)
+                .set(Collaborator::getAutoCreatePr, autoCreatePr);
+        int line = remoteCollaboratorMapper.update(null, wrapper);
+        if (line < 1) {
+            return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_COLLABORATOR_DOES_NOT_EXIST);
+        }
         return Result.ok();
     }
 

@@ -119,6 +119,19 @@ public class RepositoryController {
     }
 
     /**
+     * 更新协作者
+     * @param userId 协作者用户ID
+      * @param autoCreatePr 自动创建 PR
+     * @return 更新结果
+     */
+    @PutMapping
+    public ResponseEntity<Result<String>> updateCollaborator(
+            @RequestAttribute(value = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long userId,
+            @RequestParam("auto_create_pr") boolean autoCreatePr) {
+        return ResponseEntity.ok(repositoryService.updateCollaborator(userId, autoCreatePr));
+    }
+
+    /**
      * 移除协作者（仅 OWNER）
      * @param owner 远程仓库所有者
      * @param repo 远程仓库名称
