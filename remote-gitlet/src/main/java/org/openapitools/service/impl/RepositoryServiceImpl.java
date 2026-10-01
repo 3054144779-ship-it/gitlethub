@@ -19,6 +19,7 @@ import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.service.RepositoryService;
+import org.openapitools.service.support.RepositoryObjectReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +43,8 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
     private RemoteUserMapper remoteUserMapper;
     @Autowired
     private RemoteCollaboratorMapper remoteCollaboratorMapper;
+    @Autowired
+    private RepositoryObjectReader repositoryObjectReader;
 
     /**
      * 更新远程仓库配置
@@ -246,16 +249,17 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
     }
 
     /**
-     * 更新协作者信息
+     * 更新协作者信息(仅对当前仓库生效)
      * @param userId 操作者用户ID
      * @param autoCreatePr 是否自动创建 PR
      * @return 更新结果
      */
     @Override
-    public Result<String> updateCollaborator(Long userId, boolean autoCreatePr) {
+    public Result<String> updateCollaborator(String owner, String repo, Long userId, boolean autoCreatePr) {
         LambdaUpdateWrapper<Collaborator> wrapper = Wrappers.lambdaUpdate();
-        wrapper.eq(Collaborator::getUserId, userId)
-                .set(Collaborator::getAutoCreatePr, autoCreatePr);
+        wrapper.set(Collaborator::getAutoCreatePr, autoCreatePr)
+                .eq(Collaborator::getUserId, userId)
+                .eq(Collaborator::getRepositoryId, repositoryObjectReader.resolveRepositoryId(owner, repo));
         int line = remoteCollaboratorMapper.update(null, wrapper);
         if (line < 1) {
             return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_COLLABORATOR_DOES_NOT_EXIST);

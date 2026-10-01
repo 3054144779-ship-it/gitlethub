@@ -29,6 +29,7 @@ public class SubmissionRecord {
     @TableField("commit_sha")
     private String commitSha;
 
+    // 用户ID
     @TableField("user_id")
     private Long userId;
 

@@ -8,7 +8,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.openapitools.filter.JwtAuthFilter;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -33,8 +32,6 @@ class JwtAuthFilterTest {
 
     @Mock
     private KeyPairManager keyPairManager;
-    @Mock
-    private StringRedisTemplate stringRedisTemplate;
 
     @InjectMocks
     private JwtAuthFilter filter;
@@ -43,7 +40,7 @@ class JwtAuthFilterTest {
     @Test
     void validToken_injectsUserId() throws Exception {
         when(keyPairManager.verifyToken(anyString())).thenReturn(true);
-        when(stringRedisTemplate.hasKey(anyString())).thenReturn(false);
+        when(keyPairManager.isBlacklisted(anyString())).thenReturn(false);
 
         MockHttpServletRequest request = request(tokenWith(5L, System.currentTimeMillis() + ONE_HOUR));
         MockFilterChain chain = new MockFilterChain();
@@ -58,7 +55,7 @@ class JwtAuthFilterTest {
     @Test
     void integerClaim_isConvertedToLong() throws Exception {
         when(keyPairManager.verifyToken(anyString())).thenReturn(true);
-        when(stringRedisTemplate.hasKey(anyString())).thenReturn(false);
+        when(keyPairManager.isBlacklisted(anyString())).thenReturn(false);
 
         MockHttpServletRequest request = request(tokenWith(7, System.currentTimeMillis() + ONE_HOUR));
 
@@ -101,7 +98,7 @@ class JwtAuthFilterTest {
         filter.doFilter(request, new MockHttpServletResponse(), chain);
 
         assertNull(request.getAttribute(JwtAuthFilter.USER_ID_ATTRIBUTE));
-        verify(stringRedisTemplate, never()).hasKey(anyString());
+        verify(keyPairManager, never()).isBlacklisted(anyString());
         assertNotNull(chain.getRequest());
     }
 
@@ -120,7 +117,7 @@ class JwtAuthFilterTest {
     @Test
     void blacklistedToken_staysAnonymous() throws Exception {
         when(keyPairManager.verifyToken(anyString())).thenReturn(true);
-        when(stringRedisTemplate.hasKey(anyString())).thenReturn(true);
+        when(keyPairManager.isBlacklisted(anyString())).thenReturn(true);
 
         MockHttpServletRequest request = request(tokenWith(5L, System.currentTimeMillis() + ONE_HOUR));
 
@@ -133,7 +130,7 @@ class JwtAuthFilterTest {
     @Test
     void redisFailure_doesNotBreakRequestChain() throws Exception {
         when(keyPairManager.verifyToken(anyString())).thenReturn(true);
-        when(stringRedisTemplate.hasKey(anyString())).thenThrow(new RuntimeException("redis down"));
+        when(keyPairManager.isBlacklisted(anyString())).thenThrow(new RuntimeException("redis down"));
 
         MockHttpServletRequest request = request(tokenWith(5L, System.currentTimeMillis() + ONE_HOUR));
         MockFilterChain chain = new MockFilterChain();

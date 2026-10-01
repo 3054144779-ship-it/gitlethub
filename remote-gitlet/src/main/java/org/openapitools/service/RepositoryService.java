@@ -76,5 +76,5 @@ public interface RepositoryService extends IService<Repository> {
       * @param autoCreatePr 是否自动创建 PR
       * @return 操作结果
      */
-    Result<String> updateCollaborator(Long userId, boolean autoCreatePr);
+    Result<String> updateCollaborator(String owner, String repo, Long userId, boolean autoCreatePr);
 }

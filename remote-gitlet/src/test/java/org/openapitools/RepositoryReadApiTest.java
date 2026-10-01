@@ -100,7 +100,7 @@ class RepositoryReadApiTest {
                 Collaborator.builder().id(1L).userId(1L).repositoryId(7L)
                         .level(CollaboratorLevelEnum.CONTRIBUTOR).build());
 
-        Result<String> result = repositoryService.addCollaborator(OWNER, REPO, dto("bob", 1));
+        Result<String> result = repositoryService.addCollaborator(1L, OWNER, REPO, dto("bob", 1));
 
         assertEquals(ResultCode.FORBIDDEN, result.getCode());
         verify(remoteCollaboratorMapper, never()).insert(any(Collaborator.class));
@@ -112,7 +112,7 @@ class RepositoryReadApiTest {
         when(remoteUserMapper.getUserId("bob")).thenReturn(2L);
         when(remoteCollaboratorMapper.getCollaborator(2L, 7L)).thenReturn(null);
 
-        Result<String> result = repositoryService.addCollaborator(OWNER, REPO, dto("bob", 1));
+        Result<String> result = repositoryService.addCollaborator(1L, OWNER, REPO, dto("bob", 1));
 
         assertEquals(ResultCode.OK, result.getCode());
         verify(remoteCollaboratorMapper).insert(any(Collaborator.class));
@@ -127,7 +127,7 @@ class RepositoryReadApiTest {
                 Collaborator.builder().id(9L).userId(2L).repositoryId(7L)
                         .level(CollaboratorLevelEnum.GUEST).isDeleted(1).build());
 
-        Result<String> result = repositoryService.addCollaborator(OWNER, REPO, dto("bob", 1));
+        Result<String> result = repositoryService.addCollaborator(1L, OWNER, REPO, dto("bob", 1));
 
         assertEquals(ResultCode.OK, result.getCode());
         verify(remoteCollaboratorMapper).reactivateCollaborator(2L, 7L, 1);
@@ -139,7 +139,7 @@ class RepositoryReadApiTest {
         stubCallerIsOwner();
         when(remoteUserMapper.getUserId("ghost")).thenReturn(null);
 
-        Result<String> result = repositoryService.addCollaborator(OWNER, REPO, dto("ghost", 1));
+        Result<String> result = repositoryService.addCollaborator(1L, OWNER, REPO, dto("ghost", 1));
 
         assertEquals(ResultCode.USER_NOT_FOUND, result.getCode());
     }
@@ -149,7 +149,7 @@ class RepositoryReadApiTest {
     void addCollaborator_ownerLevelIsRejected() {
         stubCallerIsOwner();
 
-        Result<String> result = repositoryService.addCollaborator(OWNER, REPO, dto("bob", 2));
+        Result<String> result = repositoryService.addCollaborator(1L, OWNER, REPO, dto("bob", 2));
 
         assertEquals(ResultCode.BAD_REQUEST, result.getCode());
     }
@@ -161,7 +161,7 @@ class RepositoryReadApiTest {
                 Collaborator.builder().id(9L).userId(2L).repositoryId(7L)
                         .level(CollaboratorLevelEnum.CONTRIBUTOR).isDeleted(0).build());
 
-        Result<String> result = repositoryService.removeCollaborator(OWNER, REPO, 2L);
+        Result<String> result = repositoryService.removeCollaborator(1L, OWNER, REPO, 2L);
 
         assertEquals(ResultCode.OK, result.getCode());
         verify(remoteCollaboratorMapper).deleteById(9L);
@@ -174,7 +174,7 @@ class RepositoryReadApiTest {
                 Collaborator.builder().id(1L).userId(1L).repositoryId(7L)
                         .level(CollaboratorLevelEnum.OWNER).isDeleted(0).build());
 
-        Result<String> result = repositoryService.removeCollaborator(OWNER, REPO, 1L);
+        Result<String> result = repositoryService.removeCollaborator(1L, OWNER, REPO, 1L);
 
         assertEquals(ResultCode.FORBIDDEN, result.getCode());
         verify(remoteCollaboratorMapper, never()).deleteById(any(Long.class));

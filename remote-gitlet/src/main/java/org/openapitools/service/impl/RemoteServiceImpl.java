@@ -140,6 +140,7 @@ public class RemoteServiceImpl implements RemoteService {
             if (object.getType() == GitletObject.TypeEnum.COMMIT) {
                 log.info("检查commit {} 是否存在", object.getSha1());
                 exists = commitNames != null && commitNames.contains(object.getSha1());
+
             } else {
                 log.info("检查Blob {} 是否存在", object.getSha1());
                 exists = blobNames != null && blobNames.contains(object.getSha1());
@@ -246,7 +247,7 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.BRANCH_PROTECTED, MsgConstant.THE_BRANCH_IS_PROTECTED);
         }
 
-        if (!pushWrite(branchPointer, sha1, repositoryId, collaborator, branch, repositoryPaths)) {
+        if (!pushWrite(branchPointer, sha1, repositoryId, branch, repositoryPaths, actorId)) {
             return Result.fail(ResultCode.VERSION_CONFLICT, MsgConstant.VERSION_CONFLICT);
         }
         applicationEventPublisher.publishEvent(new PushEvent(this, repositoryId, branch, sha1, actorId, false));
@@ -299,7 +300,7 @@ public class RemoteServiceImpl implements RemoteService {
 
         log.info("强制更新分支 {} {}", branch, refUpdateRequest);
         RepositoryPaths repositoryPaths = new RepositoryPaths(owner + "/" + repo, new File(basePath));
-        pushWrite(branchPointer, refUpdateRequest.getSha(), repositoryId, collaborator, branch, repositoryPaths);
+        pushWrite(branchPointer, refUpdateRequest.getSha(), repositoryId, branch, repositoryPaths, actorId);
 
         return Result.ok();
     }
@@ -559,11 +560,11 @@ public class RemoteServiceImpl implements RemoteService {
      * @param branchPointer 分支指针
      * @param sha1 提交SHA1值
      * @param repositoryId 仓库ID
-     * @param collaborator 提交者
      * @param branch 分支名
+     * @param actorId 推送者ID（来自验签注入的 JWT claim）
      */
     private boolean pushWrite(BranchPointer branchPointer, String sha1, Long repositoryId,
-                           Collaborator collaborator, String branch, RepositoryPaths repositoryPaths) {
+                              String branch, RepositoryPaths repositoryPaths, Long actorId) {
         // 旧指向：回溯补记录时走到它就停（branchPointer 的字段在更新指针后不会被改，这里先取出来更直观）
         String previousSha = branchPointer.getCommitSha();
         // 用户权限通过，分支不受保护，更新分支指向提交
@@ -573,7 +574,7 @@ public class RemoteServiceImpl implements RemoteService {
             return false;
         }
         // 本次推送带进来的提交都补一条记录（只记 tip 的话，中间提交查不到作者）
-        insertSubmissionRecords(repositoryPaths, sha1, previousSha, repositoryId, collaborator.getUserId(), branch);
+        insertSubmissionRecords(repositoryPaths, sha1, previousSha, repositoryId, branch, actorId);
 
         Commit commit = Utils.readObject(Utils.join(repositoryPaths.getCommits(), sha1), Commit.class);
 
@@ -602,11 +603,11 @@ public class RemoteServiceImpl implements RemoteService {
      * @param startSha 本次推送的新 tip
      * @param stopSha 分支上一次的指向，回溯到它就停；新建分支时为 null（那就一直回溯到根）
      * @param repositoryId 仓库ID
-     * @param userId 推送者ID
      * @param branch 分支名
+     * @param actorId 推送者ID
      */
     private void insertSubmissionRecords(RepositoryPaths paths, String startSha, String stopSha,
-                                         Long repositoryId, Long userId, String branch) {
+                                         Long repositoryId, String branch, Long actorId) {
         List<SubmissionRecord> records = new ArrayList<>();
         Deque<String> stack = new ArrayDeque<>();
         Set<String> visited = new HashSet<>();
@@ -623,7 +624,7 @@ public class RemoteServiceImpl implements RemoteService {
             records.add(SubmissionRecord.builder()
                     .repositoryId(repositoryId)
                     .commitSha(sha)
-                    .userId(userId)
+                    .userId(actorId)
                     .branchName(branch)
                     .submitTime(LocalDateTime.now())
                     .build());

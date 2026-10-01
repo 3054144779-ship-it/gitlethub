@@ -6,11 +6,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import bo.GitletObject;
+import enums.CollaboratorLevelEnum;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.openapitools.mapper.RemoteCollaboratorMapper;
+import org.openapitools.mapper.RemoteRepositoryMapper;
+import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.service.impl.RemoteServiceImpl;
 import org.openapitools.utils.Utils;
 import org.springframework.test.util.ReflectionTestUtils;
+import po.Collaborator;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -18,13 +26,22 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
 
 /**
- * pushObject 单元测试：只涉及文件系统读写，不依赖数据库，
- * 因此直接 new 出 Service 并注入 basePath，用 @TempDir 提供隔离的临时磁盘目录。
+ * pushObject 单元测试：文件系统用 @TempDir 隔离，
+ * 鉴权依赖（用户名 / 仓库 / 协作者查询）用 Mockito 顶替，不连库。
  */
 class PushObjectTest {
 
+    @Mock
+    private RemoteUserMapper remoteUserMapper;
+    @Mock
+    private RemoteRepositoryMapper remoteRepositoryMapper;
+    @Mock
+    private RemoteCollaboratorMapper remoteCollaborator;
+
+    @InjectMocks
     private RemoteServiceImpl remoteService;
 
     @TempDir
@@ -37,8 +54,14 @@ class PushObjectTest {
 
     @BeforeEach
     void setUp() {
-        remoteService = new RemoteServiceImpl();
+        MockitoAnnotations.openMocks(this);
         ReflectionTestUtils.setField(remoteService, "basePath", tempDir.toString());
+        // pushObject 现在先鉴权：调用者得是该仓库的协作者，这里放行一个 OWNER
+        when(remoteUserMapper.getUserId(OWNER)).thenReturn(1L);
+        when(remoteRepositoryMapper.getRepositoryId(1L, REPO)).thenReturn(1L);
+        when(remoteCollaborator.getCollaborator(1L, 1L)).thenReturn(
+                Collaborator.builder().id(1L).userId(1L).repositoryId(1L)
+                        .level(CollaboratorLevelEnum.OWNER).build());
     }
 
     private File repoRoot() {
@@ -75,7 +98,7 @@ class PushObjectTest {
                 .sha1(COMMIT_SHA).type(GitletObject.TypeEnum.COMMIT).content(commitContent);
 
         Result<ObjectUploadResult> result =
-                remoteService.pushObject(OWNER, REPO, new ObjectUploadRequest(List.of(blob, commit)));
+                remoteService.pushObject(OWNER, REPO, new ObjectUploadRequest(List.of(blob, commit)), 1L);
 
         assertEquals(ResultCode.OK, result.getCode());
         File blobFile = new File(objectsDir(), BLOB_SHA);
@@ -98,7 +121,7 @@ class PushObjectTest {
                 .content("new-content".getBytes(StandardCharsets.UTF_8));
 
         Result<ObjectUploadResult> result =
-                remoteService.pushObject(OWNER, REPO, new ObjectUploadRequest(List.of(blob)));
+                remoteService.pushObject(OWNER, REPO, new ObjectUploadRequest(List.of(blob)), 1L);
 
         assertEquals(ResultCode.OK, result.getCode());
         assertArrayEquals(old, Utils.readContents(blobFile), "已存在的对象应被跳过，内容不被覆盖");
@@ -111,7 +134,7 @@ class PushObjectTest {
                 .content("x".getBytes(StandardCharsets.UTF_8));
 
         Result<ObjectUploadResult> result =
-                remoteService.pushObject(OWNER, REPO, new ObjectUploadRequest(List.of(blob)));
+                remoteService.pushObject(OWNER, REPO, new ObjectUploadRequest(List.of(blob)), 1L);
 
         assertEquals(ResultCode.REPOSITORY_NOT_FOUND, result.getCode());
     }
@@ -119,7 +142,7 @@ class PushObjectTest {
     @Test
     void pushObject_nullRequest_returnsFail() {
         createRepoDirs();
-        Result<ObjectUploadResult> result = remoteService.pushObject(OWNER, REPO, null);
+        Result<ObjectUploadResult> result = remoteService.pushObject(OWNER, REPO, null, 1L);
         assertEquals(ResultCode.BAD_REQUEST, result.getCode());
     }
 }

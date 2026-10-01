@@ -124,11 +124,12 @@ public class RepositoryController {
       * @param autoCreatePr 自动创建 PR
      * @return 更新结果
      */
-    @PutMapping
+    @PutMapping("/{owner}/{repo}/collaborators")
     public ResponseEntity<Result<String>> updateCollaborator(
+            @PathVariable String owner, @PathVariable String repo,
             @RequestAttribute(value = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long userId,
             @RequestParam("auto_create_pr") boolean autoCreatePr) {
-        return ResponseEntity.ok(repositoryService.updateCollaborator(userId, autoCreatePr));
+        return ResponseEntity.ok(repositoryService.updateCollaborator(owner, repo, userId, autoCreatePr));
     }
 
     /**

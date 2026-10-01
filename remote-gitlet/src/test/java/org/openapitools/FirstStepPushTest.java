@@ -3,6 +3,7 @@ package org.openapitools;
 import common.Result;
 import common.ResultCode;
 import enums.CollaboratorLevelEnum;
+import gitlet.commit.Commit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,14 +16,18 @@ import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.model.RefUpdateRequest;
 import org.openapitools.model.RefView;
 import org.openapitools.service.impl.RemoteServiceImpl;
+import org.openapitools.utils.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.File;
 import java.nio.file.Path;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 import po.BranchPointer;
@@ -62,6 +67,10 @@ public class FirstStepPushTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(remoteService, "basePath", tempDir.toString());
+        // pushUpdateBranch 先校验 sha 存在于对象库，pushWrite 还要读它建图谱索引
+        File commitsDir = tempDir.resolve(".gitlet/alice/test-repo/Objects/commits").toFile();
+        commitsDir.mkdirs();
+        Utils.writeObject(Utils.join(commitsDir, SHA1), new Commit("initial", null, null, null, Map.of()));
     }
 
     /**
@@ -115,13 +124,15 @@ public class FirstStepPushTest {
         BranchPointer bp = buildBranchPointer(false);
         Collaborator collab = buildCollaborator(CollaboratorLevelEnum.OWNER);
         mockCommonDependencies(bp, collab);
+        // 乐观锁更新成功：返回受影响行数 1，否则会被判成版本冲突（50001）
+        when(remoteBranchPointerMapper.updateBranchPointer(1L, SHA1, 0)).thenReturn(1);
 
         RefUpdateRequest req = new RefUpdateRequest(SHA1);
-        Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
+        Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req, 1L);
 
         assertEquals(ResultCode.OK, result.getCode());
         verify(remoteBranchPointerMapper, times(1)).updateBranchPointer(1L, SHA1, 0);
-        verify(remoteSubmissionRecordMapper, times(1)).insert(any(SubmissionRecord.class));
+        verify(remoteSubmissionRecordMapper, times(1)).insertBatch(anyList());
         verify(remoteCommitPointerMapper, times(1)).insert(any(CommitParent.class));
     }
 
@@ -131,15 +142,16 @@ public class FirstStepPushTest {
     @Test
     void pushUpdateBranch_protectedBranch_returnsBranchProtected() {
         BranchPointer bp = buildBranchPointer(true);
-        Collaborator collab = buildCollaborator(CollaboratorLevelEnum.OWNER);
+        // 受保护分支只挡非 OWNER；这里必须是贡献者才会被拦下
+        Collaborator collab = buildCollaborator(CollaboratorLevelEnum.CONTRIBUTOR);
         mockCommonDependencies(bp, collab);
 
         RefUpdateRequest req = new RefUpdateRequest(SHA1);
-        Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
+        Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req, 1L);
 
         assertEquals(ResultCode.BRANCH_PROTECTED, result.getCode());
         verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString(), anyInt());
-        verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
+        verify(remoteSubmissionRecordMapper, never()).insertBatch(anyList());
         verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }
 
@@ -153,11 +165,11 @@ public class FirstStepPushTest {
         mockCommonDependencies(bp, collab);
 
         RefUpdateRequest req = new RefUpdateRequest(SHA1);
-        Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
+        Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req, 1L);
 
         assertEquals(ResultCode.UNAUTHORIZED, result.getCode());
         verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString(), anyInt());
-        verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
+        verify(remoteSubmissionRecordMapper, never()).insertBatch(anyList());
         verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }
 
@@ -173,11 +185,11 @@ public class FirstStepPushTest {
         when(remoteCollaboratorMapper.getCollaborator(1L, 1L)).thenReturn(null);
 
         RefUpdateRequest req = new RefUpdateRequest(SHA1);
-        Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req);
+        Result<RefView> result = remoteService.pushUpdateBranch("alice", "test-repo", "feature", req, 1L);
 
         assertEquals(ResultCode.UNAUTHORIZED, result.getCode());
         verify(remoteBranchPointerMapper, never()).updateBranchPointer(anyLong(), anyString(), anyInt());
-        verify(remoteSubmissionRecordMapper, never()).insert(any(SubmissionRecord.class));
+        verify(remoteSubmissionRecordMapper, never()).insertBatch(anyList());
         verify(remoteCommitPointerMapper, never()).insert(any(CommitParent.class));
     }
 }

@@ -4,12 +4,15 @@ import common.Result;
 import common.ResultCode;
 import dto.RepositoryCreateDTO;
 import enums.CollaboratorLevelEnum;
+import gitlet.commit.Commit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.openapitools.mapper.*;
 import org.openapitools.model.*;
 import org.openapitools.service.impl.RemoteServiceImpl;
+import org.openapitools.service.support.RepositoryObjectReader;
+import org.openapitools.utils.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -21,6 +24,7 @@ import po.Repository;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +53,10 @@ class RemoteFlowIntegrationTest {
     @Autowired
     private RemoteServiceImpl remoteService;
 
+    // pull/clone 走的是这个 reader，它的 basePath 也要指向同一个临时仓库目录
+    @Autowired
+    private RepositoryObjectReader repositoryObjectReader;
+
     @TempDir
     Path tempDir;
 
@@ -60,6 +68,7 @@ class RemoteFlowIntegrationTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(remoteService, "basePath", tempDir.toString());
+        ReflectionTestUtils.setField(repositoryObjectReader, "basePath", tempDir.toString());
     }
 
     /**
@@ -86,31 +95,35 @@ class RemoteFlowIntegrationTest {
         verify(remoteCollaborator, times(1)).insert(any(Collaborator.class));
 
         // ===== 2. push 上传对象（文件 IO）=====
+        // pushObject 现在先鉴权，这些 stub 必须在调用前就位
+        when(remoteRepositoryMapper.getRepositoryId(1L, REPO)).thenReturn(1L);
+        when(remoteCollaborator.getCollaborator(1L, 1L)).thenReturn(
+                Collaborator.builder().id(1L).userId(1L).repositoryId(1L)
+                        .level(CollaboratorLevelEnum.OWNER).build());
+
         bo.GitletObject blob = new bo.GitletObject().sha1(BLOB_SHA)
                 .type(bo.GitletObject.TypeEnum.BLOB)
                 .content("hello".getBytes(StandardCharsets.UTF_8));
+        // 提交对象得是真实序列化的 gitlet Commit：pushWrite 会反序列化它来建图谱索引
         bo.GitletObject commit = new bo.GitletObject().sha1(COMMIT_SHA)
                 .type(bo.GitletObject.TypeEnum.COMMIT)
-                .content("commit-data".getBytes(StandardCharsets.UTF_8));
+                .content(Utils.serialize(
+                        new Commit("initial commit", null, null, null, Map.of("hello.txt", BLOB_SHA))));
 
         Result<ObjectUploadResult> pushObjResult =
-                remoteService.pushObject(OWNER, REPO, new ObjectUploadRequest(List.of(blob, commit)));
+                remoteService.pushObject(OWNER, REPO, new ObjectUploadRequest(List.of(blob, commit)), 1L);
         assertEquals(ResultCode.OK, pushObjResult.getCode());
 
         // ===== 3. push 更新分支（DB）=====
         // 首次推送：master 受保护但 commitSha 为 null，允许建立历史
-        when(remoteRepositoryMapper.getRepositoryId(1L, REPO)).thenReturn(1L);
         when(remoteBranchPointer.getBranchPointer(1L, "master")).thenReturn(
                 BranchPointer.builder().id(1L).repositoryId(1L).branchName("master")
                         .commitSha(null).isProtected(1).isForcePush(0).version(0).build());
-        when(remoteCollaborator.getCollaborator(1L, 1L)).thenReturn(
-                Collaborator.builder().id(1L).userId(1L).repositoryId(1L)
-                        .level(CollaboratorLevelEnum.OWNER).build());
         // 乐观锁更新成功：返回受影响行数 1（@MockBean 默认返回 0 会被判成版本冲突）
         when(remoteBranchPointer.updateBranchPointer(1L, COMMIT_SHA, 0)).thenReturn(1);
 
         Result<RefView> refResult = remoteService.pushUpdateBranch(
-                OWNER, REPO, "master", new RefUpdateRequest(COMMIT_SHA));
+                OWNER, REPO, "master", new RefUpdateRequest(COMMIT_SHA), 1L);
         assertEquals(ResultCode.OK, refResult.getCode());
         verify(remoteBranchPointer, times(1)).updateBranchPointer(1L, COMMIT_SHA, 0);
 

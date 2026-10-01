@@ -256,7 +256,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | GET | `/api/repos/{owner}/{repo}/clone` | clone 拉取对象 |
 | POST | `/api/repos/{owner}/{repo}/pull-request` | 手动创建PR。**作者 = 调用者身份**（无身份时回退 owner）→ D35 |
 | POST | `/api/repos/{owner}/{repo}/pull-request/{pullRequestId}` | 合并进入 target 分支。**仅仓库 OWNER 可合并**，否则 `code 20002` → D37 |
-| PUT | `/api/repos?auto_create_pr=` | 更新用户开启自动PR功能 |
+| PUT | `/api/repos/collaborator?auto_create_pr=` | 更新用户开启自动PR功能 |
 
 **前端只读接口（2026-09-29 新增，同样由 `remote-gitlet` 实现）**
 

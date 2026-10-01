@@ -225,13 +225,16 @@ class ReadEndpointsMockMvcTest {
                 // 等级同样是枚举名
                 .andExpect(jsonPath("$.data[0].level").value("OWNER"));
 
+        // 增删协作者要判「调用者是不是 OWNER」，身份来自 token，必须带上 Bearer
         mockMvc.perform(post(BASE + "/collaborators")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"bob\",\"level\":1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
 
-        mockMvc.perform(delete(BASE + "/collaborators/2"))
+        mockMvc.perform(delete(BASE + "/collaborators/2")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
     }

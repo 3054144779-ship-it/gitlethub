@@ -114,7 +114,13 @@
       "Bash(sed -n '18,32p' src/components/CommitGraph.vue)",
       "Bash(node --input-type=module -e ' *)",
       "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -q -pl remote-gitlet -am compile -Duser.language=en -Duser.country=US)",
-      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am compile -Duser.language=en -Duser.country=US)"
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am compile -Duser.language=en -Duser.country=US)",
+      "Bash(echo \"--- exit:$?\")",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test-compile -Duser.language=en -Duser.country=US)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test-compile -Duser.language=en -Duser.country=US -Dmaven.compiler.useIncrementalCompilation=false)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test -Duser.language=en -Duser.country=US -Dtest='RepositoryReadApiTest,PushForceUpdateBranchTest,PushObjectTest' -DfailIfNoTests=false)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test -Duser.language=en -Duser.country=US -Dtest='RepositoryReadApiTest,PushForceUpdateBranchTest,PushObjectTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am test -Duser.language=en -Duser.country=US)"
     ]
   }
 }
