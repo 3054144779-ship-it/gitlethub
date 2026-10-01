@@ -112,7 +112,9 @@
       "Bash(echo \"--- exit=$? ---\")",
       "Bash(sed -i '27,144d' src/components/CommitGraph.vue)",
       "Bash(sed -n '18,32p' src/components/CommitGraph.vue)",
-      "Bash(node --input-type=module -e ' *)"
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -q -pl remote-gitlet -am compile -Duser.language=en -Duser.country=US)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -pl remote-gitlet -am compile -Duser.language=en -Duser.country=US)"
     ]
   }
 }

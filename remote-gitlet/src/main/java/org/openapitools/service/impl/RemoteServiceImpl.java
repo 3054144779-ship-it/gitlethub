@@ -5,6 +5,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.db.sql.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import common.Result;
 import common.ResultCode;
 import dto.PullRequestDTO;
@@ -46,6 +47,12 @@ public class RemoteServiceImpl implements RemoteService {
     // TODO：此处应为仓库的根路径，确保仓库路径正确（默认为程序当前目录）
     @Value("${storage.base-path:${user.dir}}")
     private String basePath;
+
+    /** 单次推送补提交记录时最多回溯多少节点，防止异常数据导致无界回溯 */
+    private static final int MAX_REF_WALK = 1000;
+
+    /** 批量插入的分块大小，太大可能顶到 MySQL 的 max_allowed_packet */
+    private static final int SUBMISSION_BATCH_SIZE = 500;
 
     // 远程用户Mapper
     @Autowired
@@ -557,23 +564,16 @@ public class RemoteServiceImpl implements RemoteService {
      */
     private boolean pushWrite(BranchPointer branchPointer, String sha1, Long repositoryId,
                            Collaborator collaborator, String branch, RepositoryPaths repositoryPaths) {
+        // 旧指向：回溯补记录时走到它就停（branchPointer 的字段在更新指针后不会被改，这里先取出来更直观）
+        String previousSha = branchPointer.getCommitSha();
         // 用户权限通过，分支不受保护，更新分支指向提交
         int link = remoteBranchPointer.updateBranchPointer(branchPointer.getId(), sha1, branchPointer.getVersion());
         if (link == 0) {
             log.warn("分支 {} 乐观锁冲突，期望 version={}", branch, branchPointer.getVersion());
             return false;
         }
-        // 创建提交记录
-        SubmissionRecord submissionRecord = SubmissionRecord.builder()
-                .repositoryId(repositoryId)              // 仓库ID
-                .commitSha(sha1)                         // 提交SHA1值
-                .userId(collaborator.getUserId())        // 提交者ID
-                .branchName(branch)                      // 分支名
-                .submitTime(LocalDateTime.now())         // 提交时间
-                .build();
-
-        // 插入提交记录
-        remoteSubmissionRecordMapper.insert(submissionRecord);
+        // 本次推送带进来的提交都补一条记录（只记 tip 的话，中间提交查不到作者）
+        insertSubmissionRecords(repositoryPaths, sha1, previousSha, repositoryId, collaborator.getUserId(), branch);
 
         Commit commit = Utils.readObject(Utils.join(repositoryPaths.getCommits(), sha1), Commit.class);
 
@@ -588,6 +588,86 @@ public class RemoteServiceImpl implements RemoteService {
         // 插入提交图谱索引
         remoteCommitPointer.insert(commitParent);
         return true;
+    }
+
+    /**
+     * 给本次推送带进来的提交补提交记录。
+     * 之前只给被推的那个 sha 记一条，一次推多个提交时中间的都没记录，
+     * 于是 {@code CommitQueryServiceImpl.enrichAuthors} 查不到它们，图和列表里作者全是「未知」。
+     * 从新 tip 沿父链回溯到旧指向为止，再一次性批量插入。
+     *
+     * 注意：作者记的是**推送者**（提交对象里没有作者字段，拿不到真正的提交者）。
+     *
+     * @param paths 仓库路径
+     * @param startSha 本次推送的新 tip
+     * @param stopSha 分支上一次的指向，回溯到它就停；新建分支时为 null（那就一直回溯到根）
+     * @param repositoryId 仓库ID
+     * @param userId 推送者ID
+     * @param branch 分支名
+     */
+    private void insertSubmissionRecords(RepositoryPaths paths, String startSha, String stopSha,
+                                         Long repositoryId, Long userId, String branch) {
+        List<SubmissionRecord> records = new ArrayList<>();
+        Deque<String> stack = new ArrayDeque<>();
+        Set<String> visited = new HashSet<>();
+        stack.push(startSha);
+        while (!stack.isEmpty() && records.size() < MAX_REF_WALK) {
+            String sha = stack.pop();
+            if (sha == null || !visited.add(sha) || sha.equals(stopSha)) {
+                continue;
+            }
+            Commit commit = tryReadCommit(paths, sha);
+            if (commit == null) {
+                continue;
+            }
+            records.add(SubmissionRecord.builder()
+                    .repositoryId(repositoryId)
+                    .commitSha(sha)
+                    .userId(userId)
+                    .branchName(branch)
+                    .submitTime(LocalDateTime.now())
+                    .build());
+            // 栈后进先出：先压第二父再压第一父，跟 walkHistory 保持一致
+            if (commit.getSecondParent() != null) {
+                stack.push(commit.getSecondParent());
+            }
+            if (commit.getParent() != null) {
+                stack.push(commit.getParent());
+            }
+        }
+        if (records.isEmpty()) {
+            return;
+        }
+        // 已经有记录的 sha 跳过：新开分支时 stopSha 为 null，回溯会一路走到根，
+        // 不过滤的话整条老历史会被按新分支名再记一遍，CommitList 的「分支」列也跟着变
+        List<String> shas = records.stream().map(SubmissionRecord::getCommitSha).toList();
+        Set<String> recorded = new HashSet<>();
+        remoteSubmissionRecordMapper.selectList(Wrappers.<SubmissionRecord>lambdaQuery()
+                        .eq(SubmissionRecord::getRepositoryId, repositoryId)
+                        .in(SubmissionRecord::getCommitSha, shas))
+                .forEach(record -> recorded.add(record.getCommitSha()));
+        List<SubmissionRecord> fresh = records.stream()
+                .filter(record -> !recorded.contains(record.getCommitSha()))
+                .toList();
+        // 分块：一条 INSERT 一次往返，但别顶到 MySQL 的 max_allowed_packet
+        for (int from = 0; from < fresh.size(); from += SUBMISSION_BATCH_SIZE) {
+            int to = Math.min(from + SUBMISSION_BATCH_SIZE, fresh.size());
+            remoteSubmissionRecordMapper.insertBatch(fresh.subList(from, to));
+        }
+    }
+
+    /** 读提交对象；对象不在本地对象库里时返回 null（回溯可能碰到缺失的父提交） */
+    private Commit tryReadCommit(RepositoryPaths paths, String sha) {
+        File file = Utils.join(paths.getCommits(), sha);
+        if (!file.isFile()) {
+            return null;
+        }
+        try {
+            return Utils.readObject(file, Commit.class);
+        } catch (IllegalArgumentException e) {
+            log.warn("提交对象 {} 读取失败：{}", sha, e.getMessage());
+            return null;
+        }
     }
 
 }
