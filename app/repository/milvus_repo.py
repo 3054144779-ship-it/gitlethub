@@ -1,22 +1,22 @@
 """
 Milvus工具
 """
+import logging
 from typing import List, Any, Dict, Optional
 
 from pymilvus import MilvusClient, DataType, RRFRanker, AnnSearchRequest
-import logging
-
-
+from config.Settings import Settings
 
 
 class MilvusRepo:
     """Milvus工具("http://192.168.12.168:19530")"""
+
     def __init__(
             self,
-            milvus_client: MilvusClient,
             collection_name: str,
             fields: List[Dict[str, Any]],
-            index_params: Dict[str, Any] = None
+            index_params: Dict[str, Any] | None = None,
+            milvus_client: MilvusClient = MilvusClient(Settings.MILVUS_URL)
     ):
         """
         初始化
@@ -107,11 +107,11 @@ class MilvusRepo:
             self,
             dense_anns_field: str,
             sparse_anns_field: str,
-            dense_vector: Optional[List[float]] = None,
-            sparse_vector: Optional[Dict[int, float]] = None,
+            dense_vector: List[float] | None = None,
+            sparse_vector: Dict[int, float] | None = None,
             top_k: int = 10,
             ranker_k: int = 60,
-            output_fields: List[str] = None
+            output_fields: List[str] | None = None
     ) -> List[List[Dict]]:
         """
         检索
@@ -124,7 +124,7 @@ class MilvusRepo:
         :param output_fields: 输出字段
         :return: 检索结果
         """
-        output_fields = output_fields or ["content"]
+        output_fields = output_fields or ["text"]
 
         if dense_vector is not None and sparse_vector is not None:
             """混合检索：稠密向量 + 稀疏向量"""

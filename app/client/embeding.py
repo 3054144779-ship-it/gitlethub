@@ -1,13 +1,15 @@
 """
 向量化工具
 """
-from typing import List
-import numpy as np
-import logging
 import torch
+import logging
+import numpy as np
+from typing import List
 
+from config.Settings import Settings
 from FlagEmbedding import BGEM3FlagModel
 from langchain_core.documents import Document
+from repository.milvus_repo import MilvusRepo
 
 
 class EmbeddingModel:
@@ -41,16 +43,4 @@ class EmbeddingModel:
             embeddings.append((dense, sparse))
 
         return embeddings
-
-    def retrieval(self, query: str, documents: List[Document], top_k: int = 5):
-        """
-        检索相似文档
-        :param query: 查询
-        :param documents: 文档列表
-        :param top_k: 返回的TopK个相似文档
-        :return: 相似文档列表
-        """
-        logging.info(f"为查询检索相似文档: {query}")
-        embeddings = self.to_vector(documents)
-
 

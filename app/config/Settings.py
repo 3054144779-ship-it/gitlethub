@@ -9,11 +9,10 @@ from dotenv import load_dotenv
 # 在配置模块顶部统一加载一次
 load_dotenv()
 
-
-# 配置：设置级别为 INFO，输出到控制台
 class Settings:
     MESSAGE_QUEUE_URL = os.getenv("MESSAGE_QUEUE_URL")
     PR_MERGED_QUEUE = os.getenv("PR_MERGED_QUEUE")
+    MILVUS_URL = os.getenv("MILVUS_URL")
 
 if __name__ == '__main__':
     settings = Settings()
