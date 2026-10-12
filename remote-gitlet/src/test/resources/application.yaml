@@ -18,6 +18,12 @@ spring:
     redis:
       host: localhost
       port: 6379
+  rabbitmq:
+    host: 192.168.12.168
+    port: 5672
+    username: gitlet
+    password: gitlet
+    virtual-host: /gitlet
 
 mybatis-plus:
   configuration:

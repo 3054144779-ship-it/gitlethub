@@ -151,3 +151,59 @@ GET  /api/repos/{id}/pull
 GET  /api/repos/{id}/clone
 ```
 
+```tex
+gitlet_ai_helper/
+├── app/
+│   ├── main.py                    # 入口，启动 FastAPI + 消费 MQ
+│   ├── config.py                  # 配置（API Key、Milvus 地址、MQ 地址等）
+│   │
+│   ├── router/                    # 【路由层】对标 Controller
+│   │   ├── __init__.py
+│   │   ├── review.py              # POST /api/ai/code-review
+│   │   ├── commit_msg.py          # POST /api/ai/generate-commit-msg
+│   │   ├── search.py              # POST /api/ai/semantic-search
+│   │   └── archaeology.py         # POST /api/ai/archaeology
+│   │
+│   ├── service/                   # 【业务层】对标 Service
+│   │   ├── __init__.py
+│   │   ├── review_service.py      # 代码审查的业务编排
+│   │   ├── commit_msg_service.py  # 生成提交信息
+│   │   ├── search_service.py      # 语义搜索（含 Query 翻译）
+│   │   └── archaeology_service.py # 代码考古（历史 RAG）
+│   │
+│   ├── repository/                # 【数据访问层】对标 Mapper
+│   │   ├── __init__.py
+│   │   ├── milvus_repo.py         # 向量库读写
+│   │   ├── mysql_repo.py          # 业务元数据读写（如果 Python 直连 MySQL）
+│   │   └── object_storage_repo.py # 从对象存储拉 Blob 内容
+│   │
+│   ├── client/                    # 【外部服务客户端】
+│   │   ├── __init__.py
+│   │   ├── llm_client.py          # 封装大模型 API（OpenAI、通义、DeepSeek等）
+│   │   ├── embedding_client.py    # 封装 Embedding 模型（BGE-M3）
+│   │   └── mq_consumer.py         # RabbitMQ 消费者
+│   │
+│   ├── schema/                    # 【数据模型层】Pydantic
+│   │   ├── __init__.py
+│   │   ├── request.py             # 请求体模型
+│   │   ├── response.py            # 响应体模型
+│   │   └── domain.py              # 领域模型（CodeChunk、ReviewResult 等）
+│   │
+│   ├── core/                      # 【核心工具层】
+│   │   ├── __init__.py
+│   │   ├── code_parser.py         # Tree-sitter AST 解析
+│   │   ├── text_splitter.py       # Markdown/纯文本切分
+│   │   ├── prompt_templates.py    # 所有 Prompt 模板集中管理
+│   │   ├── file_type_router.py    # 按文件类型路由
+│   │   └── logger.py              # 日志封装
+│   │
+│   └── worker/                    # 【异步任务消费者】
+│       ├── __init__.py
+│       ├── review_worker.py       # 消费 MQ 做代码审查
+│       └── index_worker.py        # 消费 MQ 做 AST 切分 + 向量入库
+│
+├── tests/                         # 单元测试
+├── requirements.txt               # 依赖
+└── Dockerfile
+```
+

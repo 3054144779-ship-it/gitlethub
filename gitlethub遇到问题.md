@@ -1090,3 +1090,61 @@ HTTP 的响应 body 可以分块输出（chunked）：
 
 为什么 readPassword 返回 char[] 而不是 String
 这是 Java 官方故意的安全设计:String 不可变、会驻留在内存/字符串池里,你没法主动清掉;char[] 用完 Arrays.fill(password, '\0') 能立刻擦除,减少密码在内存里的残留窗口。所以别嫌 char[] 麻烦,它比 String 更该用。
+
+
+
+----------------------------AI服务————————————--
+
+问题：
+
+## RabbitMQ 多语言微服务踩坑记录：队列声明与 PRECONDITION_FAILED
+
+### Q1：遇到 `PRECONDITION_FAILED - inequivalent arg 'x-dead-letter-exchange'` 报错，是什么原因？
+
+**A：**
+这是 RabbitMQ 非常经典的**“队列参数不一致”**报错。
+**原因解析**：Java 服务（生产者）在声明 `pr_merged_queue` 队列时，设置了死信队列参数（`x-dead-letter-exchange` 和 `x-dead-letter-routing-key`）。而 Python 服务（消费者）在启动时，试图声明同名队列，但没有带这些参数。
+RabbitMQ 对已存在的队列参数检查极其严格，**不允许修改已存在队列的任何参数**，因此直接拒绝并抛出此报错。
+
+### Q2：Python 只是个消费者，为什么还要去声明队列？这不是生产者该干的事吗？
+
+**A：**
+消费者声明队列是微服务架构中的最佳实践，主要基于三个原因：
+
+1. **服务自给自足（启动顺序不可控）**：如果 Python 先于 Java 启动，而队列不存在，Python 会直接报 `NOT_FOUND` 错误并崩溃。消费者声明队列可以保证自己随时启动都能找到可用的基础设施。
+2. **声明是幂等的（Declare = 确保存在且一致）**：AMQP 协议中的 `declare_queue` 不是单纯地“创建”。如果队列不存在，它创建；如果已存在且参数一致，它秒过复用；如果参数不一致，它报错（这就起到了**契约校验**的作用）。
+3. **基础设施即代码（IaC）**：把拓扑结构写在代码里，避免人工在控制台手动建队列导致的环境漂移（如测试环境有死信队列，生产环境忘了配）。
+
+### Q3：如何解决这个报错？
+
+**A：**
+有两种标准的解决方案（二选一）：
+
+- **方案 A（推荐）：让 Python 补齐参数**。修改 Python 消费者的声明代码，将死信参数与 Java 侧严格对齐：
+
+  python
+
+  ```
+  queue = await channel.declare_queue(
+      "pr_merged_queue",
+      durable=True,
+      arguments={
+          "x-dead-letter-exchange": "",
+          "x-dead-letter-routing-key": "pr_merged_dlq"
+      }
+  )
+  ```
+
+  
+
+- **方案 B（临时测试）：删掉重建**。去 RabbitMQ 管理后台（UI）的 Queues 页面，手动删除 `pr_merged_queue`。然后**先启动 Java 服务**（让 Java 按正确参数重建），再启动 Python 服务（Python 检测到已存在的正确队列，会直接复用）。
+
+### Q4：面试时如何回答关于“微服务共享 MQ 拓扑一致性”的问题？
+
+**A：**
+
+> “在微服务架构中，RabbitMQ 的拓扑结构（Exchange、Queue、Binding）是分布式系统的重要契约。我遇到过因为 Java 和 Python 服务在声明 `pr_merged_queue` 时参数不一致导致的 `PRECONDITION_FAILED` 报错。
+>
+> 这个坑让我明白，跨语言微服务共享 MQ 时，**基础设置的声明必须保持一致**。在实战中，我遵循两个原则：
+> 第一，**服务自给自足**。无论生产者还是消费者，在启动时都要通过 `declare`（幂等操作）来确保自身依赖的队列存在，避免因启动顺序不同导致服务崩溃。
+> 第二，**契约强制对齐**。如果消费端需要死信队列（DLQ），必须把 `x-dead-letter-exchange` 等参数同步到所有语言的客户端中。这是保证消息最终一致性、防止消息静默丢失的底层基石。”

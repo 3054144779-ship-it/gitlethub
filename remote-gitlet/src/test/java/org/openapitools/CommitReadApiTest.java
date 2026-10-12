@@ -39,7 +39,6 @@ import static org.mockito.Mockito.when;
  * 只读逻辑按 po 域拆到 CommitQueryService / BlobQueryService，二者共享 RepositoryObjectReader。
  */
 class CommitReadApiTest {
-
     private static final String OWNER = "alice";
     private static final String REPO = "test-repo";
 

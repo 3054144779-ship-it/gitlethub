@@ -5,7 +5,7 @@
 | 状态 | draft |
 | Owner | 花火 |
 | Reviewer | 待指派 |
-| 最后更新 | 2026-09-30 |
+| 最后更新 | 2026-10-12 |
 | 接口冻结 | 未冻结（`docs/openapi.yaml` 定稿后填日期） |
 | 取代 | `gitlethub 设计文档.md`（无状态草稿，保留作参考） |
 
@@ -17,6 +17,13 @@
 > 根因是 `remote-gitlet` **原先没有任何调用者身份概念**，所有写路径都把 URL 上的 `owner` 当操作者。
 > 现新增 `JwtAuthFilter` 注入调用者身份、建 PR 记录真实创建者、合并仅限仓库 OWNER（见 §6「调用者身份」、D35–D37）。
 > 本次同样**不含 `gitlet_core`**，也**未改动 `docs/openapi.yaml`**。
+>
+> 2026-10-01 整理：把散落在 `gitlethub遇到问题.md`、`Cloud-Gitlet 项目全程问题与解决方案汇总.md`
+> 中的**设计决策与权衡**并入 §9、**运行期风险**并入 §10、**数据模型**并入 §7、**客户端契约与 PR 机制**并入 §8；
+> 纯原理问答（BCrypt、RS256、H2、Flux/Mono 等）不适合留在设计文档，另见《设计附录-原理与概念澄清》。
+> 同时按当前代码校正了几处过时描述（自动 PR 接口已收敛到仓库级、`pull_request` 表字段、测试基线）。
+>
+> 2026-10-12 增补：修改了ai服务的接口信息，新增`/api/ai/search-code`接口，增加说明字段
 
 ---
 
@@ -175,7 +182,7 @@ gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
 
 ---
 
-## 5. 核心契约（头号阻塞点）
+## 5. 核心契约
 
 当前 `gitlet_core` 的仓库操作和 CLI 输出是**同一套代码**：
 
@@ -215,8 +222,6 @@ interface Renderer {
 
 ## 6. 接口
 
-**契约正文在 [`docs/openapi.yaml`](openapi.yaml)，本节只做索引用。** 改接口改那个文件。
-
 这份 spec 只描述 **`remote-gitlet`** 实现的 `/api/repos/**`。校验和生成：
 
 ```bash
@@ -237,11 +242,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | PUT  | `/user/password`         | 修改密码(可选)                       |
 | POST | `/user/avatar`           | 上传/更换头像(可选)                  |
 
-
-
-
-
-**spec 覆盖的（实现方 `remote-gitlet`）**
+**实现方 `remote-gitlet`**
 
 注：owenr为用户名，repo为仓库名
 
@@ -256,7 +257,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | GET | `/api/repos/{owner}/{repo}/clone` | clone 拉取对象 |
 | POST | `/api/repos/{owner}/{repo}/pull-request` | 手动创建PR。**作者 = 调用者身份**（无身份时回退 owner）→ D35 |
 | POST | `/api/repos/{owner}/{repo}/pull-request/{pullRequestId}` | 合并进入 target 分支。**仅仓库 OWNER 可合并**，否则 `code 20002` → D37 |
-| PUT | `/api/repos/collaborator?auto_create_pr=` | 更新用户开启自动PR功能 |
+| PUT | `/api/repos/{owner}/{repo}/collaborators?auto_create_pr=` | 更新**当前仓库内**某协作者的自动 PR 开关（仓库级生效，见 §8） |
 
 **前端只读接口（2026-09-29 新增，同样由 `remote-gitlet` 实现）**
 
@@ -288,14 +289,24 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
   （`pushWrite` 每次推送只写一条边，批量推送的中间提交没有记录，DB 不可靠）。
 - 作者信息多数为 `null`（`submission_record` 通常只有 tip 有记录），前端按 null 优雅降级。
 
-**不在 spec 里的**
+**仓库可见性（2026-10-01 补充）**
 
-| 方法 | 路径 | 实现方 | 契约在哪 |
-| --- | --- | --- | --- |
-| POST | `/api/ai/generate-commit-msg` | `gitlet_ai_helper` | 那个 project 自己维护 |
-| POST | `/api/ai/code-review` | `gitlet_ai_helper` | 同上 |
-| POST | `/api/ai/explain-code` | `gitlet_ai_helper` | 同上 |
-| GET | `/health` | `gateway-service` | 不需要契约文件 |
+`visibility = 0`（私有）的仓库只对 **owner 与协作者（OWNER / CONTRIBUTOR）** 可见，且**由后端强制**（前端隐藏只是体验，不构成授权）：
+
+- 列表接口把可见性条件下推到 SQL（`selectVisibleByOwner` 的 `EXISTS` 子查询），分页与 `total` 才准确，也避免逐行查协作者表。
+- 详情与所有子资源（分支 / 提交 / 文件 / PR / 协作者）由 MVC 拦截器 `RepoVisibilityInterceptor` 统一兜底：
+  非可见者一律返回 **`code 30001`（按「仓库不存在」处理，而非 `20002`）**，避免泄露私有仓库的存在。
+  拦截器**只拦 GET**；写路径的鉴权仍在 service 层按调用者身份判定。
+
+**python侧 `gitlet_ai_helper`（2026-10-12 修改）**
+
+| 方法 | 路径 | 实现方 | 契约在哪 | 说明 |
+| --- | --- | --- | --- | --- |
+| POST | `/api/ai/generate-commit-msg` | `gitlet_ai_helper` | 那个 project 自己维护 | 生成提交信息 |
+| POST | `/api/ai/code-review` | `gitlet_ai_helper` | 同上 | 代码审查 |
+| POST | `/api/ai/explain-code` | `gitlet_ai_helper` | 同上 | ai解释 |
+| POST | `/api/ai/search-code` | `gitlet_ai_helper` | 同上 | 语义化检索代码 |
+| GET | `/health` | `gateway-service` | 不需要契约文件 | ai服务连接状态检查 |
 
 **统一响应结构**：所有响应（含错误）都是 `{code, message, data}`。`code` 是**业务码段**，
 与 HTTP 状态码解耦；HTTP 状态码仍保留语义给网关和通用中间件用，但**客户端判断分支只看 `code`**。
@@ -380,6 +391,12 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 > 同时给 `Utils.readObject` 加了 JEP-290 `ObjectInputFilter` 白名单——`pushObject` 落盘的是客户端原始字节，
 > 只读接口会去反序列化它们，这是新引入的攻击面。
 
+> **存储分界（2026-10-01 补充）**：判据是「可变性」，而不是「是不是 Git 的东西」。
+> **不可变、大体积、按 SHA 寻址**的对象（blob / commit）落磁盘 `.gitlet/Objects/`；
+> **高频可变、需要原子操作与复杂查询**的元数据（用户、仓库、分支指针、权限、PR、同步进度）落数据库。
+> 因此 `refs/heads/*` 与 `HEAD` **不入磁盘**——它们是可变引用，在云端由 `branch_pointer` 表承担；
+> 云端也没有「当前工作目录」，`HEAD` 退化为「默认分支」，只在 clone 时才决定 checkout 哪个分支。
+
 #### 数据库表设计
 
 | 表名                          | 字段                                                         | 备注                                                         |
@@ -387,11 +404,11 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 用户信息表（user）            | id, username, password, email, create_time, update_time, is_deleted(逻辑删除) | 用户密码使用`BCrypt`加密存储                                 |
 | 仓库列表（repository_list）   | id, owner_id(属于哪个用户), name, visibility(可见性，0私有, 1公开),  description(仓库信息), create_time, update_time, default_branch(默认分支), is_deleted(逻辑删除) | 这里的 `user_id` 其实是 `owner_id`（仓库拥有者）             |
 | 分支指针（branch_pointer）    | id, branch_name, commit_sha(分支指针指向的commit的SHA1值), repository_id(属于哪个仓库), is_protected(是否为保护分支), version(版本号用于乐观锁), update_time, is_deleted(逻辑删除) |                                                              |
-| 协作者权限（collaborator）    | id, level(权限等级), user_id(协作者的用户id), repository_id(属于哪个仓库), create_time, is_deleted(逻辑删除), allow_auto_pr |                                                              |
+| 协作者权限（collaborator）    | id, level(权限等级), user_id(协作者的用户id), repository_id(属于哪个仓库), create_time, is_deleted(逻辑删除), auto_create_pr(该协作者的自动PR开关) | 注意列名是 `auto_create_pr`，与仓库级的 `repository.allow_auto_pr` 不同 |
 | 提交记录（submission_record） | id, submit_time, commit_sha1(关联对象存储中真实的 SHA-1), user_id(提交的用户id), repository_id(仓库id), branch_name(提交到了哪个分支) | 在 Git 的世界里，没有 `branch_id` 这个概念，用branch_name更合理 |
 | 提交图谱索引(commit_parent)   | id, repository_id, commit_sha, parent_sha                    | 记录 commit 之间的父子关系。**注意：目前不可靠**——`pushWrite` 每次推送只写一条边（parent 指向推送前的分支 tip），批量推送的中间提交没有记录。遍历历史一律以 commit 对象内的 `parent`/`secondParent` 为准 |
 | 标签（tag）                   | id, repository_id, tag_name, commit_sha, user_id, create_time, is_deleted | 标签功能                                                     |
-| PR机制表（pull_request）      | id, repository_id, title, description, source_branch, target_branch, status, author_id, create_time, update_time, is_deleted, allow_auto_pr(自动生成PR) | PR 机制（合并请求）                                          |
+| PR机制表（pull_request）      | id, repository_id, title, description, source_branch, target_branch, status, author_id, create_time, update_time, `staging_path`(冲突暂存区路径), `staging_path_tracked`(已自动合并的文件映射序列化路径), is_deleted | PR 机制（合并请求）。**自动 PR 开关不在本表**——仓库级在 `repository.allow_auto_pr`、用户级在 `collaborator.auto_create_pr`。`staging_path` 只在合并冲突时写入；`staging_path_tracked` 保存三路合并中**已自动合并好的文件映射**，恢复合并时以它为基准，避免非冲突改动丢失（见 §8） |
 
 
 
@@ -477,6 +494,19 @@ sequenceDiagram
 
 ![image-20260921234640396](D:\Job_project\gitlethub\docs\design.assets\image-20260921234640396.png)
 
+**PR 链路机制要点（2026-10-01 补充）**
+
+- **触发方式 = Spring 内部事件，不是 Webhook**：push 成功后发布 `PushEvent`，`PullRequestEventListenerImpl.onPush()`
+  以 `@Async` 消费，异步建 PR，不阻塞、不影响 push 结果。将来接真 Webhook 只需新增监听器，不改现有代码。
+- **协作模型 = 单仓库 + 分支保护 + 同仓库 PR**（不做 fork）：协作者本就是仓库成员，直接推 `feature` 分支、提同仓库 PR；
+  受保护分支（如 `master`）只有 OWNER 能直推。
+- **自动建 PR 是「仓库级 + 用户级」两级开关**：`repository.allow_auto_pr` 与 `collaborator.auto_create_pr` **都开**才自动建，
+  任一为 `null` 视为「允许」（兼容老数据、避免 NPE）。
+- **冲突暂存区一并持久化「已自动合并结果」**：有冲突时把三路合并中已自动合并好的 `mergedTrackedFiles` 序列化到
+  `staging_path_tracked`，恢复合并（`mergeFromStaging`）时以它为基准再叠加用户改好的冲突文件，
+  否则非冲突的 source 改动会在恢复阶段丢失（这是 §9「暂存区策略」的落地细节）。
+- **LCA 以 commit 对象的 `parent`/`secondParent` 为准**（对象库解析），不查 `commit_parent` 表（见 §7、§9）。
+
 ### 客户端 CLI 远程命令
 
 `gitlet_core/Main.java` 的 switch 现在只有 13 个命令，全是本地操作：
@@ -508,6 +538,20 @@ sequenceDiagram
 - 第 2 步成功、第 3 步失败的处理 → D14
 - 建仓的滥用风险（任何认证用户都能无限建仓）→ D21
 - 建仓要**同时写数据库（仓库元数据）和磁盘目录**，中间失败会留半状态 → D22
+
+**客户端 ↔ 服务端契约要点（2026-10-01 补充，均为踩坑所得）**
+
+- **判定成功必须读业务 `code`，不能只看 HTTP 状态码**：服务端一律用 `ResponseEntity.ok(...)` 包装，
+  业务失败（如 `10002`）的 HTTP 状态码仍是 `200`。客户端若只看 `statusCode == 200`，会把失败当成功写坏本地 tracking。
+- **远程跟踪指针的路径 key 要统一**：push 与 pull 读写 `.gitlet/refs/remotes/{remote}/{branch}` 时 key 必须一致，
+  统一用**远程别名**（对齐 Git 的 `refs/remotes/...` 约定）。用 owner 名写、别名读会让 `expectedOldSha` 停在上一次的值，
+  正常快进被误判成非快进。
+- **首次推送省略 `expectedOldSha`**：没有 tracking（远程分支仍指向 null）时不要发空串，直接省略该字段，
+  让服务端 `JsonNullable` 处于 undefined → 非快进校验自动放行。
+- **收集待推送提交按「提交自身 SHA」终止、且双父入栈**：循环条件是「当前 commit 的 SHA == tracking 才停」，
+  不能拿 `commit.getParent()` 比（首推 / 刚拉取后一次都不进循环）；合并提交要走第一父 + 第二父，否则漏侧链。
+- **路径与字段名严格对齐**：客户端 URL 与 JSON 字段必须与 Controller / VO 逐字一致（如 `RefView` 用 `@JsonProperty("sha")`），
+  否则 404 会直接跳过全部业务逻辑，表现为「值为 null」而不是报错。
 
 ### pull / clone
 
@@ -550,6 +594,19 @@ sequenceDiagram
 | PR 合并采用哪种策略？1.直接改远程仓库中的文件，2.生成暂存区拷贝文件，3.暂存区只存对应的冲突文件。4.暂存区只存对应的冲突文件，以及允许合并的文件 | 暂存区只存对应的冲突文件，以及允许合并的文件。直接改仓库中的文件会污染远程仓库，生成暂存区拷贝文件IO开销+储存消耗过大。所以采用只在暂存区存对应的冲突文件，但是如果只存冲突文件会导致之前通过并且允许合并的文件遗失，所以一并存入暂存区 |
 | 新建的Commit由于和客服端序列化不同，采用读取时重定向 | Java 原生序列化有一个死板的规则：**它只认“包名 + 类名”这个字符串。只要字符串完全一样，它才不管这个类具体是什么内容，就能反序列化。**在远程服务建立一个相同的包即可 |
 | LCA的检查用数据库的commit_parent表 | 应该解析对象库中的Commit对象。commit_parent 表不可信，因为它只在服务端事件发生时写"投影边"，而对象库里才是完整 DAG |
+| 用 GitHub fork 模型做协作 | 需要 fork 到自己账号、跨仓库 PR、fork 同步，复杂度高。Cloud-Gitlet 定位轻量，协作者本就是仓库成员 → 单仓库 + 分支保护 + 同仓库 PR 即可 |
+| PR 用 HTTP Webhook 触发 | 要暴露回调地址、处理重试与鉴权。当前用进程内 `@EventListener` + `@Async` 解耦已足够，将来接真 Webhook 只需新增监听器 |
+| PR 创建时就把 source/target/LCA 复制进暂存区 | 浪费存储。改为合并时才**按需创建**，且只写冲突（+ 可自动合并）文件，三路合并在**内存**完成 |
+| 为冲突解决新增独立的 resolve 接口 | 需新增 API/DTO/Service 和状态机。复用 merge 接口 + 冲突标记校验，天然幂等（类似 `git merge`），WebUI 只需一个「合并」按钮 |
+| PR 拒绝后立即删除其 commit/blob | 会误删仍被 feature 分支 / 标签引用的对象。遵循 Git 的 GC 语义：PR 拒绝只逻辑删除 PR 记录，悬空对象交给 GC |
+| 一开始就上增量传输 | 增量遍历是 bug 重灾区（父链 / 合并侧链 / `since` 锚点）。先全量跑通、验证语义，再引入增量，定位面更小 |
+| push/pull 异步化（任务队列 + 轮询状态） | 调试复杂、要引入状态机。当前单用户 / 低并发场景下同步实现天然强一致、错误反馈及时；出现大对象上传阻塞请求线程时再演进 |
+| 核心 `gitlet/` 用 Spring IoC 管理 Repository/Handler | Repository 按运行时参数现造，容器管不到；Handler 做成单例就回到「进程级共享状态串仓库」的坑；CLI 每条命令起容器慢约 200 倍。核心保持**无容器纯库**，只在网关边缘用 IoC |
+| 核心全 static / 全实例一刀切 | 全 static 会把空对象在类加载时固定死（`init` 后与磁盘不一致、且跨仓库串状态）；全实例又要把 CLI 调用点全改。取中：`Main` 保持 static 门面，内部 `Repository` 改实例方法 + `stage` **懒加载** |
+| 放弃 JWT、改用 Redis Session | 会丢掉 JWT 自包含、网关可独立验签、跨服务共享；且把「每请求查存储」的代价请回来。保持无状态 JWT + Redis 黑名单补主动失效，黑名单 TTL = token 剩余有效期 |
+| 黑名单 key 用明文 token / 用 jti | 明文会把可重放凭据落进 Redis；`jti` 更标准但要改签发与校验。改用 `jwt:blacklist:` + `SHA-256(token)`：脱敏、定长、改动最小 |
+| 受保护分支对所有人都强制走 PR | 个人 / 小团队场景里属主要能快速自救。改为 OWNER 可绕过直推、非 OWNER 必须走 PR；且判权必须基于**调用者身份**（早期用错人时该绕过形同虚设，见 §6「调用者身份」） |
+| 引入 JLine 做 CLI 密码掩码输入 | 为一次性掩码输入引依赖是过度设计。用 `System.console().readPassword()`，IDE 下返回 null 时降级 `Scanner`（回显，提示到真实终端跑） |
 
 > 这一节比「做什么」更值得维护：半年后你不会记得为什么当时没选 JGit。
 
@@ -583,6 +640,9 @@ sequenceDiagram
 | 13 | `gitlet/dump/`（`DumpObj`、`Dumpable`）疑似死代码 | 待确认后删除 |
 | 14 | `remote-gitlet` 自行验签是 gateway 未就绪期的临时方案，与 §6「gateway 承担的策略」的最终形态（网关统一验签）不一致；且无效 token 走**匿名放行**（返回 `200` 而非 `401`），与 `openapi.yaml` 中 `Unauthorized` 的「由 gateway 拦截」注释矛盾 | 待 gateway 修好后收敛 → D36 |
 | 15 | `closePullRequest` 仍**无权限校验**（任何人可关任意 PR）；push 仍把操作者记成 `owner`（`submission_record` 的作者归属） | 越权关闭 / 作者归属错误 → D35 |
+| 16 | `PullRequestEventListenerImpl.createBranch` 已无调用点（rejected 路径已改为直接 return） | 死代码，与 §10-13 同类，待清理 |
+| 17 | 暂存区路径命名不统一：代码用 `basePath/temp/merge-{timestamp}`，设计描述是 `.gitlet/pr-staging/{prId}/` | 便于追踪与清理，建议按 prId 命名 |
+| 18 | 可观测性未做：访问日志、关键接口耗时打点、dashboard 均缺失 | 出事难定位（见 §6「gateway 承担的策略」） |
 
 ---
 
@@ -672,9 +732,9 @@ mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am
 | `ReadEndpointsMockMvcTest` | 集成（`@SpringBootTest @AutoConfigureMockMvc`） | HTTP 路径映射、参数绑定、Result 外层、前端依赖的 JSON 字段名；**携带 owner/协作者真实 JWT 的合并链路（`verifiesToken` mock + hutool 真实签出）** |
 | `JwtAuthFilterTest` | 单元（mock `KeyPairManager` / `StringRedisTemplate`） | 有效 token 注入、Integer claim 转 Long、缺失/非 Bearer 头匿名、签名失败不查 Redis、过期、黑名单、Redis 故障不断链 |
 
-`remote-gitlet` 全部 **72** 个用例，其中 **62 绿**。其余 **6 失败 + 4 错误**（`FirstStepPushTest` 4F、
-`PushForceUpdateBranchTest` 1F/1E、`PushObjectTest` 3E、`RemoteFlowIntegrationTest` 1F）经 `git worktree`
-对照确认是**本次改动前就存在**的，且失败集合前后逐字节一致、需真实 Nacos/MySQL/Redis，**非回归**。
+`remote-gitlet` 全部 **75** 个用例**全绿**。早先 `FirstStepPushTest` / `PushForceUpdateBranchTest` /
+`PushObjectTest` / `RemoteFlowIntegrationTest` 的失败已随 mapper 桩补全、真实序列化 `Commit` 对象落盘、
+`repositoryObjectReader` 独立 `basePath` 等修复而消除（曾用 `git worktree` 对照确认为**改动前既有**、非回归）。
 
 > 鉴权过滤的测试现在**落在 `remote-gitlet`**（`JwtAuthFilterTest` + `ReadEndpointsMockMvcTest` 的 E2E），
 > 而非 §12 表格「策略」行原设想的 gateway——因为 gateway 尚未可用，验签实际在 `remote-gitlet` 内完成（见 §6「调用者身份」）。
@@ -736,7 +796,7 @@ gitlethub-frontend/
 ### 13.5 验证状态
 
 - ✅ 前端 `npm run build` 通过；Vite dev server 返回 HTTP 200；关键模块 transform 无错。
-- ✅ 后端新测试全绿（`remote-gitlet` 72 个用例 / 62 绿，非绿项均为改动前既有、需真实中间件）。
+- ✅ 后端新测试全绿（`remote-gitlet` 75 个用例全绿）。
 - ✅ PR 合并入口前端已按身份收敛：`PRDetailView.vue` 仅当 `repoInfo.ownerId === auth.userId` 时才渲染「合并」按钮，
   非 owner 显示「只有仓库所有者可以合并该 PR」（**服务端仍做最终裁定**，前端只是不给出无效入口）。
 - ❌ **未做真实端到端**：`192.168.12.168` 上的 Nacos/MySQL/Redis 不可达（TCP 超时），后端无法真正启动；
@@ -746,7 +806,7 @@ gitlethub-frontend/
 
 ## 附录 A：待决策清单
 
-**这是全文唯一需要你填的地方。** 右边一列写你的决定；同意建议就写「同建议」，不同意的写清楚选择。每行前面的 ID 在正文里被引用。
+右边一列写你的决定；同意建议就写「同建议」，不同意的写清楚选择。每行前面的 ID 在正文里被引用。
 
 | ID | 待决策 | 建议 `(临时)` | 你的决定 |
 | --- | --- | --- | --- |
