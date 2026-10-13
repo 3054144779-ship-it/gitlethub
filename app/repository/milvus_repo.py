@@ -110,6 +110,8 @@ class MilvusRepo:
             self,
             dense_anns_field: str,
             sparse_anns_field: str,
+            user_id: str,
+            repo_id: str,
             dense_vector: List[float] | None = None,
             sparse_vector: Dict[int, float] | None = None,
             top_k: int = 10,
@@ -117,7 +119,7 @@ class MilvusRepo:
             output_fields: List[str] | None = None
     ) -> List[List[Dict]]:
         """
-        检索
+        检索, 过滤设置为当前用户当前仓库
         :param dense_anns_field: 稠密向量字段名
         :param sparse_anns_field: 稀疏向量字段名
         :param dense_vector: 稠密向量
@@ -135,12 +137,14 @@ class MilvusRepo:
                 data=[dense_vector],
                 anns_field=dense_anns_field,
                 param={"metric_type": "HNSW"},
+                expr=f"user_id == {user_id} and repository_id == {repo_id}",
                 limit=top_k,
             )
             sparse_req = AnnSearchRequest(
                 data=[sparse_vector],
                 anns_field=sparse_anns_field,
                 param={"metric_type": "IP"},
+                expr=f"user_id == {user_id} and repository_id == {repo_id}",
                 limit=top_k,
             )
             return self.milvus_client.hybrid_search(
@@ -157,6 +161,7 @@ class MilvusRepo:
                 data=[dense_vector],
                 anns_field=dense_anns_field,
                 param={"metric_type": "HNSW"},
+                filter=f"user_id == {user_id} and repository_id == {repo_id}",
                 limit=top_k,
                 output_fields=output_fields
             )
@@ -167,6 +172,7 @@ class MilvusRepo:
                 data=[sparse_vector],
                 anns_field=sparse_anns_field,
                 param={"metric_type": "IP"},
+                filter=f"user_id == {user_id} and repository_id == {repo_id}",
                 limit=top_k,
                 output_fields=output_fields
             )

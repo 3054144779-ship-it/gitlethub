@@ -3,6 +3,7 @@
 """
 
 import filetype
+from pathlib import Path
 
 class DocumentClassifier:
     """
@@ -21,8 +22,10 @@ class DocumentClassifier:
         """
         二次判断，用于判断filetype库判断失败的情况
         """
+        p = Path(file_path)
+
         with open(file_path, "rb") as f:
-            head = f.read(16)
+            head = f.read(4096)
 
         if head.startswith(b"\x89PNG\r\n\x1a\n"):
             return "png"
@@ -34,4 +37,8 @@ class DocumentClassifier:
             return "zip"
         if head.startswith(b"\x1f\x8b"):
             return "gzip"
+
+        if p.suffix.lower() in {".md", ".markdown", ".mdown", ".mkd"}:
+            return "markdown"
+
         return "code"
