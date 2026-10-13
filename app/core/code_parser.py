@@ -6,7 +6,8 @@ Web 语言: Ruby, PHP, C#, HTML, CSS, JSON
 """
 from typing import Optional, Union, List
 from pathlib import Path
-from tree_sitter import Language, Parser, Node
+from tree_sitter import Parser, Node
+from tree_sitter_languages import get_language, get_parser
 
 class CodeParser:
     """
@@ -62,39 +63,16 @@ class CodeParser:
     }
 
     def __init__(self):
-        """初始化代码解析器"""
-        self.languages = {}
         self.parsers = {}
         self._load_all_languages()
 
     def _load_all_languages(self):
-        """动态加载所有支持的语言"""
-        language_modules = {
-            'java': 'tree_sitter_java',
-            'python': 'tree_sitter_python',
-            'javascript': 'tree_sitter_javascript',
-            'typescript': 'tree_sitter_typescript',
-            'go': 'tree_sitter_go',
-            'rust': 'tree_sitter_rust',
-            'c': 'tree_sitter_c',
-            'cpp': 'tree_sitter_cpp',
-            'ruby': 'tree_sitter_ruby',
-            'php': 'tree_sitter_php',
-            'c_sharp': 'tree_sitter_c_sharp',
-            'html': 'tree_sitter_html',
-            'css': 'tree_sitter_css',
-            'json': 'tree_sitter_json',
-        }
-
-        for lang_name, module_name in language_modules.items():
+        """加载所有支持的语言"""
+        for lang_name in set(self.LANGUAGE_MAP.values()):
             try:
-                module = __import__(module_name, fromlist=['language'])
-                language = Language(module.language())
-                self.languages[lang_name] = language
-                self.parsers[lang_name] = Parser(language)
-            except (ImportError, AttributeError) as e:
+                self.parsers[lang_name] = get_parser(lang_name)
+            except Exception as e:
                 print(f"警告: 无法加载语言 {lang_name}: {e}")
-                pass
 
     def detect_language(self, file_path: Optional[str] = None,
                        code: Optional[str] = None,
@@ -296,7 +274,7 @@ class CodeParser:
         Returns:
             语言名称列表
         """
-        return list(self.languages.keys())
+        return list(self.parsers.keys())
 
     def print_tree(self, node: Node, indent: int = 0, max_depth: int = 3):
         """

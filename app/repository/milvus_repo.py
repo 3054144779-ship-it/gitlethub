@@ -49,7 +49,7 @@ class MilvusRepo:
 
         for field in self.fields:
             field_name = field["name"]
-            field_type = field["type"]
+            field_type = DataType[field["type"]]
             # 处理不同类型的字段
             if field_type == DataType.FLOAT_VECTOR:
                 # 添加稠密向量字段
@@ -98,6 +98,9 @@ class MilvusRepo:
 
     def insert(self, data: List[Dict[str, Any]]) -> dict:
         """插入数据"""
+        # 创建集合，保证集合存在才可以插入
+        self.create_collection()
+
         return self.milvus_client.insert(
             collection_name=self.collection_name,
             data=data

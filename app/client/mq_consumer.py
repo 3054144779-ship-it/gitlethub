@@ -43,7 +43,7 @@ async def start_consume_mq_message(callback: callable):
                 body = message.body.decode()
                 print("获取 MQ 消息:", body)
                 messages.append(body)
-                callback(body)
+                await callback(body)
                 await message.ack() # 确认消息
         return messages
 

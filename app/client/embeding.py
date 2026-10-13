@@ -36,7 +36,7 @@ class EmbeddingModel:
                 dense = np.array(dense, dtype=np.float32)
 
             if isinstance(sparse, dict):
-                sparse = {int(k) : int(v) for k, v in sparse.items()}
+                sparse = {int(k) : float(v) for k, v in sparse.items()}
             else:
                 raise ValueError("Invalid sparse vector format")
 

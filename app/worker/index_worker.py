@@ -3,9 +3,11 @@
 """
 
 import asyncio
+import json
 import logging
 import os
 
+import yaml
 from dependency_injector.wiring import inject, Provide
 from langchain_core.documents import Document
 from tree_sitter import Node
@@ -23,7 +25,7 @@ from schema.request import Request
 async def handle_message(
         body: str,
         milvus_repo: MilvusRepo = Provide[Container.milvus_repo],
-        embedding_model: EmbeddingModel = Provide[Container.embedding_model],
+        embedding_model: EmbeddingModel = Provide[Container.embeddingModel],
     ):
     """
     处理 MQ 消息
@@ -34,8 +36,12 @@ async def handle_message(
     """
     print("处理消息:", body)
 
+    data = json.loads(body)
+
     # 解析请求
-    request = Request.from_request(body)
+    request = Request.from_request(data)
+
+    print("request:", request)
 
     if os.path.exists(request.file_path):
         # 如果传入的文件路径存在, AST切分
@@ -114,4 +120,9 @@ def _generate_metadata(request: Request, node: Node, chunk_index: int) -> Metada
 
 
 if __name__ == '__main__':
+    container = Container()
+    with open(r"D:\Job_project\gitlet_ai_helper\config.yaml", encoding="utf-8") as f:
+        config_data = yaml.safe_load(f)
+    container.config.from_dict(config_data["config"])
+    container.wire(modules=[__name__])
     asyncio.run(code_parser_mq_consumer())

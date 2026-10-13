@@ -3,6 +3,9 @@ from dependency_injector import containers, providers
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
 
+def _create_milvus_client(host: str, port: int) -> MilvusClient:
+    return MilvusClient(uri=f"http://{host}:{port}")
+
 class Container(containers.DeclarativeContainer):
     """
     容器类，用于依赖注入
@@ -11,14 +14,17 @@ class Container(containers.DeclarativeContainer):
     config = providers.Configuration()
     # MilvusRepo提供，使用Singleton模式，配置从config中读取
     # 创建MilvusClient实例
-    milvus_client = MilvusClient(
-        uri=f"http://{config.milvus.host}:{config.milvus.port}"
+    milvus_client = providers.Singleton(
+        _create_milvus_client,
+        host=config.milvus.host,
+        port=config.milvus.port,
     )
 
     # 创建MilvusRepo实例
     milvus_repo = providers.Singleton(
         MilvusRepo,
         milvus_client=milvus_client,
+        collection_name=config.milvus.collection_name,
         fields=config.milvus.fields,
         index_params=config.milvus.index_params
     )
@@ -26,7 +32,7 @@ class Container(containers.DeclarativeContainer):
     # 创建EmbeddingModel实例
     embeddingModel = providers.Singleton(
         EmbeddingModel,
-        model_name=config.embedding.model_name,
-        model_path=config.embedding.model_path
+        model_name_or_path=config.embedding.model_name_or_path,
+        device=config.embedding.device
     )
 
