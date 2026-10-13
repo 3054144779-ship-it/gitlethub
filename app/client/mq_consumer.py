@@ -7,7 +7,7 @@ from aio_pika import connect_robust
 from config.Settings import Settings
 
 
-async def start_consume_mq_message():
+async def start_consume_mq_message(callback: callable):
     print("开始获取 MQ 消息")
 
     settings = Settings()
@@ -36,16 +36,19 @@ async def start_consume_mq_message():
                 "x-dead-letter-routing-key": "pr_merged_dlq"
             })
 
+        messages = []
         # 处理消息队列的信息
         async with queue.iterator() as iterator:
             async for message in iterator:
-                async with message.process():
-                    body = message.body.decode()
-                    info(msg=body)
-                    # print("获取 MQ 消息:" + body)
+                body = message.body.decode()
+                print("获取 MQ 消息:", body)
+                messages.append(body)
+                callback(body)
+                await message.ack() # 确认消息
+        return messages
 
 if __name__ == '__main__':
-    asyncio.run(start_consume_mq_message())
+    print(asyncio.run(start_consume_mq_message()))
 
 
 

@@ -4,12 +4,24 @@
 系统级语言: C, C++
 Web 语言: Ruby, PHP, C#, HTML, CSS, JSON
 """
-from typing import Optional, Union
+from typing import Optional, Union, List
 from pathlib import Path
 from tree_sitter import Language, Parser, Node
 
 class CodeParser:
-    """多语言代码解析器"""
+    """
+    多语言代码解析器
+    提供方法:
+    detect_language(file_path), 检测代码语言
+    parse(source, language), 解析代码
+    parse_file(file_path), 解析文件
+    find_nodes(node, node_type), 查找节点
+    find_nodes_by_pattern(node, pattern), 查找节点
+    get_node_text(node), 获取节点文本
+    get_supported_languages(), 获取支持的语言
+    print_tree(node), 打印树结构
+    ast_split(node), AST 切分
+    """
 
     # 文件扩展名到语言名称的映射
     LANGUAGE_MAP = {
@@ -35,6 +47,18 @@ class CodeParser:
         '.html': 'html',
         '.css': 'css',
         '.json': 'json',
+    }
+
+    # 定义每种语言中"有意义"的节点类型
+    semantic_node_types = {
+        'java': ['method_declaration', 'class_declaration', 'interface_declaration'],
+        'python': ['function_definition', 'class_definition'],
+        'javascript': ['function_declaration', 'class_declaration', 'arrow_function'],
+        'typescript': ['function_declaration', 'class_declaration', 'arrow_function'],
+        'go': ['function_declaration', 'method_declaration', 'type_declaration'],
+        'rust': ['function_item', 'impl_item', 'struct_item'],
+        'c': ['function_definition', 'struct_specifier'],
+        'cpp': ['function_definition', 'class_specifier', 'struct_specifier'],
     }
 
     def __init__(self):
@@ -291,6 +315,60 @@ class CodeParser:
 
         for child in node.children:
             self.print_tree(child, indent + 1, max_depth)
+
+    def find_semantic_nodes(self, root: Node, language: str) -> list[Node]:
+        """
+        按语言查找语义节点（函数、类等）
+        Args:
+            root: 根节点
+            language: 语言名称
+
+        Returns:
+            语义节点列表
+        """
+        target_types = self.semantic_node_types.get(language, [])
+        if not target_types:
+            return [root]
+
+        nodes = []
+        for node_type in target_types:
+            nodes.extend(self.find_nodes(root, node_type))
+
+        return nodes if nodes else [root]
+
+    def ast_split_from_root(self, root: Node, language: str, file_path: str = "") -> List[str]:
+        """
+        按 AST 语义切分代码，提取函数、类等独立单元的文本
+        Args:
+            root: 根节点
+            language: 语言名称
+            file_path: 文件路径
+
+        Returns:
+            代码块列表
+        """
+        nodes = self.find_semantic_nodes(root, language)
+        chunks = []
+        for node in nodes:
+            text = self.get_node_text(node)
+            if text.strip():
+                chunks.append(text)
+        return chunks
+
+    def ast_split(self, nodes: List[Node]) -> List[str]:
+        """
+        按 AST 语义切分代码，提取函数、类等独立单元的文本
+        Args:
+            :param nodes:
+        Returns:
+            代码块列表
+        """
+        chunks = []
+        for node in nodes:
+            text = self.get_node_text(node)
+            if text.strip():
+                chunks.append(text)
+        return chunks
 
 
 # 便捷函数

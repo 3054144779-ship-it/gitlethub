@@ -14,9 +14,9 @@ class MilvusRepo:
     def __init__(
             self,
             collection_name: str,
+            milvus_client: MilvusClient,
             fields: List[Dict[str, Any]],
             index_params: Dict[str, Any] | None = None,
-            milvus_client: MilvusClient = MilvusClient(Settings.MILVUS_URL)
     ):
         """
         初始化
