@@ -14,11 +14,11 @@ class MilvusPO:
     file_path: str
     commit_sha: str
     branch_name: str
-    language: str
+    language: str | None
     text: str
     dense_vector: List[List[float]]
     sparse_vector: List[Dict[int, float]]
-    metadata: Metadata
+    metadata: Metadata | None
 
     def to_milvus_dict(self):
         """
@@ -31,11 +31,11 @@ class MilvusPO:
             "file_path": self.file_path,
             "commit_sha": self.commit_sha,
             "branch_name": self.branch_name,
-            "language": self.language,
+            "language": self.language or "",
             "text": self.text,
             "dense_vector": self.dense_vector,
             "sparse_vector": self.sparse_vector,
-            "metadata": self.metadata.model_dump()
+            "metadata": self.metadata.model_dump() if self.metadata else {}
         }
 
     @classmethod

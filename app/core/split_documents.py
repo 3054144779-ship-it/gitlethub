@@ -7,7 +7,7 @@ from typing import List
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import (
-    UnstructuredMarkdownLoader, UnstructuredWordDocumentLoader, UnstructuredPDFLoader)
+    UnstructuredMarkdownLoader, UnstructuredWordDocumentLoader, PyMuPDFLoader)
 
 """
 Markdown 文档分割
@@ -40,16 +40,9 @@ async def docx_splitter(file_path: str) -> List[Document]:
 PDF 文档分割(后续可根据需求切换到 MinerU)
 """
 async def pdf_splitter(file_path: str) -> List[Document]:
-    pdf_loader = UnstructuredPDFLoader(
-        file_path=file_path,
-        mode="elements",
-        chunking_strategy="by_title",
-        max_characters=1000,
-        combine_text_under_n_chars=500,
-    )
-    pdf = await pdf_loader.aload()
-    pdf_optimization = await asyncio.to_thread(_structural_optimization, pdf)
-    documents = await asyncio.to_thread(_sync_split, pdf_optimization)
+    loader = PyMuPDFLoader(file_path=file_path)
+    pdf = await loader.aload()
+    documents = await asyncio.to_thread(_sync_split, pdf)
     return documents
 
 # 文档分割
@@ -80,4 +73,6 @@ def _structural_optimization(documents: List[Document]) -> List[Document]:
                 page_content=page_content,
                 metadata=document.metadata
             ))
+    if not optimized_documents and documents:
+        return documents
     return optimized_documents

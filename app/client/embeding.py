@@ -24,6 +24,10 @@ class EmbeddingModel:
         :param documents: 文档列表
         :return: 密集向量和稀疏向量
         """
+
+        if not documents:
+            return []
+
         result = self.embedding_model.encode([doc.page_content for doc in documents], return_dense=True, return_sparse=True)
         dense_vecs = result.get("dense_vecs", [])
         sparse_vecs = result.get("lexical_weights", [])
