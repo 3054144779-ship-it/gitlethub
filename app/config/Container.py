@@ -1,9 +1,12 @@
 from pymilvus import MilvusClient
 from dependency_injector import containers, providers
+
+from client.llm_client import LLMClient
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from jinja2 import Template
+from langchain.chat_models import init_chat_model
 
 def _create_milvus_client(host: str, port: int) -> MilvusClient:
     return MilvusClient(uri=f"http://{host}:{port}")
@@ -68,3 +71,15 @@ class Container(containers.DeclarativeContainer):
         jinja_env=jinja_env,
         template_name="intent_clarifier_prompt_template.jinja2"
     )
+
+    # 创建意图识别器ai
+    intent_clarifier_llm_client = providers.Singleton(
+        init_chat_model,
+        model=config.intent_clarifier.model,
+        model_provider=config.intent_clarifier.model_provider,
+        api_key=config.intent_clarifier.api_key,
+        base_url=config.intent_clarifier.base_url
+    )
+
+
+

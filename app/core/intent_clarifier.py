@@ -1,27 +1,26 @@
 """
 意图识别器，用于识别用户意图
 """
-from typing import Dict
+from typing import Dict, Union
 
 from dependency_injector.wiring import inject, Provide
 from jinja2 import Template
 from langchain_core.language_models import BaseChatModel
-from langchain_core.output_parsers import JsonOutputParser, format_instructions
+from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import Runnable, RunnableLambda
 
 from client.llm_client import LLMClient
 from schema.domain import IntentResult
-
 from config.Container import Container
 
 class IntentClarifier:
     """
-    意图识别器，用于识别用户意图
+    意图识别器
     """
 
     @inject
     def __init__(self,
-                 llm_client: BaseChatModel,
+                 llm_client: BaseChatModel=Provide[Container.intent_clarifier_llm_client],
                  intent_clarifier_template: Template=Provide[Container.intent_clarifier_template]):
         # 用于意图识别的小模型
         self.llm_client = llm_client
@@ -65,21 +64,9 @@ if __name__ == '__main__':
     container.config.from_dict(config_data["config"])
     container.wire(modules=[__name__])
 
-    llm_client = LLMClient(
-        model="deepseek-chat",
-        model_provider="deepseek",
-        config={
-            "api_key": "***REMOVED***",
-            "base_url": "https://api.deepseek.com"
-        }
-    ).llm
-
     async def main():
-        if llm_client is not None:
-            clarifier = IntentClarifier(llm_client=llm_client)
-            result = await clarifier.clarify_intent("审查代码")
-            print(result)
-        else:
-            print("LLM client is not initialized")
+        clarifier = IntentClarifier()
+        result = await clarifier.clarify_intent("历史代码查询")
+        print(result)
 
     asyncio.run(main())

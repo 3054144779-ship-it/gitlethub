@@ -110,8 +110,8 @@ class MilvusRepo:
             self,
             dense_anns_field: str,
             sparse_anns_field: str,
-            user_id: str,
-            repo_id: str,
+            user_id: int,
+            repo_id: int,
             dense_vector: List[float] | None = None,
             sparse_vector: Dict[int, float] | None = None,
             top_k: int = 10,
@@ -120,6 +120,8 @@ class MilvusRepo:
     ) -> List[List[Dict]]:
         """
         检索, 过滤设置为当前用户当前仓库
+        :param repo_id: 仓库ID
+        :param user_id: 用户ID
         :param dense_anns_field: 稠密向量字段名
         :param sparse_anns_field: 稀疏向量字段名
         :param dense_vector: 稠密向量
