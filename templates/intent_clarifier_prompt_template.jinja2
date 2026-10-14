@@ -20,9 +20,12 @@
 {
   "intent": "explain | review | archaeology | search | comprehensive",
   "confidence": 0.0 到 1.0 之间的浮点数,
-  "reason": "简短的理由，用于日志和调试",
+  "reason": "简短的理由",
   "need_clarify": False
 }
 
 字段说明：
 - need_clarify：当用户输入模糊不清、无法明确判断属于单一意图、或缺少关键上下文时设为 True，表示需要进一步澄清用户意图；否则设为 False。
+- reason：用于日志和调试的简短理由。当 need_clarify 为 True 时，reason 应直接作为回复用户的话术，**必须以"我"开头，采用第一人称自然对话口吻**。
+  - 正确示例："我没有找到足够的信息来判断你的意图，能具体说说你想了解什么吗？"
+  - 错误示例："用户询问的是助手能力范围，不属于代码仓库的具体意图，且信息不足以判断。"（这是第三人称描述，禁止使用）
