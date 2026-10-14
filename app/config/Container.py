@@ -3,6 +3,7 @@ from dependency_injector import containers, providers
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Template
 
 def _create_milvus_client(host: str, port: int) -> MilvusClient:
     return MilvusClient(uri=f"http://{host}:{port}")
@@ -14,6 +15,9 @@ def _init_jinja_env(template_dir: str) -> Environment:
         trim_blocks=True,
         lstrip_blocks=True,
     )
+
+def _load_template(jinja_env: Environment, template_name: str) -> Template:
+    return jinja_env.get_template(template_name)
 
 class Container(containers.DeclarativeContainer):
     """
@@ -53,8 +57,14 @@ class Container(containers.DeclarativeContainer):
 
     # 创建提交信息单例模板
     commit_message_template = providers.Singleton(
-        lambda jinja_env: jinja_env.get_template("commit_message_template.jinja2"),
-        jinja_env=jinja_env
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="commit_message_template.jinja2"
     )
 
-
+    # 创建意图澄清单例模板
+    intent_clarifier_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="intent_clarifier_prompt_template.jinja2"
+    )

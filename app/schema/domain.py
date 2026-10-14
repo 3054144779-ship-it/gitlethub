@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List, Dict, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pymilvus import DataType
 
 from schema.base_model import Metadata, CommitMessage
@@ -94,3 +94,11 @@ class RequestDTO:
             pr_name=data["pr_name"],
         )
 
+
+class IntentResult(BaseModel):
+    intent: Literal["explain", "review", "archaeology", "search", "comprehensive"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str = Field(description="简短的理由，用于日志和调试")
+
+    # 可选字段：只在特定场景下使用
+    need_clarify: bool = False
