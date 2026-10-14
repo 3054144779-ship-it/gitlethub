@@ -2,9 +2,18 @@ from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 def _create_milvus_client(host: str, port: int) -> MilvusClient:
     return MilvusClient(uri=f"http://{host}:{port}")
+
+def _init_jinja_env(template_dir: str) -> Environment:
+    return Environment(
+        loader=FileSystemLoader(template_dir),
+        autoescape=select_autoescape(["html", "xml"]),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
 
 class Container(containers.DeclarativeContainer):
     """
@@ -36,5 +45,16 @@ class Container(containers.DeclarativeContainer):
         device=config.embedding.device
     )
 
+    # 创建jinja2环境
+    jinja_env = providers.Singleton(
+        _init_jinja_env,
+        template_dir=config.jinja.template_dir
+    )
+
+    # 创建提交信息单例模板
+    commit_message_template = providers.Singleton(
+        lambda jinja_env: jinja_env.get_template("commit_message_template.jinja2"),
+        jinja_env=jinja_env
+    )
 
 

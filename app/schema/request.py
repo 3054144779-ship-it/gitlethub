@@ -3,6 +3,9 @@
 """
 from dataclasses import dataclass
 
+from schema.base_model import PullRequest
+
+
 @dataclass
 class Request:
     """
@@ -12,16 +15,19 @@ class Request:
     user_id: int
     # 仓库ID
     repository_id: int
-    # 文件路径
-    file_path: str
-    # 提交SHA
-    commit_sha: str
     # 分支名称
     branch_name: str
-    # 作者
-    author: str
-    # 提交时间
-    commit_time: str
+    # PR 信息
+    pr_info: PullRequest
+
+    # # 文件路径
+    # file_path: str
+    # # 提交SHA
+    # commit_sha: str
+    # # 作者
+    # author: str
+    # # 提交时间
+    # commit_time: str
 
     def to_request_dict(self):
         """
@@ -31,11 +37,12 @@ class Request:
         return {
             "user_id": self.user_id,
             "repository_id": self.repository_id,
-            "file_path": self.file_path,
-            "commit_sha": self.commit_sha,
             "branch_name": self.branch_name,
-            "author": self.author,
-            "commit_time": self.commit_time,
+            "pr_info": self.pr_info.model_dump()
+            # "file_path": self.file_path,
+            # "commit_sha": self.commit_sha,
+            # "author": self.author,
+            # "commit_time": self.commit_time,
         }
 
     @classmethod
@@ -48,9 +55,10 @@ class Request:
         return cls(
             user_id=data["user_id"],
             repository_id=data["repository_id"],
-            file_path=data["file_path"],
-            commit_sha=data["commit_sha"],
             branch_name=data["branch_name"],
-            author=data["author"],
-            commit_time=data["commit_time"],
+            pr_info=PullRequest(**data["pr_info"])
+            # file_path=data["file_path"],
+            # commit_sha=data["commit_sha"],
+            # author=data["author"],
+            # commit_time=data["commit_time"],
         )
