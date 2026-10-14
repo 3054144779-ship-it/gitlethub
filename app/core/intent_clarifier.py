@@ -14,7 +14,6 @@ from schema.domain import IntentResult
 
 from config.Container import Container
 
-
 class IntentClarifier:
     """
     意图识别器，用于识别用户意图
@@ -78,7 +77,7 @@ if __name__ == '__main__':
     async def main():
         if llm_client is not None:
             clarifier = IntentClarifier(llm_client=llm_client)
-            result = await clarifier.clarify_intent("你能干什么？")
+            result = await clarifier.clarify_intent("审查代码")
             print(result)
         else:
             print("LLM client is not initialized")

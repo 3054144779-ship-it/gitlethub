@@ -96,7 +96,7 @@ class RequestDTO:
 
 
 class IntentResult(BaseModel):
-    intent: Literal["explain", "review", "archaeology", "search", "comprehensive"]
+    intent: List[Literal["explain", "review", "archaeology", "search"]]
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str = Field(description="简短的理由，用于日志和调试")
 
