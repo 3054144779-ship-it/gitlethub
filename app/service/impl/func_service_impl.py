@@ -73,12 +73,12 @@ class ArchaeologyServiceImpl(ArchaeologyService):
             self,
             query: str,
             retrieval_result: dict,
-            top_k: int = 10,
+            top_k: int = 5,
             reranker: Reranker = Provide[Container.reranker]
     ):
         """
         rerank
-        :param top_k: 重排序数量
+        :param top_k: 重排序结果数量
         :param reranker: 重排序器
         :param query: 查询内容
         :param retrieval_result: 召回结果
