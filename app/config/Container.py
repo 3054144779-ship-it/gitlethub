@@ -23,6 +23,23 @@ def _init_jinja_env(template_dir: str) -> Environment:
 def _load_template(jinja_env: Environment, template_name: str) -> Template:
     return jinja_env.get_template(template_name)
 
+def _init_agent(
+        model: str,
+        model_provider: str,
+        api_key: str,
+        base_url: str
+):
+
+    return LLMClient(
+        model=model,
+        model_provider=model_provider,
+        config={
+            "api_key": api_key,
+            "base_url": base_url,
+        },
+        tools=None  # TODO：后续添加工具
+    ).create_agent()
+
 class Container(containers.DeclarativeContainer):
     """
     容器类，用于依赖注入
@@ -47,7 +64,7 @@ class Container(containers.DeclarativeContainer):
     )
 
     # 创建EmbeddingModel实例
-    embeddingModel = providers.Singleton(
+    embedding_model = providers.Singleton(
         EmbeddingModel,
         model_name_or_path=config.embedding.model_name_or_path,
         device=config.embedding.device
@@ -97,5 +114,21 @@ class Container(containers.DeclarativeContainer):
         template_name="archaeology_prompt_template.jinja2"
     )
 
+    # 用户消息重写ai
+    rewrite_llm = providers.Singleton(
+        init_chat_model,
+        model=config.rewrite.model,
+        model_provider=config.rewrite.model_provider,
+        api_key=config.rewrite.api_key,
+        base_url=config.rewrite.base_url
+    )
 
+    # 回复agent
+    agent = providers.Singleton(
+        _init_agent,
+        model=config.agent.model,
+        model_provider=config.agent.model_provider,
+        api_key=config.agent.api_key,
+        base_url=config.agent.base_url
+    )
 

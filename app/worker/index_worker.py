@@ -30,7 +30,7 @@ from core.split_documents import markdown_splitter, docx_splitter, pdf_splitter
 async def handle_message_code(
         request: RequestDTO,
         milvus_repo: MilvusRepo = Provide[Container.milvus_repo],
-        embedding_model: EmbeddingModel = Provide[Container.embeddingModel],
+        embedding_model: EmbeddingModel = Provide[Container.embedding_model],
         commit_message_template: Template = Provide[Container.commit_message_template],
     ):
     """
@@ -140,7 +140,7 @@ async def handle_message_markdown_pdf_word(
         request: RequestDTO,
         splitter_function: callable,
         milvus_repo: MilvusRepo = Provide[Container.milvus_repo],
-        embedding_model: EmbeddingModel = Provide[Container.embeddingModel],
+        embedding_model: EmbeddingModel = Provide[Container.embedding_model],
 ):
     if os.path.exists(request.file_path):
         documents = await splitter_function(request.file_path)

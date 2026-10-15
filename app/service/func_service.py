@@ -8,7 +8,7 @@ class ArchaeologyService(ABC):
         pass
 
     @abstractmethod
-    async def rerank(self, query: str, retrieval_result: dict):
+    async def rerank(self, query: str, code_docs: List[dict], commit_docs: List[dict]):
         pass
 
     @abstractmethod

@@ -16,13 +16,17 @@ class ArchaeologyServiceImpl(ArchaeologyService):
     """
     考古服务实现
     """
+
+    def __init__(self):
+        pass
+
     async def retrieval(
             self,
             query: str,
             owner: int,
             repo: int,
             milvus_repo: MilvusRepo = Provide[Container.milvus_repo],
-            embedding_model: EmbeddingModel = Provide[Container.embeding_model],
+            embedding_model: EmbeddingModel = Provide[Container.embedding_model],
     ) -> dict:
         """
         双路召回，RAG检索
@@ -72,22 +76,22 @@ class ArchaeologyServiceImpl(ArchaeologyService):
     async def rerank(
             self,
             query: str,
-            retrieval_result: dict,
+            code_docs: List[dict],
+            commit_docs: List[dict],
             top_k: int = 5,
             reranker: Reranker = Provide[Container.reranker]
     ):
         """
         rerank
+        :param commit_docs: 提交信息
+        :param code_docs: 代码文档
         :param top_k: 重排序结果数量
         :param reranker: 重排序器
         :param query: 查询内容
-        :param retrieval_result: 召回结果
         :return: rerank结果
         """
-        code_docs = retrieval_result.get("code_documents", [])
-        commit_docs = retrieval_result.get("commit_documents", [])
-        total_count = retrieval_result.get("total_count", 0)
         all_docs = code_docs + commit_docs
+        total_count = len(all_docs)
 
         if total_count == 0:
             # 没有召回结果直接返回

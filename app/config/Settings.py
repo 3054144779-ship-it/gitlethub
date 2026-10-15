@@ -13,6 +13,8 @@ class Settings:
     MESSAGE_QUEUE_URL = os.getenv("MESSAGE_QUEUE_URL")
     PR_MERGED_QUEUE = os.getenv("PR_MERGED_QUEUE")
     MILVUS_URL = os.getenv("MILVUS_URL")
+    LLM_MODEL = os.getenv("LLM_MODEL")
+    LLM_MODEL_PROVIDER = os.getenv("LLM_MODEL_PROVIDER")
 
 if __name__ == '__main__':
     settings = Settings()
