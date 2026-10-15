@@ -89,8 +89,16 @@ class ArchaeologyServiceImpl(ArchaeologyService):
         total_count = retrieval_result.get("total_count", 0)
         all_docs = code_docs + commit_docs
 
+        if total_count == 0:
+            # 没有召回结果直接返回
+            return {
+                "code_documents": [],
+                "commit_documents": [],
+                "total_count": 0
+            }
+
         # 重排序结果
-        rerank_result = reranker.rerank(query, all_docs, text_field="text", top_k=top_k)
+        rerank_result = reranker.rerank(query, all_docs, text_field="text", top_k=min(total_count, top_k))
         # 按照分数递减排序
         rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)
 
@@ -132,8 +140,8 @@ class ArchaeologyServiceImpl(ArchaeologyService):
             "repo": repo
         }
 
-        prompt = code_archaeology_template.render(embedded_to_template)
-        logging.info(f"prompt: {prompt}")
+        prompt_result = code_archaeology_template.render(embedded_to_template)
+        logging.info(f"prompt: {prompt_result}")
 
-        return prompt
+        return prompt_result
 
