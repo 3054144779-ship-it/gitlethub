@@ -165,6 +165,7 @@ class MilvusRepo:
                 param={"metric_type": "HNSW"},
                 filter=f"user_id == {user_id} and repository_id == {repo_id}",
                 limit=top_k,
+                rerank=RRFRanker(k=ranker_k),
                 output_fields=output_fields
             )
         elif sparse_vector is not None:
@@ -174,6 +175,7 @@ class MilvusRepo:
                 data=[sparse_vector],
                 anns_field=sparse_anns_field,
                 param={"metric_type": "IP"},
+                rerank=RRFRanker(k=ranker_k),
                 filter=f"user_id == {user_id} and repository_id == {repo_id}",
                 limit=top_k,
                 output_fields=output_fields

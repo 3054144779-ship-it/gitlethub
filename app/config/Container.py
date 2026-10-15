@@ -2,6 +2,7 @@ from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 
 from client.llm_client import LLMClient
+from core.reranker import Reranker
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -79,6 +80,21 @@ class Container(containers.DeclarativeContainer):
         model_provider=config.intent_clarifier.model_provider,
         api_key=config.intent_clarifier.api_key,
         base_url=config.intent_clarifier.base_url
+    )
+
+    # 创建reranker实例
+    reranker = providers.Singleton(
+        Reranker,
+        model_name_or_path=config.reranker.model_name_or_path,
+        use_fp16=config.reranker.use_fp16,
+        device=config.reranker.device
+    )
+
+    # 创建代码考古功能单例模板
+    code_archaeology_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="archaeology_prompt_template.jinja2"
     )
 
 
