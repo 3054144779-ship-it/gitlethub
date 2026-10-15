@@ -1,7 +1,7 @@
 """
 意图识别器，用于识别用户意图
 """
-from typing import Dict, Union
+from typing import Dict, Union, List
 
 from dependency_injector.wiring import inject, Provide
 from jinja2 import Template
@@ -46,7 +46,7 @@ class IntentClarifier:
         :return: 意图
         示例：
         {
-            "intent": "explain",
+            "intent": ["explain"],
             "confidence": 0.8,
             "reason": "用户正在请求对某个概念的解释。",
             "need_clarify": False
@@ -54,6 +54,50 @@ class IntentClarifier:
 
         """
         return await self.clarify_intent_chain.ainvoke({"query": query})
+
+async def intent_recognition(query) -> IntentResult | None:
+    """
+    意图识别
+    :param query: 用户输入
+    :return: 意图
+    """
+
+    # 创建意图识别器
+    clarifier = IntentClarifier()
+
+    # 意图识别
+    async def get_intent(count: int, user_query: str) -> IntentResult | None:
+        intent_result = await clarifier.clarify_intent(user_query)
+        if await format_validator(intent_result) or count >= 3:
+            # base case
+            print("意图识别结果: ", intent_result)
+            return intent_result
+        return await get_intent(count + 1, user_query)
+
+    async def format_validator(intent_result: IntentResult) -> bool:
+        """
+        格式化验证
+        :param intent_result: 意图
+        :return: 验证结果
+        """
+        if (intent_result is not None
+                and intent_result.need_clarify is not None
+                and intent_result.intent is not None):
+            # 如果意图结果不为空且不需要 clarification 且意图长度大于0 则校验成功
+            if len(intent_result.intent) > 0 or intent_result.need_clarify is False:
+                return True
+            else:
+                return False
+        return False
+
+    # 获取意图
+    user_intent = await get_intent(0, query)
+
+    if await format_validator(user_intent):
+        # 如果意图识别结果为空且已达到最大重试次数
+        return None
+
+    return user_intent
 
 if __name__ == '__main__':
     import asyncio

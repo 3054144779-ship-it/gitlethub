@@ -1,7 +1,9 @@
+from langgraph.graph.state import CompiledStateGraph
 from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 
 from client.llm_client import LLMClient
+from core.graph import GitletGraph
 from core.reranker import Reranker
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
@@ -39,6 +41,10 @@ def _init_agent(
         },
         tools=None  # TODO：后续添加工具
     ).create_agent()
+
+def _build_graph():
+    graph = GitletGraph()
+    return graph.build_graph()
 
 class Container(containers.DeclarativeContainer):
     """
@@ -130,5 +136,10 @@ class Container(containers.DeclarativeContainer):
         model_provider=config.agent.model_provider,
         api_key=config.agent.api_key,
         base_url=config.agent.base_url
+    )
+
+    # 创建流程图
+    flow_chart = providers.Singleton(
+        _build_graph
     )
 
