@@ -15,6 +15,7 @@ class Settings:
     MILVUS_URL = os.getenv("MILVUS_URL")
     LLM_MODEL = os.getenv("LLM_MODEL")
     LLM_MODEL_PROVIDER = os.getenv("LLM_MODEL_PROVIDER")
+    REDIS_KEY_SECRET = os.getenv("REDIS_KEY_SECRET")
 
 if __name__ == '__main__':
     settings = Settings()

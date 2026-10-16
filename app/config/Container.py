@@ -1,3 +1,5 @@
+import redis.asyncio as aioredis
+
 from langgraph.graph.state import CompiledStateGraph
 from pymilvus import MilvusClient
 from dependency_injector import containers, providers
@@ -142,5 +144,14 @@ class Container(containers.DeclarativeContainer):
     # 创建流程图
     flow_chart = providers.Singleton(
         _build_graph
+    )
+
+    # 创建redis实例
+    redis_client = providers.Singleton(
+        aioredis.Redis,
+        host=config.redis.host,
+        port=config.redis.port,
+        db=config.redis.db,
+        password=config.redis.password
     )
 

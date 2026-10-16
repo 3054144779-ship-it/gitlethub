@@ -12,6 +12,7 @@ import yaml
 from aiohttp.web_fileresponse import content_type
 from dependency_injector.wiring import inject, Provide
 from langchain_core.documents import Document
+from redis import Redis
 from tree_sitter import Node
 
 from jinja2 import Template
@@ -19,6 +20,7 @@ from config.Container import Container
 from core.code_parser import CodeParser
 from client.mq_consumer import start_consume_mq_message
 from core.document_classifier import DocumentClassifier
+from core.redis_key import path_to_redis_key
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
 from schema.domain import MilvusPO, RequestDTO
@@ -176,7 +178,7 @@ async def handle_message_markdown_pdf_word(
     else:
         raise FileNotFoundError("文件不存在")
 
-async def handle_message(body: str):
+async def handle_message(body: str, redis_client: Redis = Provide[Container.redis_client]):
     # 解析请求
     request = _message_parser(body)
     print("request:", request)
@@ -196,19 +198,24 @@ async def handle_message(body: str):
         else:
             raise ValueError("不支持的文件类型")
 
+        # 处理后的文件存入Redis防止重复处理，如果说文件的SHA值也就是路径相同就跳过，用于去重和追溯
+        key = path_to_redis_key(request_dto.file_path)
+        redis_client.set(key, request_dto.file_path)
+
     async def bounded_file_handler(req: RequestDTO, semaphore: Semaphore):
         async with semaphore:
             return await file_handler(req)
 
-
     tasks = []
     # 遍历提交记录，处理文件
     for commit in request.pr_info.commits:
-        # print("tracked_files:", commit)
-        # print(type(commit))
         for file in commit.tracked_files:
-            # TODO：Redis判断文件是否已处理
-            # print("处理文件:", file.file_path)
+            # Redis判断文件是否已处理
+            key = path_to_redis_key(file.file_path)
+            if redis_client.exists(key):
+                print(f"文件 {file.file_path} 已处理过，跳过")
+                continue
+
             req = RequestDTO.from_dict({
                 "user_id": request.user_id,
                 "repository_id": request.repository_id,
@@ -223,8 +230,7 @@ async def handle_message(body: str):
                 "pr_name": request.pr_info.pr_name,
             })
             tasks.append(bounded_file_handler(req, asyncio.Semaphore(10)))
-            # print("处理完成")
-            # TODO：处理后的文件存入Redis防止重复处理，如果说文件的SHA值也就是路径相同就跳过
+
     res = await asyncio.gather(*tasks, return_exceptions=True)
 
     # 遍历结果日志
