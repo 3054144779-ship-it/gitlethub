@@ -4,6 +4,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 
+from core.tools import read_file
 from client.llm_client import LLMClient
 from core.reranker import Reranker
 from repository.milvus_repo import MilvusRepo
@@ -40,7 +41,7 @@ def _init_agent(
             "api_key": api_key,
             "base_url": base_url,
         },
-        tools=None  # TODO：后续添加工具
+        tools=[read_file]
     ).create_agent()
 
 def _build_graph():
