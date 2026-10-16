@@ -38,5 +38,12 @@ class ReviewService(ABC):
         pass
 
     @abstractmethod
-    async def prompt(self, query: str, retrieval_rerank_result: dict, owner: int, repo: int):
+    async def prompt(
+            self,
+            query: str,
+            owner: int,
+            repo: int,
+            model: int,
+            retrieval_rerank_result: dict,
+    ):
         pass

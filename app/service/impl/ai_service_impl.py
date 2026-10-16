@@ -49,7 +49,7 @@ if __name__ == '__main__':
     ])
 
     prompt = """
-    执行操作：代码考古（开发者备注：有且只有这一个意图）
+    执行操作：代码解释（开发者备注：有且只有这一个意图）
     public void blacklist(String authorization) {
     String pureToken = stripBearer(authorization);
     if (StrUtil.isEmpty(pureToken)) {
@@ -67,7 +67,7 @@ if __name__ == '__main__':
         log.warn("登出解析 token 失败", e);
     }
 }
-    这段代码所在的在源代码做了什么更改
+    这段代码是什么意思，有啥问题吗？改了会影响啥？
     """
 
     chat = ChatServiceImpl()

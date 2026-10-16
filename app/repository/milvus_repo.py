@@ -116,7 +116,8 @@ class MilvusRepo:
             sparse_vector: Dict[int, float] | None = None,
             top_k: int = 10,
             ranker_k: int = 60,
-            output_fields: List[str] | None = None
+            output_fields: List[str] | None = None,
+            filter_expr: str | None = None
     ) -> List[List[Dict]]:
         """
         检索, 过滤设置为当前用户当前仓库
@@ -129,9 +130,14 @@ class MilvusRepo:
         :param top_k: 返回结果数量
         :param ranker_k: RRF 排序参数
         :param output_fields: 输出字段
+        :param filter_expr: 额外的过滤表达式
         :return: 检索结果
         """
         output_fields = output_fields or ["text"]
+
+        base_filter = f"user_id == {user_id} and repository_id == {repo_id}"
+        if filter_expr:
+            base_filter = f"({base_filter}) and ({filter_expr})"
 
         if dense_vector is not None and sparse_vector is not None:
             """混合检索：稠密向量 + 稀疏向量"""
@@ -139,14 +145,14 @@ class MilvusRepo:
                 data=[dense_vector],
                 anns_field=dense_anns_field,
                 param={"metric_type": "L2"},
-                expr=f"user_id == {user_id} and repository_id == {repo_id}",
+                expr=base_filter,
                 limit=top_k,
             )
             sparse_req = AnnSearchRequest(
                 data=[sparse_vector],
                 anns_field=sparse_anns_field,
                 param={"metric_type": "IP"},
-                expr=f"user_id == {user_id} and repository_id == {repo_id}",
+                expr=base_filter,
                 limit=top_k,
             )
             return self.milvus_client.hybrid_search(

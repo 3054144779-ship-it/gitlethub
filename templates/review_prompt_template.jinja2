@@ -3,7 +3,6 @@
 {%- set mode = review_model | default(1, true) -%}
 {%- set diff = diff_code | default('', true) | trim -%}
 {%- set files = review_files | default([], true) -%}
-{%- set commit = commit_context | default({}, true) -%}
 
 你是一名资深代码审查专家。你的任务是根据提供的资料和审查模式，对代码变更进行专业审查。
 
@@ -75,16 +74,6 @@
 {% for f in files %}
 - `{{ f }}`
 {% endfor %}
-{% endif %}
-
-{% if commit %}
-## 提交上下文
-
-- 提交 SHA：`{{ commit.sha[:7] }}`
-- 提交信息：{{ commit.message }}
-- 提交人：{{ commit.author }}
-- 分支：{{ commit.branch }}
-{% if commit.pr_name %}- 合并请求：{{ commit.pr_name }}{% endif %}
 {% endif %}
 
 {% if diff %}

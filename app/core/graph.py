@@ -1,105 +1,119 @@
+import operator
+from typing import Annotated, List
+
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
-from schema.nodes.child_nodes import review, search, explain, archaeology
-from schema.nodes.node import NodeState, rewrite_query, rag_search, rerank_search, generate_prompt, generate_answer, \
-    intent_clarify, intent_node
+from schema.nodes.child_nodes import explain, archaeology
+from schema.nodes.node import (
+    NodeState, rewrite_query, rag_search, rerank_search, generate_prompt,
+    generate_answer, intent_clarify, intent_node, review_debug,
+    review_generate, generate_explain_prompt,
+)
+
+def build_explain_subgraph():
+    """
+    explain 子图：RAG 管道 + 内部 review 分支
+    explain -> rewrite_query -> rag_search -> rerank_search ──┐
+            -> review_debug -> review_generate ───────────────┴-> generate_explain_prompt -> generate_answer
+    """
+    builder = StateGraph(NodeState)  # type: ignore
+    builder.add_node("explain", explain)  # type: ignore
+    builder.add_node("rewrite_query", rewrite_query)  # type: ignore
+    builder.add_node("rag_search", rag_search)  # type: ignore
+    builder.add_node("rerank_search", rerank_search)  # type: ignore
+    # defer = True 表示生成节点的执行将被推迟，直到所有依赖的节点都完成
+    builder.add_node("generate_explain_prompt", generate_explain_prompt, defer=True)  # type: ignore
+    builder.add_node("generate_answer", generate_answer)  # type: ignore
+    builder.add_node("review_debug", review_debug)  # type: ignore
+    builder.add_node("review_generate", review_generate)  # type: ignore
+
+    builder.add_edge(START, "explain")
+    builder.add_edge("explain", "rewrite_query")
+    builder.add_edge("explain", "review_debug")
+    builder.add_edge("review_debug", "review_generate")
+    builder.add_edge("review_generate", "generate_explain_prompt")
+    builder.add_edge("rewrite_query", "rag_search")
+    builder.add_edge("rag_search", "rerank_search")
+    builder.add_edge("rerank_search", "generate_explain_prompt")
+    builder.add_edge("generate_explain_prompt", "generate_answer")
+    builder.add_edge("generate_answer", END)
+    return builder.compile()
+
+
+def build_archaeology_subgraph():
+    """
+    archaeology 子图：复用同一套管道节点函数
+    archaeology -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer
+    """
+    builder = StateGraph(NodeState)  # type: ignore
+    builder.add_node("archaeology", archaeology)  # type: ignore
+    builder.add_node("rewrite_query", rewrite_query)  # type: ignore
+    builder.add_node("rag_search", rag_search)  # type: ignore
+    builder.add_node("rerank_search", rerank_search)  # type: ignore
+    builder.add_node("generate_prompt", generate_prompt)  # type: ignore
+    builder.add_node("generate_answer", generate_answer)  # type: ignore
+
+    builder.add_edge(START, "archaeology")
+    builder.add_edge("archaeology", "rewrite_query")
+    builder.add_edge("rewrite_query", "rag_search")
+    builder.add_edge("rag_search", "rerank_search")
+    builder.add_edge("rerank_search", "generate_prompt")
+    builder.add_edge("generate_prompt", "generate_answer")
+    builder.add_edge("generate_answer", END)
+    return builder.compile()
 
 
 class GitletGraph:
     """
-    Gitlet流程图
+    Gitlet主图：只做意图路由和子图分发
+    START -> intent_node -> fan_out -> [explain_subgraph / archaeology_subgraph] -> END
+                           -> intent_clarify -> END
     """
+
     def __init__(self):
-        self.builder = StateGraph(state_schema=NodeState) # type: ignore
-
-    def _add_nodes(self):
-        """
-        添加节点
-        """
-        # 添加节点
-        # 分支节点
-        self.builder.add_node("review", review) # type: ignore
-        self.builder.add_node("search", search) # type: ignore
-        self.builder.add_node("explain", explain) # type: ignore
-        self.builder.add_node("archaeology", archaeology) # type: ignore
-        # 流程节点
-        self.builder.add_node("intent_node", intent_node) # type: ignore
-        self.builder.add_node("rewrite_query", rewrite_query) # type: ignore
-        self.builder.add_node("rag_search", rag_search) # type: ignore
-        self.builder.add_node("rerank_search", rerank_search) # type: ignore
-        self.builder.add_node("generate_prompt", generate_prompt) # type: ignore
-        self.builder.add_node("generate_answer", generate_answer) # type: ignore
-        self.builder.add_node("intent_clarify", intent_clarify) # type: ignore
-
-    def _add_archaeology_edges(self):
-        """
-        添加考古节点边
-        intent_node -> archaeology -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer
-        """
-        self.builder.add_edge("archaeology", "rewrite_query")
-        self.builder.add_edge("rewrite_query", "rag_search")
-        self.builder.add_edge("rag_search", "rerank_search")
-        self.builder.add_edge("rerank_search", "generate_prompt")
-        self.builder.add_edge("generate_prompt", "generate_answer")
-        self.builder.add_edge("generate_answer", END)
-
-    def _add_search_edges(self):
-        """
-        添加搜索节点边
-        intent_node -> search -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer
-        """
-        pass
-
-    def _add_review_edges(self):
-        """
-        添加审查节点边
-        intent_node -> review -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer
-        """
-        pass
-
-    def _add_explain_edges(self):
-        """
-        添加解释节点边
-        intent_node -> explain -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer
-        """
-        pass
+        self.builder = StateGraph(state_schema=NodeState)  # type: ignore
 
     def build_graph(self) -> CompiledStateGraph:
-        """
-        构建节点
-        :return: 流程图
-                                            -> intent_clarify -> END
-        query(START)  -> intent_node -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer -> END
-                                            -> ...
-        """
-        # 创建状态图
-        # 创建节点
-        self._add_nodes()
-        # 构建子图
-        self._add_archaeology_edges()
-        self._add_search_edges()
-        self._add_review_edges()
-        self._add_explain_edges()
+        # 主图节点
+        self.builder.add_node("intent_node", intent_node)  # type: ignore
+        self.builder.add_node("intent_clarify", intent_clarify)  # type: ignore
+        # 子图节点
+        self.builder.add_node("explain_subgraph", build_explain_subgraph())  # type: ignore
+        self.builder.add_node("archaeology_subgraph", build_archaeology_subgraph())  # type: ignore
 
         self.builder.add_edge(START, "intent_node")
         self.builder.add_edge("intent_clarify", END)
 
         # 条件路由
         def fan_out(state: NodeState):
-            # 获取意图
             intents = state['intents'].intent
 
             if not intents or len(intents) <= 0:
-                # 如果说未识别到意图，则进行意图澄清
-                return [Send("intent_clarify", state['intents'].reason)]
+                # 未识别到意图，进行意图澄清
+                return [Send("intent_clarify", {"query": state["query"], "intents": state["intents"]})]
 
-            # 如果说识别到意图，则进行意图处理，可以多个意图并行
-            return [Send(intent, state) for intent in intents]
+            # explain 内部已包含 review，过滤掉避免重复执行
+            if "explain" in intents:
+                intents = [i for i in intents if i != "review"]
 
-        self.builder.add_conditional_edges("intent_node", fan_out)
+            # 每个子图收到独立的 state 副本，intent 写在 payload 里，天然隔离
+            return [
+                Send(f"{intent}_subgraph", {
+                    "query": state["query"],
+                    "owner": state["owner"],
+                    "repo": state["repo"],
+                    "intent": intent,
+                })
+                for intent in intents
+            ]
 
-        # 编译图，生成流程图
+        self.builder.add_conditional_edges(
+            "intent_node",
+            fan_out,
+            ["explain_subgraph", "archaeology_subgraph", "intent_clarify"],
+        )
+
         return self.builder.compile()

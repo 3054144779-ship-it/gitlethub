@@ -42,6 +42,7 @@ async def explain(state: NodeState):
     """
     return {
         "intent": "explain",
+        "review_model": 1
     }
 
 
