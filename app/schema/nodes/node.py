@@ -37,6 +37,13 @@ class NodeState(TypedDict):
     prompt: NotRequired[str]
     answer: NotRequired[str]
 
+    # review流程独有
+    review_model: NotRequired[int]       # 审查模式：1=debug, 2=基础审查, 3=深度审查
+    diff_code: NotRequired[str]          # 差异代码（基础审查模式使用）
+    review_answer: NotRequired[str]      # 审查结果
+    review_files: NotRequired[List[str]] # 待审查文件列表
+    commit_context: NotRequired[dict]    # 提交上下文（sha, message, author, branch, pr_name）
+
 
 @inject
 async def rewrite_query(state: NodeState, rewrite_llm: BaseChatModel = Provide[Container.rewrite_llm]):

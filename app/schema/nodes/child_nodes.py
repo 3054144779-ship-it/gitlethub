@@ -4,24 +4,6 @@
 from typing import List
 from schema.nodes.node import NodeState
 
-class ArchaeologyState(NodeState):
-    """
-    考古节点状态
-    """
-
-    query: str                 # 查询内容
-    owner: int                 # owner
-    repo: int                  # repo
-    rewritten_query: str       # 重写后的查询内容
-    code_docs: List[dict]      # code文档
-    commit_docs: List[dict]    # commit文档
-    reranked_docs: dict        # rerank后的文档
-    prompt: str                # prompt
-    answer: str                # 答案
-    # is_valid: bool             # 是否有效
-    # retry_count: int           # 重试次数
-
-
 async def archaeology(state: NodeState):
     """
     考古节点

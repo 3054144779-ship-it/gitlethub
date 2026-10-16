@@ -156,3 +156,16 @@ class Container(containers.DeclarativeContainer):
         password=config.redis.password
     )
 
+    # 创建代码审查功能单例模板
+    code_review_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="review_prompt_template.jinja2"
+    )
+
+    # 创建代码解释功能单例模板
+    code_explain_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="explain_prompt_template.jinja2"
+    )

@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 
 from config.Container import Container
 from core.reranker import Reranker
-from service.func_service import ArchaeologyService
+from service.func_service import ArchaeologyService, ExplainService, ReviewService
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
 from jinja2 import Environment, Template
@@ -149,3 +149,283 @@ class ArchaeologyServiceImpl(ArchaeologyService):
 
         return prompt_result
 
+class ExplainServiceImpl(ExplainService):
+    """
+    解释代码服务实现
+    """
+
+    def __init__(self):
+        pass
+
+    async def retrieval(
+            self,
+            query: str,
+            owner: int,
+            repo: int,
+            milvus_repo: MilvusRepo = Provide[Container.milvus_repo],
+            embedding_model: EmbeddingModel = Provide[Container.embedding_model],
+    ) -> dict:
+        """
+        双路召回，RAG检索
+        :return: 考古结果
+
+        示例：
+        用户：pay 方法为什么加了判空？
+        Milvus 双路召回
+            content_type=code："pay 方法当前代码"
+            content_type=commit："修复并发场景 NPE 的提交记录"
+        """
+        # 向量化，获取向量结果
+        vector = embedding_model.to_vector([Document(page_content=query)])
+        dense_vecs, sparse_vecs = vector[0]
+        result = milvus_repo.retrieval(
+            "dense_vector",
+            "sparse_vector",
+            user_id=owner,
+            repo_id=repo,
+            dense_vector=dense_vecs,
+            sparse_vector=sparse_vecs,
+            top_k=50,
+            output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
+        )
+
+        # 召回结果处理
+        recall_docs = []
+        for hits in result:
+            for hit in hits:
+                recall_docs.append({
+                    "text": hit.get("text"),
+                    "file_path": hit.get("file_path"),
+                    "commit_sha": hit.get("commit_sha"),
+                    "metadata": hit.get("metadata"),
+                    "content_type": hit.get("content_type")
+                })
+
+        code_docs = [doc for doc in recall_docs if doc["content_type"] == "code"]
+        commit_docs = [doc for doc in recall_docs if doc["content_type"] == "commit_message"]
+
+        return {
+            "code_documents": code_docs,
+            "commit_documents": commit_docs,
+            "total_count": len(recall_docs)
+        }
+
+    async def rerank(
+            self,
+            query: str,
+            code_docs: List[dict],
+            commit_docs: List[dict],
+            top_k: int = 5,
+            reranker: Reranker = Provide[Container.reranker]
+    ):
+        """
+        rerank
+        :param commit_docs: 提交信息
+        :param code_docs: 代码文档
+        :param top_k: 重排序结果数量
+        :param reranker: 重排序器
+        :param query: 查询内容
+        :return: rerank结果
+        """
+        all_docs = code_docs + commit_docs
+        total_count = len(all_docs)
+
+        if total_count == 0:
+            # 没有召回结果直接返回
+            return {
+                "code_documents": [],
+                "commit_documents": [],
+                "total_count": 0
+            }
+
+        # 重排序结果
+        rerank_result = reranker.rerank(query, all_docs, text_field="text", top_k=min(total_count, top_k))
+        # 按照分数递减排序
+        rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)
+
+        # 重新组装结果
+        code_docs = [doc for doc in rerank_result if doc["content_type"] == "code"]
+        commit_docs = [doc for doc in rerank_result if doc["content_type"] == "commit_message"]
+
+        return {
+            "code_documents": code_docs,
+            "commit_documents": commit_docs,
+            "total_count": len(rerank_result)
+        }
+
+    async def prompt(
+            self,
+            query: str,
+            retrieval_rerank_result: dict,
+            owner: int,
+            repo: int,
+            review_answer: str,
+            code_explain_template: Template = Provide[Container.code_explain_template],
+    ):
+        """
+        prompt
+        :param review_answer: 代码审核结果
+        :param code_explain_template: 代码解释模板
+        :param query: 查询内容
+        :param retrieval_rerank_result: rerank结果
+        :param owner: owner
+        :param repo: repo
+        :return: prompt结果
+        """
+        code_documents = retrieval_rerank_result.get("code_documents", [])
+        commit_documents = retrieval_rerank_result.get("commit_documents", [])
+
+        embedded_to_template = {
+            "query": query,
+            "code_documents": code_documents,
+            "commit_documents": commit_documents,
+            "owner": owner,
+            "repo": repo,
+            "review_answer": review_answer
+        }
+
+        prompt_result = code_explain_template.render(embedded_to_template)
+        logging.info(f"prompt: {prompt_result}")
+
+        return prompt_result
+
+class ReviewServiceImpl(ReviewService):
+    """
+    代码审核服务实现
+    三种模式：
+    1.debug模式：对性能，安全性等地方进行审查（仅在代码解释模式下使用）
+    2.基础审查模式：只检查两段代码的diff，并给出当前代码的修改建议
+    3.深度审查模式：分析影响范围，历史教训匹配，仓库规范一致性检查
+    """
+
+    def __init__(self):
+        pass
+
+    async def retrieval(
+            self,
+            query: str,
+            owner: int,
+            repo: int,
+            milvus_repo: MilvusRepo = Provide[Container.milvus_repo],
+            embedding_model: EmbeddingModel = Provide[Container.embedding_model],
+    ) -> dict:
+        """
+        双路召回，RAG检索
+        :return: 考古结果
+
+        示例：
+        用户：pay 方法为什么加了判空？
+        Milvus 双路召回
+            content_type=code："pay 方法当前代码"
+            content_type=commit："修复并发场景 NPE 的提交记录"
+        """
+        # 向量化，获取向量结果
+        vector = embedding_model.to_vector([Document(page_content=query)])
+        dense_vecs, sparse_vecs = vector[0]
+        result = milvus_repo.retrieval(
+            "dense_vector",
+            "sparse_vector",
+            user_id=owner,
+            repo_id=repo,
+            dense_vector=dense_vecs,
+            sparse_vector=sparse_vecs,
+            top_k=50,
+            output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
+        )
+
+        # 召回结果处理
+        recall_docs = []
+        for hits in result:
+            for hit in hits:
+                recall_docs.append({
+                    "text": hit.get("text"),
+                    "file_path": hit.get("file_path"),
+                    "commit_sha": hit.get("commit_sha"),
+                    "metadata": hit.get("metadata"),
+                    "content_type": hit.get("content_type")
+                })
+
+        code_docs = [doc for doc in recall_docs if doc["content_type"] == "code"]
+        commit_docs = [doc for doc in recall_docs if doc["content_type"] == "commit_message"]
+
+        return {
+            "code_documents": code_docs,
+            "commit_documents": commit_docs,
+            "total_count": len(recall_docs)
+        }
+
+    async def rerank(
+            self,
+            query: str,
+            code_docs: List[dict],
+            commit_docs: List[dict],
+            top_k: int = 5,
+            reranker: Reranker = Provide[Container.reranker]
+    ):
+        """
+        rerank
+        :param commit_docs: 提交信息
+        :param code_docs: 代码文档
+        :param top_k: 重排序结果数量
+        :param reranker: 重排序器
+        :param query: 查询内容
+        :return: rerank结果
+        """
+        all_docs = code_docs + commit_docs
+        total_count = len(all_docs)
+
+        if total_count == 0:
+            # 没有召回结果直接返回
+            return {
+                "code_documents": [],
+                "commit_documents": [],
+                "total_count": 0
+            }
+
+        # 重排序结果
+        rerank_result = reranker.rerank(query, all_docs, text_field="text", top_k=min(total_count, top_k))
+        # 按照分数递减排序
+        rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)
+
+        # 重新组装结果
+        code_docs = [doc for doc in rerank_result if doc["content_type"] == "code"]
+        commit_docs = [doc for doc in rerank_result if doc["content_type"] == "commit_message"]
+
+        return {
+            "code_documents": code_docs,
+            "commit_documents": commit_docs,
+            "total_count": len(rerank_result)
+        }
+
+    async def prompt(
+            self,
+            query: str,
+            retrieval_rerank_result: dict,
+            owner: int,
+            repo: int,
+            code_review_template: Template = Provide[Container.code_review_template],
+    ):
+        """
+        prompt
+        :param code_review_template: 代码审查模板
+        :param query: 查询内容
+        :param retrieval_rerank_result: rerank结果
+        :param owner: owner
+        :param repo: repo
+        :return: prompt结果
+        """
+        code_documents = retrieval_rerank_result.get("code_documents", [])
+        commit_documents = retrieval_rerank_result.get("commit_documents", [])
+
+        embedded_to_template = {
+            "query": query,
+            "code_documents": code_documents,
+            "commit_documents": commit_documents,
+            "owner": owner,
+            "repo": repo
+        }
+
+        prompt_result = code_review_template.render(embedded_to_template)
+        logging.info(f"prompt: {prompt_result}")
+
+        return prompt_result
