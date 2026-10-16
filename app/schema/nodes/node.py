@@ -73,7 +73,9 @@ async def rewrite_query(state: NodeState, rewrite_llm: BaseChatModel = Provide[C
     rewrite = await rewrite_llm.ainvoke([
         SystemMessage(content=REWRITE_SYSTEM_MESSAGE),
         HumanMessage(content=state["query"])
-    ])
+    ],
+        extra_body={"enable_thinking": False}
+    )
 
     return {
         "rewritten_query": rewrite.content,
@@ -173,4 +175,6 @@ async def intent_clarify(message: str):
     :param message: ai回复
     :return: 意图
     """
-    return message
+    return {
+        "answer": message
+    }

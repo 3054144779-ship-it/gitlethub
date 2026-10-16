@@ -138,7 +138,7 @@ class MilvusRepo:
             dense_req = AnnSearchRequest(
                 data=[dense_vector],
                 anns_field=dense_anns_field,
-                param={"metric_type": "HNSW"},
+                param={"metric_type": "L2"},
                 expr=f"user_id == {user_id} and repository_id == {repo_id}",
                 limit=top_k,
             )

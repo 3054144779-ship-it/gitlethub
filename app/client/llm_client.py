@@ -56,7 +56,8 @@ class LLMClient:
             model=self.llm,
             tools=self.tools,
             system_prompt=system_prompt,
-            checkpointer=checkpointer,
-            middleware=middleware,
+            # TODO: 后续添加 checkpointer 和 middleware 参数
+            # checkpointer=checkpointer,
+            # middleware=middleware,
             **(config or {})
         )

@@ -3,7 +3,6 @@ from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 
 from client.llm_client import LLMClient
-from core.graph import GitletGraph
 from core.reranker import Reranker
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
@@ -43,6 +42,8 @@ def _init_agent(
     ).create_agent()
 
 def _build_graph():
+    # 执行的时候导入GitletGraph类，防止循环导入
+    from core.graph import GitletGraph
     graph = GitletGraph()
     return graph.build_graph()
 

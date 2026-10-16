@@ -23,7 +23,7 @@ class IntentClarifier:
                  llm_client: BaseChatModel=Provide[Container.intent_clarifier_llm_client],
                  intent_clarifier_template: Template=Provide[Container.intent_clarifier_template]):
         # 用于意图识别的小模型
-        self.llm_client = llm_client
+        self.llm_client = llm_client.bind(extra_body={"enable_thinking": False})
         # 意图识别模板
         self.intent_clarifier_template = intent_clarifier_template
         # json解析器
@@ -53,7 +53,8 @@ class IntentClarifier:
         }
 
         """
-        return await self.clarify_intent_chain.ainvoke({"query": query})
+        result = await self.clarify_intent_chain.ainvoke({"query": query})
+        return IntentResult.model_validate(result)
 
 async def intent_recognition(query) -> IntentResult | None:
     """
@@ -68,9 +69,11 @@ async def intent_recognition(query) -> IntentResult | None:
     # 意图识别
     async def get_intent(count: int, user_query: str) -> IntentResult | None:
         intent_result = await clarifier.clarify_intent(user_query)
-        if await format_validator(intent_result) or count >= 3:
-            # base case
+        if await format_validator(intent_result):
             print("意图识别结果: ", intent_result)
+            return intent_result
+        if count >= 2:
+            print("意图识别重试次数已达上限，返回最后一次结果: ", intent_result)
             return intent_result
         return await get_intent(count + 1, user_query)
 
@@ -80,22 +83,18 @@ async def intent_recognition(query) -> IntentResult | None:
         :param intent_result: 意图
         :return: 验证结果
         """
-        if (intent_result is not None
-                and intent_result.need_clarify is not None
-                and intent_result.intent is not None):
-            # 如果意图结果不为空且不需要 clarification 且意图长度大于0 则校验成功
-            if len(intent_result.intent) > 0 or intent_result.need_clarify is False:
-                return True
-            else:
-                return False
-        return False
+        if intent_result is None:
+            return False
+        if intent_result.need_clarify is None or intent_result.intent is None:
+            return False
+        return True
 
     # 获取意图
     user_intent = await get_intent(0, query)
 
-    if await format_validator(user_intent):
-        # 如果意图识别结果为空且已达到最大重试次数
-        return None
+    if not await format_validator(user_intent):
+        # 如果意图识别结果无效，则返回一个默认的意图识别结果，提示用户重新描述
+        return IntentResult(intent=[], confidence=0.0, reason="未能识别您的意图，请再描述一下？", need_clarify=True)
 
     return user_intent
 

@@ -6,7 +6,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-@dataclass
 class Response(BaseModel):
     code: int
     message: str
