@@ -252,6 +252,20 @@ if __name__ == '__main__':
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
 
+    async def test5():
+        prompt = """
+        你好
+        """
+
+        chat = ChatServiceImpl()
+        print("开始执行")
+        start_time = time()
+        chat_chat = await chat.chat(ChatDTO(query=prompt, owner=10001, repo=20005, context=None))
+        print(chat_chat)
+        print(f"耗时: {time() - start_time}秒")
+        print("执行结束")
+
+
     # 代码解释
     asyncio.run(test1())
     # 代码审查
@@ -260,5 +274,7 @@ if __name__ == '__main__':
     asyncio.run(test3())
     # 代码考古
     asyncio.run(test4())
+    # 澄清器
+    asyncio.run(test5())
 
 
