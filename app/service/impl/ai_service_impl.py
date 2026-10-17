@@ -3,8 +3,6 @@
 
 """
 import asyncio
-import json
-from typing import List
 
 from dependency_injector.wiring import Provide, inject
 from langgraph.graph.state import CompiledStateGraph
@@ -205,5 +203,23 @@ if __name__ == '__main__':
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
 
-    asyncio.run(text2())
+    async def text3():
+        prompt = """
+        我记得有个初始化密钥的文件，那段代码是哪个代码来着？能发给我看看吗？
+        """
+        dto = ChatDTO(
+            query=prompt,
+            owner=10001,
+            repo=20005,
+            context=None
+        )
+        chat = ChatServiceImpl()
+        print("开始执行")
+        start_time = time()
+        chat_chat = await chat.chat(dto)
+        print(chat_chat)
+        print(f"耗时: {time() - start_time}秒")
+        print("执行结束")
+
+    asyncio.run(text3())
 

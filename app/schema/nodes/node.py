@@ -14,13 +14,14 @@ from schema.domain import IntentResult, Context
 from service.impl.archaeology_service_impl import ArchaeologyServiceImpl
 from service.impl.explain_service_impl import ExplainServiceImpl
 from service.impl.review_serivce_impl import ReviewServiceImpl
+from service.impl.semantic_search_service_impl import SearchServiceImpl
 
 # 模块级：服务注册表
 service_registry = {
     "explain": ExplainServiceImpl(),
     "archaeology": ArchaeologyServiceImpl(),
     "review": ReviewServiceImpl(),
-    "search": None,
+    "search": SearchServiceImpl(),
 }
 
 def _last_value(a, b):

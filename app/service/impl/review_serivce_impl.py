@@ -80,7 +80,8 @@ class ReviewServiceImpl(ReviewService):
         )
 
         dense_vecs, sparse_vecs = vector[0]
-        result = milvus_repo.retrieval(
+        result = await asyncio.to_thread(
+            milvus_repo.retrieval,
             "dense_vector",
             "sparse_vector",
             user_id=owner,
@@ -486,7 +487,9 @@ class ReviewServiceImpl(ReviewService):
             }
 
         # 重排序结果
-        rerank_result = reranker.rerank(query, all_docs, text_field="text", top_k=min(total_count, top_k))
+        rerank_result = await asyncio.to_thread(
+            reranker.rerank, query, all_docs, text_field="text", top_k=min(total_count, top_k)
+        )
         # 按照分数递减排序
         rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)
 
@@ -525,8 +528,8 @@ class ReviewServiceImpl(ReviewService):
         pr_name = context.get("pr_name", None)
         diff_datas = context.get("diff_data", [])
 
-        influence_docs = retrieval_rerank_result.get("influence_docs", []),
-        history_docs = retrieval_rerank_result.get("history_docs", []),
+        influence_docs = retrieval_rerank_result.get("influence_docs", [])
+        history_docs = retrieval_rerank_result.get("history_docs", [])
         repository_consistency_docs = retrieval_rerank_result.get("repository_consistency_docs", [])
 
         embedded_to_template = {

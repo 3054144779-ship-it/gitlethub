@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
-from schema.nodes.child_nodes import explain, archaeology, review
+from schema.nodes.child_nodes import explain, archaeology, review, search
 from schema.nodes.node import (
     NodeState, rewrite_query, rag_search, rerank_search, generate_prompt,
     generate_answer, intent_clarify, intent_node, review_debug,
@@ -113,6 +113,30 @@ def build_review_subgraph():
 
     return builder.compile()
 
+def build_search_subgraph():
+    """
+    search 子图：复用同一套管道节点函数
+    search -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer
+    """
+    builder = StateGraph(NodeState)
+
+    builder.add_node("search", search)
+    builder.add_node("rewrite_query", rewrite_query)
+    builder.add_node("rag_search", rag_search)
+    builder.add_node("rerank_search", rerank_search)
+    builder.add_node("generate_prompt", generate_prompt)
+    builder.add_node("generate_answer", generate_answer)
+
+    builder.add_edge(START, "search")
+    builder.add_edge("search", "rewrite_query")
+    builder.add_edge("rewrite_query", "rag_search")
+    builder.add_edge("rag_search", "rerank_search")
+    builder.add_edge("rerank_search", "generate_prompt")
+    builder.add_edge("generate_prompt", "generate_answer")
+    builder.add_edge("generate_answer", END)
+
+    return builder.compile()
+
 class GitletGraph:
     """
     Gitlet主图：只做意图路由和子图分发
@@ -131,6 +155,7 @@ class GitletGraph:
         self.builder.add_node("explain_subgraph", build_explain_subgraph())
         self.builder.add_node("archaeology_subgraph", build_archaeology_subgraph())
         self.builder.add_node("review_subgraph", build_review_subgraph())
+        self.builder.add_node("search_subgraph", build_search_subgraph())
 
         self.builder.add_edge(START, "intent_node")
         self.builder.add_edge("intent_clarify", END)
@@ -162,7 +187,7 @@ class GitletGraph:
         self.builder.add_conditional_edges(
             "intent_node",
             fan_out,
-            ["explain_subgraph", "archaeology_subgraph", "review_subgraph", "intent_clarify"],
+            ["explain_subgraph", "archaeology_subgraph", "review_subgraph", "search_subgraph", "intent_clarify"],
         )
 
         return self.builder.compile()

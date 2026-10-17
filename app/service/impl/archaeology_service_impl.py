@@ -44,9 +44,12 @@ class ArchaeologyServiceImpl(ArchaeologyService):
             content_type=commit："修复并发场景 NPE 的提交记录"
         """
         # 向量化，获取向量结果
-        vector = embedding_model.to_vector([Document(page_content=query)])
+        vector = await asyncio.to_thread(
+            embedding_model.to_vector, [Document(page_content=query)]
+        )
         dense_vecs, sparse_vecs = vector[0]
-        result = milvus_repo.retrieval(
+        result = await asyncio.to_thread(
+            milvus_repo.retrieval,
             "dense_vector",
             "sparse_vector",
             user_id=owner,
@@ -101,13 +104,15 @@ class ArchaeologyServiceImpl(ArchaeologyService):
         if total_count == 0:
             # 没有召回结果直接返回
             return {
-                "code_documents": [],
-                "commit_documents": [],
+                "code_docs": [],
+                "commit_docs": [],
                 "total_count": 0
             }
 
         # 重排序结果
-        rerank_result = reranker.rerank(query, all_docs, text_field="text", top_k=min(total_count, top_k))
+        rerank_result = await asyncio.to_thread(
+            reranker.rerank, query, all_docs, text_field="text", top_k=min(total_count, top_k)
+        )
         # 按照分数递减排序
         rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)
 
@@ -116,8 +121,8 @@ class ArchaeologyServiceImpl(ArchaeologyService):
         commit_docs = [doc for doc in rerank_result if doc["content_type"] == "commit_message"]
 
         return {
-            "code_documents": code_docs,
-            "commit_documents": commit_docs,
+            "code_docs": code_docs,
+            "commit_docs": commit_docs,
             "total_count": len(rerank_result)
         }
 

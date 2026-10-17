@@ -9,8 +9,7 @@ from client.llm_client import LLMClient
 from core.reranker import Reranker
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-from jinja2 import Template
+from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
 from langchain.chat_models import init_chat_model
 
 def _create_milvus_client(host: str, port: int) -> MilvusClient:
@@ -168,4 +167,10 @@ class Container(containers.DeclarativeContainer):
         _load_template,
         jinja_env=jinja_env,
         template_name="explain_prompt_template.jinja2"
+    )
+
+    code_search_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="semantic_search_prompt_template.jinja2",
     )

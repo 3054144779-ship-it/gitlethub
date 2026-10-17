@@ -214,7 +214,9 @@ class ExplainServiceImpl(ExplainService):
             }
 
         # 重排序结果
-        rerank_result = reranker.rerank(query, all_docs, text_field="text", top_k=min(total_count, top_k))
+        rerank_result = await asyncio.to_thread(
+            reranker.rerank, query, all_docs, text_field="text", top_k=min(total_count, top_k)
+        )
         # 按照分数递减排序
         rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)
 
@@ -223,8 +225,8 @@ class ExplainServiceImpl(ExplainService):
         commit_docs = [doc for doc in rerank_result if doc["content_type"] == "commit_message"]
 
         return {
-            "code_documents": code_docs,
-            "commit_documents": commit_docs,
+            "code_docs": code_docs,
+            "commit_docs": commit_docs,
             "total_count": len(rerank_result)
         }
 
