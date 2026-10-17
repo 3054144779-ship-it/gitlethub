@@ -154,8 +154,8 @@ async def rerank_search(state: NodeState):
 
     result = await service.rerank(
         query=state["query"],
-        code_docs=state["code_docs"],
-        commit_docs=state["commit_docs"],
+        code_docs=state.get("code_docs", []),
+        commit_docs=state.get("commit_docs", []),
     )
 
     return {

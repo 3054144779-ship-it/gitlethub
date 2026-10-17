@@ -524,9 +524,9 @@ class ReviewServiceImpl(ReviewService):
         influence_docs / history_docs / repository_consistency_docs: List[doc]（rerank 后含 rerank_score）
         """
 
-        pr_id = context.get("pr_id", None)
-        pr_name = context.get("pr_name", None)
-        diff_datas = context.get("diff_data", [])
+        pr_id = context.get("pr_id", None) if context is not None else None
+        pr_name = context.get("pr_name", None) if context is not None else None
+        diff_datas = context.get("diff_data", []) if context is not None else []
 
         influence_docs = retrieval_rerank_result.get("influence_docs", [])
         history_docs = retrieval_rerank_result.get("history_docs", [])

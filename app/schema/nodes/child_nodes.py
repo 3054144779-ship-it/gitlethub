@@ -43,7 +43,7 @@ async def explain(state: NodeState):
     """
     return {
         "intent": "explain",
-        "review_model": 1
+        "review_model": 1 # review 服务 debug 模式
     }
 
 

@@ -180,8 +180,8 @@ class ExplainServiceImpl(ExplainService):
         commit_docs = [doc for doc in all_docs if doc["content_type"] == "commit_message"]
 
         return {
-            "code_documents": code_docs,
-            "commit_documents": commit_docs,
+            "code_docs": code_docs,
+            "commit_docs": commit_docs,
             "total_count": len(all_docs)
         }
 

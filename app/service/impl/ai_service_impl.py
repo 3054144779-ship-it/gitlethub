@@ -41,7 +41,7 @@ if __name__ == '__main__':
         "schema.nodes.node",
     ])
 
-    async def text1():
+    async def test1():
         prompt = """
         执行操作：代码解释（开发者备注：有且只有这一个意图）
         public void blacklist(String authorization) {
@@ -72,7 +72,7 @@ if __name__ == '__main__':
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
 
-    async def text2():
+    async def test2():
         from schema.domain import DiffData, Context
         prompt = """
         执行操作：代码审查（开发者备注：有且只有这一个意图）
@@ -203,7 +203,7 @@ if __name__ == '__main__':
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
 
-    async def text3():
+    async def test3():
         prompt = """
         我记得有个初始化密钥的文件，那段代码是哪个代码来着？能发给我看看吗？
         """
@@ -221,5 +221,44 @@ if __name__ == '__main__':
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
 
-    asyncio.run(text3())
+    async def test4():
+        prompt = """
+            执行操作：代码考古（开发者备注：有且只有这一个意图）
+            public void blacklist(String authorization) {
+            String pureToken = stripBearer(authorization);
+            if (StrUtil.isEmpty(pureToken)) {
+                return;
+            }
+            try {
+                JWT jwt = JWTUtil.parseToken(pureToken);
+                long expMillis = toEpochMillis(jwt.getPayload().getClaim("exp"));
+                long remaining = expMillis - System.currentTimeMillis();
+                if (remaining > 0) {
+                    stringRedisTemplate.opsForValue().set(
+                            blacklistKey(pureToken), "logout", remaining, TimeUnit.MILLISECONDS);
+                }
+            } catch (Exception e) {
+                log.warn("登出解析 token 失败", e);
+            }
+        }
+            这段代码是怎么变成现在这样的？
+            """
+
+        chat = ChatServiceImpl()
+        print("开始执行")
+        start_time = time()
+        chat_chat = await chat.chat(ChatDTO(query=prompt, owner=10001, repo=20005, context=None))
+        print(chat_chat)
+        print(f"耗时: {time() - start_time}秒")
+        print("执行结束")
+
+    # 代码解释
+    asyncio.run(test1())
+    # 代码审查
+    asyncio.run(test2())
+    # 语义化搜索
+    asyncio.run(test3())
+    # 代码考古
+    asyncio.run(test4())
+
 
