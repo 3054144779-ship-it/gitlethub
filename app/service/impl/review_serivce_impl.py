@@ -1,12 +1,10 @@
 import asyncio
 import logging
-from os.path import join
 from typing import List
 
 from dependency_injector.wiring import Provide
 from langchain_core.documents import Document
 
-from client import embeding
 from config.Container import Container
 from core.reranker import Reranker
 from schema.domain import Context, DiffData
@@ -14,6 +12,27 @@ from service.func_service import ArchaeologyService, ExplainService, ReviewServi
 from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
 from jinja2 import Environment, Template
+
+
+def _normalize_path(path: str) -> str:
+    """
+    将 Windows 反斜杠路径归一化为 POSIX 正斜杠路径。
+    Milvus 中存储的 file_path 使用 '/' 分隔；查询侧必须保持一致，
+    否则 rsplit("/")、层级匹配、filter like 前缀全部会失效。
+    """
+    return path.replace("\\", "/") if path else ""
+
+
+def _escape_milvus_str(value: str) -> str:
+    """
+    转义 Milvus filter 表达式字符串字面量中的特殊字符。
+    Milvus 使用类 SQL 语法，反斜杠和双引号必须转义，
+    否则会抛 'token recognition error' 解析异常。
+    """
+    if not value:
+        return ""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
 
 class ReviewServiceImpl(ReviewService):
     """
@@ -49,12 +68,13 @@ class ReviewServiceImpl(ReviewService):
         1.同模块代码检索：限定file_path
         2.同类型代码检索：直接RAG检索代码
         """
+        print("开始执行代码检索")
 
         # 用diff信息进行检索
         # 获取diff信息
         diff_content = str(context.get("diff_data", query)) if context else query
         # 向量化，获取向量结果
-        vector = asyncio.to_thread(
+        vector = await asyncio.to_thread(
             embedding_model.to_vector,
             [Document(page_content=diff_content)]
         )
@@ -83,11 +103,19 @@ class ReviewServiceImpl(ReviewService):
                     "content_type": hit.get("content_type")
                 })
 
+        # 归一化 diff_data 中的文件路径（Windows '\' → POSIX '/'），
+        # 一次修复，下游 _scope_influence / _history / _repository_consistency 全部生效
+        raw_diff_datas = context.get("diff_data", []) if context else []
+        diff_datas: List[DiffData] = [
+            {**d, "file_path": _normalize_path(d.get("file_path", ""))}
+            for d in raw_diff_datas
+        ]
+
         # ==============获取影响范围===========
         influence_docs = await self._scope_influence(
             owner=owner,
             repo=repo,
-            diff_datas=context.get("diff_data", []), # context 不会等于None
+            diff_datas=diff_datas,
             recall_docs=recall_docs,
             milvus_repo=milvus_repo,
             embedding_model=embedding_model
@@ -98,7 +126,7 @@ class ReviewServiceImpl(ReviewService):
             query=query,
             owner=owner,
             repo=repo,
-            diff_datas=context.get("diff_data", []),
+            diff_datas=diff_datas,
             milvus_repo=milvus_repo,
             embedding_model=embedding_model
         )
@@ -108,7 +136,7 @@ class ReviewServiceImpl(ReviewService):
             query=query,
             owner=owner,
             repo=repo,
-            diff_datas=context.get("diff_data", []),
+            diff_datas=diff_datas,
             milvus_repo=milvus_repo,
             embedding_model=embedding_model
         )
@@ -178,7 +206,7 @@ class ReviewServiceImpl(ReviewService):
         module_filter = None
         if module_prefixes:
             module_filter = " or ".join(
-                [f'file_path like "{prefix}%"' for prefix in module_prefixes]
+                [f'file_path like "{_escape_milvus_str(prefix)}%"' for prefix in module_prefixes]
             )
             module_filter = f"({module_filter}) and content_type == \"code\""
 
@@ -258,11 +286,10 @@ class ReviewServiceImpl(ReviewService):
         1.文件级历史：召回该文件的所有提交历史
         2.语义级历史：用变更描述做向量检索，召回相似的变更描述
         """
-        # 1.文件级历史
-        # 获取文件路径
+        # 1.文件级历史：完整路径用 == 精确匹配（比 like 更准，且避免 % _ 通配符干扰）
         def get_file_path(current_diff_data: DiffData):
-            current_file_path = current_diff_data.get("file_path", "")
-            return f'file_path like "{current_file_path}"'
+            current_file_path = _escape_milvus_str(current_diff_data.get("file_path", ""))
+            return f'file_path == "{current_file_path}"'
 
         file_path = [get_file_path(diff_data) for diff_data in diff_datas]
         file_filers = " or ".join([file_filter for file_filter in file_path])
@@ -356,7 +383,7 @@ class ReviewServiceImpl(ReviewService):
             parts = current_diff_data.get("file_path", "").rsplit("/", 1)
             if len(parts) >= 2:
                 module_prefix = "/".join(parts[:-1])
-                file_filter = f'file_path like "{module_prefix}%"'
+                file_filter = f'file_path like "{_escape_milvus_str(module_prefix)}%"'
                 return file_filter
             return None
 

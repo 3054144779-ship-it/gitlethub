@@ -75,6 +75,7 @@ def build_review_subgraph():
 
     builder = StateGraph(NodeState)
     builder.add_node("review", review)
+    builder.add_node("rewrite_query", rewrite_query)
     builder.add_node("rag_search", rag_search)
     builder.add_node("rerank_review_search", rerank_review_search)
     builder.add_node("generate_prompt", generate_prompt, defer=True)
@@ -91,8 +92,8 @@ def build_review_subgraph():
                 "rerank_review_search",
                 {
                     "query": state["query"],
-                    "intents": state["intents"],
-                    "docs": state[name],
+                    "intent": state["intent"],
+                    "docs_name": name,
                     name: state.get(name, [])
                 },
             )
@@ -115,7 +116,7 @@ def build_review_subgraph():
 class GitletGraph:
     """
     Gitlet主图：只做意图路由和子图分发
-    START -> intent_node -> fan_out -> [explain_subgraph / archaeology_subgraph] -> END
+    START -> intent_node -> fan_out -> [explain_subgraph / archaeology_subgraph / review_subgraph] -> END
                            -> intent_clarify -> END
     """
 
@@ -152,6 +153,7 @@ class GitletGraph:
                     "query": state["query"],
                     "owner": state["owner"],
                     "repo": state["repo"],
+                    "context": state["context"],
                     "intent": intent,
                 })
                 for intent in intents

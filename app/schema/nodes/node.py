@@ -1,6 +1,6 @@
 import operator
 from dataclasses import dataclass
-from typing import List, TypedDict, NotRequired, Annotated
+from typing import List, TypedDict, NotRequired, Annotated, Dict, Any
 
 from dependency_injector.wiring import Provide, inject
 from langchain_core.language_models import BaseChatModel
@@ -49,7 +49,7 @@ class NodeState(TypedDict):
     answers: NotRequired[Annotated[List[dict], operator.add]]  # 各子图结果聚合，结果追加
 
     # review流程独有
-    review_model: NotRequired[int]       # 审查模式：1=debug, 2=基础审查, 3=深度审查
+    review_model: NotRequired[int]       # 审查模式：1=debug（快速审查）, 2=深度审查
     # diff_code: NotRequired[str]          # 差异代码（基础审查模式使用）
     # review_answer: NotRequired[str]      # 审查结果
     review_files: NotRequired[List[str]] # 待审查文件列表
@@ -132,13 +132,15 @@ async def rag_search(state: NodeState):
         query=state["rewritten_query"],
         owner=state["owner"],
         repo=state["repo"],
-        context=state["context"],
+        context=state.get("context", None),
     )
 
-    return {
-        "code_docs": result["code_documents"],
-        "commit_docs": result["commit_documents"],
-    }
+    # 构建更新字段
+    update_field = ["code_docs", "commit_docs", "influence_docs", "history_docs", "repository_consistency_docs"]
+
+    update_field_dict: Dict[str, Any] = {name : result.get(name) for name in update_field if result.get(name, None)}
+
+    return update_field_dict
 
 
 async def rerank_search(state: NodeState):

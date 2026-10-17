@@ -20,6 +20,7 @@ async def review(state: NodeState):
     :param state: 审查节点状态
     :return: 审查节点状态
     """
+    print("state:", state.get("context", "上下文信息遗失"))
     return {
         "intent": "review",
     }
