@@ -4,6 +4,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 
+from client.memory_manager_middleware import MemoryManagerMiddleware
 from core.memory_manager import MemoryManager
 from core.tools import read_file
 from client.llm_client import LLMClient
@@ -34,8 +35,9 @@ def _init_agent(
         base_url: str,
         middleware_instance: MemoryManager
 ):
-
-    middleware = [middleware_instance]
+    # 初始化中间件
+    memory_manager_middleware = MemoryManagerMiddleware(memory_manager=middleware_instance)
+    middleware = [memory_manager_middleware]
     return LLMClient(
         model=model,
         model_provider=model_provider,

@@ -17,10 +17,10 @@ class MemoryManagerMiddleware(AgentMiddleware):
             *args,
             **kwargs
     ):
-        super.__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.memory_manager = memory_manager
 
-    def before_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
+    async def abefore_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
         """
         在agent执行前，从内存管理器中获取历史会话，注入到节点状态中
         :param state: 节点状态
@@ -32,7 +32,8 @@ class MemoryManagerMiddleware(AgentMiddleware):
             "history_messages": history_messages,
         }
 
-    def after_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
+    async def aafter_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
         # 添加消息到内存管理器中
-        self.memory_manager.add_message(state["session_id"], state["llm_message"])
+        await self.memory_manager.add_message(state["session_id"], state["llm_message"])
+        return None
 

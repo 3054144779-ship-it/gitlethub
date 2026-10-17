@@ -55,8 +55,12 @@ class MemoryManager:
         :param session_id: 会话ID
         :param meta: 含 user_id/repository_id/file_path/commit_sha/branch_name
         """
+        key = f"{session_id}:meta"
+        # 幂等：会话已初始化则直接返回，避免每轮对话重置 compressed_count / has_rag_data
+        if await self.redis_client.exists(key):
+            return
         await self.redis_client.hset(
-            f"{session_id}:meta",
+            key,
             mapping={
                 "user_id": meta["user_id"],
                 "repository_id": meta["repository_id"],

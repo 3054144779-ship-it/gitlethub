@@ -8,6 +8,7 @@ from dependency_injector.wiring import Provide, inject
 from langgraph.graph.state import CompiledStateGraph
 
 from config.Container import Container
+from core.memory_manager import MemoryManager
 from schema.domain import ChatDTO
 from schema.response import Response
 from service.ai_service import ChatService
@@ -21,8 +22,19 @@ class ChatServiceImpl(ChatService):
     async def chat(
             self,
             chat_dto: ChatDTO,
-            graph: CompiledStateGraph = Provide[Container.flow_chart]
+            graph: CompiledStateGraph = Provide[Container.flow_chart],
+            memory_manager: MemoryManager = Provide[Container.memory_manager],
     ) -> Response:
+        # 会话元信息初始化（init_session 内部幂等，多轮重复调用不会覆盖）
+        context = chat_dto.get("context") or {}
+        diff_data = context.get("diff_data") or []
+        await memory_manager.init_session(chat_dto["session_id"], {
+            "user_id": chat_dto["owner"],
+            "repository_id": chat_dto["repo"],
+            "file_path": diff_data[0]["file_path"] if diff_data else "",
+            "commit_sha": "",
+            "branch_name": "",
+        })
 
         res = await graph.ainvoke(chat_dto)
 
