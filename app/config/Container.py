@@ -4,6 +4,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 
+from core.memory_manager import MemoryManager
 from core.tools import read_file
 from client.llm_client import LLMClient
 from core.reranker import Reranker
@@ -30,9 +31,11 @@ def _init_agent(
         model: str,
         model_provider: str,
         api_key: str,
-        base_url: str
+        base_url: str,
+        middleware_instance: MemoryManager
 ):
 
+    middleware = [middleware_instance]
     return LLMClient(
         model=model,
         model_provider=model_provider,
@@ -41,7 +44,9 @@ def _init_agent(
             "base_url": base_url,
         },
         tools=[read_file]
-    ).create_agent()
+    ).create_agent(
+        middleware=middleware
+    )
 
 def _build_graph():
     # 执行的时候导入GitletGraph类，防止循环导入
@@ -185,6 +190,11 @@ class Container(containers.DeclarativeContainer):
         base_url=config.compressor.base_url
     )
 
+    # 记忆分层管理器
     memory_manager = providers.Singleton(
-
+        MemoryManager,
+        redis_client=redis_client,
+        milvus_client=milvus_client,
+        compress_client=compressor_llm,
+        embedding_client=embedding_model,
     )

@@ -40,9 +40,9 @@ class LLMClient:
 
     def create_agent(
             self,
-            system_prompt: str | None = None,
+            middleware: List[Any],
             checkpointer: Checkpointer | None = None,
-            middleware: List[Any] | None = None,
+            system_prompt: str | None = None,
             config: dict | None = None
     ):
         """
@@ -52,12 +52,13 @@ class LLMClient:
         :param middleware: 中间件列表（由调用方自行构建）
         :param config: 其他 create_agent 的额外配置
         """
+
         return create_agent(
             model=self.llm,
             tools=self.tools,
             system_prompt=system_prompt,
             # TODO: 后续添加 checkpointer 和 middleware 参数
             # checkpointer=checkpointer,
-            # middleware=middleware,
+            middleware=middleware,
             **(config or {})
         )
