@@ -4,7 +4,7 @@ from typing import List, TypedDict, NotRequired, Annotated, Dict, Any
 
 from dependency_injector.wiring import Provide, inject
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AnyMessage
 from redis.asyncio import Redis
 
 from config.Container import Container
@@ -33,6 +33,7 @@ class NodeState(TypedDict):
     节点状态
     """
     # 入口
+    session_id: str
     query: str
     owner: int
     repo: int
@@ -48,6 +49,8 @@ class NodeState(TypedDict):
     prompt: NotRequired[str]
     answer: NotRequired[str]
     answers: NotRequired[Annotated[List[dict], operator.add]]  # 各子图结果聚合，结果追加
+    llm_messages: NotRequired[Annotated[List[AnyMessage], operator.add]] # 节点消息
+    history_messages: NotRequired[Annotated[List[AnyMessage], operator.add]] # 历史会话消息
 
     # review流程独有
     review_model: NotRequired[int]       # 审查模式：1=debug（快速审查）, 2=深度审查
@@ -209,13 +212,17 @@ async def generate_answer(state: NodeState, agent=Provide[Container.agent]):
     :return: 生成回复
     """
     answer = await agent.ainvoke({
-        "messages": [SystemMessage(content=state["prompt"])]
+        "messages": [
+            SystemMessage(content=f"以下是历史消息{state.get('history_messages', [])}"),
+            HumanMessage(content=state["prompt"])
+        ]
     })
     content = answer["messages"][-1].content
 
     return {
         "answer": content,
         "answers": [{"intent": state.get("intent", ""), "content": content}],  # 追加到聚合列表
+        "llm_messages": [answer]
     }
 
 async def intent_node(state: NodeState):

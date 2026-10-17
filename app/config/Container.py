@@ -169,8 +169,22 @@ class Container(containers.DeclarativeContainer):
         template_name="explain_prompt_template.jinja2"
     )
 
+    # 创建代码搜索功能单例模板
     code_search_template = providers.Singleton(
         _load_template,
         jinja_env=jinja_env,
         template_name="semantic_search_prompt_template.jinja2",
+    )
+
+    # 用于文本压缩的模型
+    compressor_llm = providers.Singleton(
+        init_chat_model,
+        model=config.compressor.model,
+        model_provider=config.compressor.model_provider,
+        api_key=config.compressor.api_key,
+        base_url=config.compressor.base_url
+    )
+
+    memory_manager = providers.Singleton(
+
     )

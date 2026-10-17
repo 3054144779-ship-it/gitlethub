@@ -12,15 +12,17 @@ class Metadata(BaseModel):
     # 方法名
     method_name: str | None = None
     # 开始行
-    start_line: int
+    start_line: int | None = None
     # 结束行
-    end_line: int
+    end_line: int | None = None
     # 分块索引
-    chunk_index: int
+    chunk_index: int | None = None
     # 作者
-    author: str
+    author: str | None = None
     # 提交时间
-    commit_time: str
+    commit_time: str | None = None
+    # 会话ID
+    session_id: str | None = None
 
 class TrackedFile(BaseModel):
     """

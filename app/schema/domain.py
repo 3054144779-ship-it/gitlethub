@@ -37,7 +37,7 @@ class MilvusPO:
             "text": self.text,
             "dense_vector": self.dense_vector,
             "sparse_vector": self.sparse_vector,
-            "metadata": self.metadata.model_dump() if self.metadata else {},
+            "metadata": self.metadata.model_dump(exclude_none=True) if self.metadata else {},
             "content_type": self.content_type or ""
         }
 
@@ -140,6 +140,7 @@ class ChatDTO(TypedDict):
       }
     }
     """
+    session_id: str
     query: str
     owner: int
     repo: int
