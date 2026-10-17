@@ -5,6 +5,7 @@ import logging
 from typing import List, Any, Dict, Optional
 
 from pymilvus import MilvusClient, DataType, RRFRanker, AnnSearchRequest
+
 from config.Settings import Settings
 
 
@@ -189,6 +190,35 @@ class MilvusRepo:
         else:
             raise ValueError("至少需要提供一个向量参数")
 
+    def query_retrieval(
+            self,
+            user_id: int,
+            repo_id: int,
+            output_fields: List[str] | None = None,
+            filter_expr: str | None = None,
+            limit: int = 100,
+            **kwargs
+    ) -> List[Dict]:
+        """
+        标量检索
+        :param limit: 查询结果数量
+        :param user_id: 用户ID
+        :param repo_id: 仓库ID
+        :param output_fields: 输出字段
+        :param filter_expr: 过滤表达式
+        :return:
+        """
+        base_filter = f"user_id == {user_id} and repository_id == {repo_id}"
+        if filter_expr:
+            base_filter = f"({base_filter}) and ({filter_expr})"
+
+        return self.milvus_client.query(
+            collection_name=self.collection_name,
+            filter=base_filter,
+            output_fields=output_fields,
+            limit=limit,
+            **kwargs
+        )
 
 if __name__ == '__main__':
     pass

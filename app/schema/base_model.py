@@ -1,7 +1,7 @@
 """
 metadata 的 JSON 格式
 """
-from typing import List, Dict
+from typing import List, Dict, TypedDict
 
 from pydantic import BaseModel
 

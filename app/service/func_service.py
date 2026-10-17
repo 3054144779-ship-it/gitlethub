@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import List
 
+from schema.domain import Context
+
 
 class ArchaeologyService(ABC):
     @abstractmethod
-    async def retrieval(self, query: str, owner: int, repo: int):
+    async def retrieval(self, query: str, owner: int, repo: int, context: Context | None = None):
         pass
 
     @abstractmethod
@@ -17,7 +19,7 @@ class ArchaeologyService(ABC):
 
 class ExplainService(ABC):
     @abstractmethod
-    async def retrieval(self, query: str, owner: int, repo: int):
+    async def retrieval(self, query: str, owner: int, repo: int, context: Context | None = None):
         pass
 
     @abstractmethod
@@ -30,11 +32,11 @@ class ExplainService(ABC):
 
 class ReviewService(ABC):
     @abstractmethod
-    async def retrieval(self, query: str, owner: int, repo: int):
+    async def retrieval(self, query: str, owner: int, repo: int, context: Context | None):
         pass
 
     @abstractmethod
-    async def rerank(self, query: str, code_docs: List[dict], commit_docs: List[dict]):
+    async def rerank(self, query: str, docs_name: str, docs: List[dict]):
         pass
 
     @abstractmethod
@@ -43,7 +45,7 @@ class ReviewService(ABC):
             query: str,
             owner: int,
             repo: int,
-            model: int,
             retrieval_rerank_result: dict,
+            model: int = 2,
     ):
         pass

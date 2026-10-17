@@ -10,6 +10,7 @@ from dependency_injector.wiring import Provide, inject
 from langgraph.graph.state import CompiledStateGraph
 
 from config.Container import Container
+from schema.domain import ChatDTO
 from schema.response import Response
 from service.ai_service import ChatService
 
@@ -21,17 +22,11 @@ class ChatServiceImpl(ChatService):
     @inject
     async def chat(
             self,
-            query: str,
-            owner: int,
-            repo: int,
+            chat_dto: ChatDTO,
             graph: CompiledStateGraph = Provide[Container.flow_chart]
     ) -> Response:
 
-        res = await graph.ainvoke({
-            "query": query,
-            "owner": owner,
-            "repo": repo
-        })
+        res = await graph.ainvoke(chat_dto)
 
         return Response.ok(res)
 
@@ -73,7 +68,7 @@ if __name__ == '__main__':
     chat = ChatServiceImpl()
     print("开始执行")
     start_time = time()
-    chat_chat = asyncio.run(chat.chat(prompt, 10001, 20005))
+    chat_chat = asyncio.run(chat.chat(ChatDTO(query=prompt, owner=10001, repo=20005, context=None)))
     print(chat_chat)
     print(f"耗时: {time() - start_time}秒")
     print("执行结束")

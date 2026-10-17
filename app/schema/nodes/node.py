@@ -10,8 +10,10 @@ from redis.asyncio import Redis
 from config.Container import Container
 from core.intent_clarifier import intent_recognition
 from core.redis_key import prompt_to_redis_key
-from schema.domain import IntentResult
-from service.impl.func_service_impl import ArchaeologyServiceImpl, ExplainServiceImpl, ReviewServiceImpl
+from schema.domain import IntentResult, Context
+from service.impl.archaeology_service_impl import ArchaeologyServiceImpl
+from service.impl.explain_service_impl import ExplainServiceImpl
+from service.impl.review_serivce_impl import ReviewServiceImpl
 
 # 模块级：服务注册表
 service_registry = {
@@ -33,6 +35,7 @@ class NodeState(TypedDict):
     query: str
     owner: int
     repo: int
+    context: Context | None # 上下文信息(可以不存在)
 
     # 节点逐步填充（子图内隔离，无需前缀）
     intent: NotRequired[str]
@@ -40,26 +43,29 @@ class NodeState(TypedDict):
     rewritten_query: NotRequired[str]
     code_docs: NotRequired[List[dict]]
     commit_docs: NotRequired[List[dict]]
-    reranked_docs: NotRequired[dict]
+    reranked_docs: NotRequired[Annotated[dict, operator.or_]]
     prompt: NotRequired[str]
     answer: NotRequired[str]
     answers: NotRequired[Annotated[List[dict], operator.add]]  # 各子图结果聚合，结果追加
 
     # review流程独有
     review_model: NotRequired[int]       # 审查模式：1=debug, 2=基础审查, 3=深度审查
-    diff_code: NotRequired[str]          # 差异代码（基础审查模式使用）
-    review_answer: NotRequired[str]      # 审查结果
+    # diff_code: NotRequired[str]          # 差异代码（基础审查模式使用）
+    # review_answer: NotRequired[str]      # 审查结果
     review_files: NotRequired[List[str]] # 待审查文件列表
-    commit_context: NotRequired[dict]    # 提交上下文（sha, message, author, branch, pr_name）
-
+    # commit_context: NotRequired[dict]    # 提交上下文（sha, message, author, branch, pr_name）
+    influence_docs: NotRequired[List[dict]] # 影响文档列表
+    history_docs: NotRequired[List[dict]] # 历史文档列表
+    repository_consistency_docs: NotRequired[List[dict]] # 仓库一致性文档列表
+    docs_name: NotRequired[str]
 
 @inject
 async def rewrite_query(state: NodeState, rewrite_llm: BaseChatModel = Provide[Container.rewrite_llm]):
     """
     重写查询节点
     :param rewrite_llm: 重写模型
-    :param state: 考古节点状态
-    :return: 考古节点状态
+    :param state: 节点状态
+    :return: 重写后的查询信息
     """
 
     REWRITE_SYSTEM_MESSAGE = """你是一个查询重写助手。将用户问题改写为适合代码向量检索的关键词查询。
@@ -126,6 +132,7 @@ async def rag_search(state: NodeState):
         query=state["rewritten_query"],
         owner=state["owner"],
         repo=state["repo"],
+        context=state["context"],
     )
 
     return {
@@ -152,6 +159,23 @@ async def rerank_search(state: NodeState):
         "reranked_docs": result,
     }
 
+async def rerank_review_search(state: NodeState):
+    """
+    Rerank检索节点（历史记录）
+    :param state: 节点状态
+    :return: 节点状态
+    """
+    service = service_registry[state["intent"]]
+    docs_name = state["docs_name"]
+    result = await service.rerank(
+        query=state["query"],
+        docs_name=docs_name,
+        docs=state[docs_name],
+    )
+
+    return {
+        "reranked_docs": result,
+    }
 
 async def generate_prompt(state: NodeState):
     """
@@ -166,6 +190,7 @@ async def generate_prompt(state: NodeState):
         retrieval_rerank_result=state["reranked_docs"],
         owner=state["owner"],
         repo=state["repo"],
+        context=state["context"],
     )
 
     return {
@@ -177,8 +202,8 @@ async def generate_answer(state: NodeState, agent=Provide[Container.agent]):
     """
     生成答案节点
     :param agent: 模型
-    :param state: 考古节点状态
-    :return: 考古节点状态
+    :param state: 节点状态
+    :return: 生成回复
     """
     answer = await agent.ainvoke({
         "messages": [SystemMessage(content=state["prompt"])]

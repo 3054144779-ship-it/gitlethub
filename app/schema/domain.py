@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Literal
+from typing import List, Dict, Literal, TypedDict
 
 from pydantic import BaseModel, Field
 from pymilvus import DataType
@@ -102,3 +102,45 @@ class IntentResult(BaseModel):
 
     # 可选字段：只在特定场景下使用
     need_clarify: bool = False
+
+class DiffData(TypedDict):
+    """
+    diff_data 的 JSON 格式
+    """
+    file_path: str
+    old_content: str
+    new_content: str
+    diff: str
+
+class Context(TypedDict):
+    """
+    context 的 JSON 格式
+    """
+    pr_id: int
+    pr_name: str
+    diff_data: List[DiffData]
+
+class ChatDTO(TypedDict):
+    """
+    chat 的 JSON 格式
+    {
+      "query": "解释一下这段改动",
+      "owner": 1,
+      "repo": 100,
+      "context": {
+        "pr_id": 999,                // 如果是 PR 场景
+        "diff_data": [               // 前端传过来的结构化 Diff
+          {
+            "file_path": "OrderService.java",
+            "old_content": "...",
+            "new_content": "...",
+            "diff": "..."
+          }
+        ],
+      }
+    }
+    """
+    query: str
+    owner: int
+    repo: int
+    context: Context | None # 全局共享只写一次
