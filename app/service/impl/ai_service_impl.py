@@ -24,7 +24,7 @@ class ChatServiceImpl(ChatService):
             chat_dto: ChatDTO,
             graph: CompiledStateGraph = Provide[Container.flow_chart],
             memory_manager: MemoryManager = Provide[Container.memory_manager],
-    ) -> Response:
+    ) -> str:
         # 会话元信息初始化（init_session 内部幂等，多轮重复调用不会覆盖）
         context = chat_dto.get("context") or {}
         diff_data = context.get("diff_data") or []
@@ -38,7 +38,7 @@ class ChatServiceImpl(ChatService):
 
         res = await graph.ainvoke(chat_dto)
         answer = res.get("answer", "")
-        return Response.ok(answer)
+        return answer
 
 if __name__ == '__main__':
     import yaml
