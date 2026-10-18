@@ -1,46 +1,40 @@
-"""
-向量化工具
-"""
-import torch
-import logging
-import numpy as np
-from typing import List
+import asyncio
+from contextlib import asynccontextmanager
 
-from config.Settings import Settings
-from FlagEmbedding import BGEM3FlagModel
-from langchain_core.documents import Document
-from repository.milvus_repo import MilvusRepo
+import yaml
+from fastapi import FastAPI
+
+from config.Container import Container
+from router.chat_router import router as chat_router
+from worker.warmup_models import warmup_models
 
 
-class EmbeddingModel:
-    """向量化模型"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    container = Container()
+    with open("config.yaml", encoding="utf-8") as f:
+        config_data = yaml.safe_load(f)
+    container.config.from_dict(config_data["config"])
+    container.wire(modules=[
+        "router.chat_router",
+        "core.intent_clarifier",
+        "schema.nodes.node",
+        "worker.index_worker",
+        "service.impl.ai_service_impl",
+    ])
 
-    def __init__(self, model_name_or_path: str = "model/bge-m3", device: str = "cuda"):
-        self.embedding_model = BGEM3FlagModel(model_name_or_path=model_name_or_path, device=device)
+    # 预热模型
+    await asyncio.to_thread(warmup_models, container)
 
-    def to_vector(self, documents: List[Document]) -> List[tuple]:
-        """
-        将文档列表转换为向量，返回密集向量和稀疏向量
-        :param documents: 文档列表
-        :return: 密集向量和稀疏向量
-        """
-        result = self.embedding_model.encode([doc.page_content for doc in documents], return_dense=True, return_sparse=True)
-        dense_vecs = result.get("dense_vecs", [])
-        sparse_vecs = result.get("lexical_weights", [])
+    # 把容器挂到 app.state，供路由层访问
+    app.state.container = container
+    # 启动 MQ 消费者, 后台任务
+    from worker.index_worker import code_parser_mq_consumer
+    mq_task = asyncio.create_task(code_parser_mq_consumer())
+    yield
 
-        embeddings = []
-        for dense, sparse in zip(dense_vecs, sparse_vecs):
-            if isinstance(dense, torch.Tensor):
-                dense = dense.cpu().numpy().astype(np.float32)
-            else:
-                dense = np.array(dense, dtype=np.float32)
+    mq_task.cancel()
 
-            if isinstance(sparse, dict):
-                sparse = {int(k) : float(v) for k, v in sparse.items()}
-            else:
-                raise ValueError("Invalid sparse vector format")
-
-            embeddings.append((dense, sparse))
-
-        return embeddings
+app = FastAPI(lifespan=lifespan)
+app.include_router(chat_router)
 
