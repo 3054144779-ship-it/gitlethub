@@ -1,6 +1,7 @@
 """
 向量化工具
 """
+import threading
 import torch
 import logging
 import numpy as np
@@ -17,6 +18,7 @@ class EmbeddingModel:
 
     def __init__(self, model_name_or_path: str = "model/bge-m3", device: str = "cuda"):
         self.embedding_model = BGEM3FlagModel(model_name_or_path=model_name_or_path, device=device)
+        self._lock = threading.Lock()
 
     def to_vector(self, documents: List[Document]) -> List[tuple]:
         """
@@ -28,7 +30,9 @@ class EmbeddingModel:
         if not documents:
             return []
 
-        result = self.embedding_model.encode([doc.page_content for doc in documents], return_dense=True, return_sparse=True)
+        # fast tokenizer 非线程安全，加锁避免并发 "Already borrowed"
+        with self._lock:
+            result = self.embedding_model.encode([doc.page_content for doc in documents], return_dense=True, return_sparse=True)
         dense_vecs = result.get("dense_vecs", [])
         sparse_vecs = result.get("lexical_weights", [])
 

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Settings:
+    api_key = os.getenv("LITELLM_MASTER_KEY")
     MESSAGE_QUEUE_URL = os.getenv("MESSAGE_QUEUE_URL")
     PR_MERGED_QUEUE = os.getenv("PR_MERGED_QUEUE")
     MILVUS_URL = os.getenv("MILVUS_URL")

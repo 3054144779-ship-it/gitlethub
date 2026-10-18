@@ -3,6 +3,7 @@
 """
 
 import logging
+import threading
 from typing import List
 
 from FlagEmbedding import FlagReranker
@@ -20,6 +21,7 @@ class Reranker:
             device=device,
             use_fp16=use_fp16,
         )
+        self._lock = threading.Lock()
 
     def rerank(
             self,
@@ -48,11 +50,13 @@ class Reranker:
         texts = [doc[text_field] for doc in documents]
         pairs = [(query, text) for text in texts]
 
-        scores = self.reranker.compute_score(
-            pairs,
-            batch_size=batch_size, # 批处理大小
-            normalize=normalize, # 是否归一化
-        )
+        # fast tokenizer 非线程安全，加锁避免并发 "Already borrowed"
+        with self._lock:
+            scores = self.reranker.compute_score(
+                pairs,
+                batch_size=batch_size,  # 批处理大小
+                normalize=normalize,  # 是否归一化
+            )
 
         if isinstance(scores, float):
             # 处理单个分数的情况

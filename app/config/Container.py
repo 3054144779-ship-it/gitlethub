@@ -4,6 +4,7 @@ from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 
 from client.memory_manager_middleware import MemoryManagerMiddleware
+from config.Settings import Settings
 from core.memory_manager import MemoryManager
 from core.tools import read_file
 from client.llm_client import LLMClient
@@ -43,8 +44,6 @@ def _init_agent(
         config={
             "api_key": api_key,
             "base_url": base_url,
-            "max_retries": 5,
-            "request_timeout": 60,
         },
         tools=[read_file]
     ).create_agent(
@@ -114,8 +113,6 @@ class Container(containers.DeclarativeContainer):
         model_provider=config.intent_clarifier.model_provider,
         api_key=config.intent_clarifier.api_key,
         base_url=config.intent_clarifier.base_url,
-        max_retries=5, # 重试次数
-        request_timeout=60, # 请求超时时间
     )
 
     # 创建reranker实例
@@ -140,8 +137,6 @@ class Container(containers.DeclarativeContainer):
         model_provider=config.rewrite.model_provider,
         api_key=config.rewrite.api_key,
         base_url=config.rewrite.base_url,
-        max_retries=5,
-        request_timeout=60,
     )
 
 
@@ -187,8 +182,6 @@ class Container(containers.DeclarativeContainer):
         model_provider=config.compressor.model_provider,
         api_key=config.compressor.api_key,
         base_url=config.compressor.base_url,
-        max_retries=5,
-        request_timeout=60,
     )
 
     # 记忆分层管理器

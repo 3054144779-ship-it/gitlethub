@@ -289,13 +289,13 @@ if __name__ == '__main__':
 
     async def main():
         await test1()   # 代码解释
-        await asyncio.sleep(30)   # 让 TPM 窗口回血，避免连续打满限流
+        # await asyncio.sleep(30)   # 让 TPM 窗口回血，避免连续打满限流
         await test2()   # 代码审查
-        await asyncio.sleep(30)
+        # await asyncio.sleep(30)
         await test3()   # 语义化搜索
-        await asyncio.sleep(30)
+        # await asyncio.sleep(30)
         await test4()   # 代码考古
-        await asyncio.sleep(30)
+        # await asyncio.sleep(30)
         await test5()   # 澄清器
 
     asyncio.run(main())
