@@ -308,6 +308,64 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | POST | `/api/ai/search-code` | `gitlet_ai_helper` | 同上 | 语义化检索代码 |
 | GET | `/health` | `gateway-service` | 不需要契约文件 | ai服务连接状态检查 |
 
+**RabbitMQ（2026-10-13 修改, 2026-10-14 二次修改）**：
+
+message格式：
+
+```json
+{
+  "user_id": 0,       // 用户id 
+  "repository_id": 0, // 仓库id
+  "branch_name": "",  // 合并的分支名字
+  "pr_info": {},      // PR信息
+}
+
+```
+
+示例：
+
+```json
+{
+    "user_id": 10001,
+    "repository_id": 20005,
+    "branch_name": "main",
+    "pr_info": {
+        "pr_name": "增加支付超时重试",
+        "author": "zhangsan",
+        "commits": [	
+            {
+                "commit_sha": "a1b2c3",
+                "message": "feat: 新增支付重试方法",
+                "time": "2026-10-14T10:00:00Z",
+                "merge_files": [file1Name, file2Name],
+                "tracked_files": [
+                    {
+                        "file_path": "src/OrderService.java",
+                        "status": "MODIFIED"
+                    },
+                    {
+                        "file_path": "src/PaymentUtil.java",
+                        "status": "ADDED"
+                    }
+                ]
+            },
+            {
+                "commit_sha": "d4e5f6",
+                "message": "fix: 修复并发竞态",
+                "time": "2026-10-14T11:00:00Z",
+                "merge_files": [],
+                "tracked_files": [
+                    {
+                        "file_path": "src/OrderService.java",
+                        "status": "MODIFIED"
+                    }
+                ]
+            }
+        ]
+    }
+}
+```
+
 **统一响应结构**：所有响应（含错误）都是 `{code, message, data}`。`code` 是**业务码段**，
 与 HTTP 状态码解耦；HTTP 状态码仍保留语义给网关和通用中间件用，但**客户端判断分支只看 `code`**。
 
@@ -399,6 +457,8 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 
 #### 数据库表设计
 
+MySQL：
+
 | 表名                          | 字段                                                         | 备注                                                         |
 | ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | 用户信息表（user）            | id, username, password, email, create_time, update_time, is_deleted(逻辑删除) | 用户密码使用`BCrypt`加密存储                                 |
@@ -410,7 +470,62 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 标签（tag）                   | id, repository_id, tag_name, commit_sha, user_id, create_time, is_deleted | 标签功能                                                     |
 | PR机制表（pull_request）      | id, repository_id, title, description, source_branch, target_branch, status, author_id, create_time, update_time, `staging_path`(冲突暂存区路径), `staging_path_tracked`(已自动合并的文件映射序列化路径), is_deleted | PR 机制（合并请求）。**自动 PR 开关不在本表**——仓库级在 `repository.allow_auto_pr`、用户级在 `collaborator.auto_create_pr`。`staging_path` 只在合并冲突时写入；`staging_path_tracked` 保存三路合并中**已自动合并好的文件映射**，恢复合并时以它为基准，避免非冲突改动丢失（见 §8） |
 
+Milvus：
 
+| 字段名          | 类型                | 是否用于 `expr` 过滤 | 决策                 | 说明                          |
+| :-------------- | :------------------ | :------------------- | :------------------- | :---------------------------- |
+| `id`            | INT64               | ❌                    | 主键，`auto_id=True` | Milvus 自增                   |
+| `user_id`       | INT64               | ✅                    | 独立列               | 多租户隔离，与 MySQL 主键对齐 |
+| `repository_id` | INT64               | ✅                    | 独立列               | 多租户隔离，与 MySQL 主键对齐 |
+| `file_path`     | VARCHAR(512)        | ✅                    | 独立列               | 按文件过滤                    |
+| `commit_sha`    | VARCHAR(40)         | ✅                    | 独立列               | 按提交过滤                    |
+| `branch_name`   | VARCHAR(128)        | ✅                    | 独立列               | 按分支过滤                    |
+| `language`      | VARCHAR(32)         | ✅                    | 独立列               | java / python / md 等         |
+| `text`          | VARCHAR(65535)      | ❌                    | 独立列               | 原始代码 / 文本块             |
+| `dense_vector`  | FLOAT_VECTOR(1024)  | —                    | 向量                 | BGE-M3 稠密向量               |
+| `sparse_vector` | SPARSE_FLOAT_VECTOR | —                    | 向量                 | BGE-M3 稀疏向量               |
+| `metadata`      | JSON                | ❌                    | JSON 字段            | 低频透传字段                  |
+
+`metadata` JSON 字段内容
+
+| JSON Key      | 类型             | 用途                         |
+| :------------ | :--------------- | :--------------------------- |
+| `method_name` | string           | 方法名，前端回显、透传给 LLM |
+| `start_line`  | int              | 代码块起始行，前端定位       |
+| `end_line`    | int              | 代码块结束行，前端定位       |
+| `chunk_index` | int              | 分块序号，大文件分块时回显   |
+| `author`      | string           | 提交作者，代码考古问答       |
+| `commit_time` | string (ISO8601) | 提交时间，代码考古问答       |
+
+Redis：
+
+ai-helper:
+
+`HMAC-SHA256` 加密 file_path -> `(key, file_path)`
+
+remote-gitlet:
+
+`(jwt::keys:private: private_key)`
+
+`(jwt::keys:public: public_key)`
+
+litellm网关：
+
+```dockerfile
+docker run -d --name litellm -p 4000:4000 \
+  -v /root/litellm_config.yaml:/app/config.yaml \
+  -e LITELLM_MASTER_KEY=***REMOVED*** \
+  -e SILICONFLOW_API_KEY_1=***REMOVED*** \
+  -e SILICONFLOW_API_KEY_2=***REMOVED*** \
+  -e SILICONFLOW_API_KEY_3=***REMOVED*** \
+  -e SILICONFLOW_API_KEY_4=***REMOVED*** \
+  -e SILICONFLOW_API_KEY_5=***REMOVED*** \
+  -e SILICONFLOW_API_KEY_6=***REMOVED*** \
+  -e DEEPSEEK_API_KEY_1=***REMOVED*** \
+  -e DEEPSEEK_API_KEY_2=***REMOVED*** \
+  ghcr.io/berriai/litellm:main-latest \
+  --config /app/config.yaml --port 4000
+```
 
 ## 8. 关键流程
 

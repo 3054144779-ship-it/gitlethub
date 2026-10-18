@@ -1148,3 +1148,105 @@ RabbitMQ 对已存在的队列参数检查极其严格，**不允许修改已存
 > 这个坑让我明白，跨语言微服务共享 MQ 时，**基础设置的声明必须保持一致**。在实战中，我遵循两个原则：
 > 第一，**服务自给自足**。无论生产者还是消费者，在启动时都要通过 `declare`（幂等操作）来确保自身依赖的队列存在，避免因启动顺序不同导致服务崩溃。
 > 第二，**契约强制对齐**。如果消费端需要死信队列（DLQ），必须把 `x-dead-letter-exchange` 等参数同步到所有语言的客户端中。这是保证消息最终一致性、防止消息静默丢失的底层基石。”
+
+问题：
+
+Metadata类开始行和结束行是代码AST后切片的还是Diff差异的？
+
+是 **AST 切片的行号**
+
+行号会变吗？会，但要靠「重新索引」解决
+
+如果用户在第 1 行加了一行 `import`，那么原来第 4 行的 `pay` 方法会变成第 5 行。Milvus 里存的旧行号（4）就失效了。
+
+**所以行号本身就是「快照式」的，永远对应某个 commit_sha 下的代码状态。** 这也是为什么 Milvus 里要存 `commit_sha` —— 让 chunk 和版本强绑定。
+
+这个start_line和end_line怎么求？
+
+用 tree-sitter 获取 start_line 和 end_line
+
+节点自带的位置属性：
+
+```python
+node.start_point   # (row, column) —— 0-based 元组
+node.end_point     # (row, column) —— 0-based 元组
+node.start_byte    # 起始字节偏移
+node.end_byte      # 结束字节偏移
+```
+
+怎么从 AST 节点里提取方法名？
+
+tree-sitter 为每个节点定义了字段名。对 `method_declaration` 节点，方法名对应的字段是 `name`。我用 `node.child_by_field_name('name')` 直接拿到子节点，再通过 `.text.decode()` 转成字符串。
+
+问题：
+
+```shell
+Traceback (most recent call last):
+  File "D:\Job_project\gitlet_ai_helper\app\worker\index_worker.py", line 13, in <module>
+    from config.Container import Container
+  File "D:\Job_project\gitlet_ai_helper\app\config\Container.py", line 6, in <module>
+    class Container(containers.DeclarativeContainer):
+  File "D:\Job_project\gitlet_ai_helper\app\config\Container.py", line 14, in Container
+    milvus_client = MilvusClient(
+                    ^^^^^^^^^^^^^
+  File "D:\Job_project\gitlet_ai_helper\.venv\Lib\site-packages\pymilvus\milvus_client\milvus_client.py", line 69, in __init__
+    self._using = create_connection(
+                  ^^^^^^^^^^^^^^^^^^
+  File "D:\Job_project\gitlet_ai_helper\.venv\Lib\site-packages\pymilvus\milvus_client\_utils.py", line 56, in create_connection
+    connections.connect(using, user, password, db_name, token, uri=uri, _async=use_async, **kwargs)
+  File "D:\Job_project\gitlet_ai_helper\.venv\Lib\site-packages\pymilvus\orm\connections.py", line 396, in connect
+    addr, parsed_uri = self.__get_full_address(*config)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Job_project\gitlet_ai_helper\.venv\Lib\site-packages\pymilvus\orm\connections.py", line 213, in __get_full_address
+    address, parsed = self.__parse_address_from_uri(uri)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Job_project\gitlet_ai_helper\.venv\Lib\site-packages\pymilvus\orm\connections.py", line 134, in __parse_address_from_uri
+    port = parsed_uri.port if parsed_uri.port is not None else default_port
+                              ^^^^^^^^^^^^^^^
+  File "D:\py-3.12\Lib\urllib\parse.py", line 182, in port
+    raise ValueError(f"Port could not be cast to integer value as {port!r}")
+ValueError: Port could not be cast to integer value as "<dependency_injector.providers.ConfigurationOption('config.milvus.port') at 0x27c4c590dd0>"```
+```
+
+原因：
+
+根因：MilvusClient(...) 没有被包在 provider 里，它在类定义时就执行了，比 from_yaml 早得多。
+
+```tex
+1. from config.Container import Container   ← 加载 Container 类
+   → Python 解析类体，第 14 行 MilvusClient(...) 立即执行
+   → config.milvus.host 还是 ConfigurationOption 对象，不是字符串
+   → 💥 报错，程序直接退出
+
+2. container = Container()                  ← 永远执行不到
+3. container.config.from_yaml(...)          ← 永远执行不到
+```
+
+更新：
+
+在MilvusPO中添加content_type字段区分内容类型
+
+文件处理采用并发处理
+
+格式更新为：
+
+```python
+{
+  "user_id": 0,       // 用户id 
+  "repository_id": 0, // 仓库id
+  "branch_name": "",  // 合并的分支名字
+  "pr_info": {},      // PR信息
+}
+```
+
+使用Semaphore限制并发文件处理数量
+
+模板采用jinja2
+
+问题：
+
+怎么加载本地模型？
+
+用SetFit
+
+LLM模型和SetFit怎么选？不要LLM选择SetFit，LLM会有循环依赖问题，选择**追求极致轻量和速度**：首选 `snival/intent-router-zh-setfit-v2`
