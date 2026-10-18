@@ -37,8 +37,8 @@ class ChatServiceImpl(ChatService):
         })
 
         res = await graph.ainvoke(chat_dto)
-
-        return Response.ok(res)
+        answer = res.get("answer", "")
+        return Response.ok(answer)
 
 if __name__ == '__main__':
     import yaml
