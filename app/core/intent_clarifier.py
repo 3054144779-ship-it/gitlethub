@@ -24,11 +24,7 @@ class IntentClarifier:
                  llm_client: BaseChatModel=Provide[Container.intent_clarifier_llm_client],
                  intent_clarifier_template: Template=Provide[Container.intent_clarifier_template]):
         # 用于意图识别的小模型
-        self.llm_client = llm_client.bind(extra_body={"enable_thinking": False}).with_retry(
-            retry_if_exception_type=(RateLimitError,),
-            wait_exponential_jitter=True,
-            stop_after_attempt=5,
-        )
+        self.llm_client = llm_client.bind(extra_body={"enable_thinking": False})
         # 意图识别模板
         self.intent_clarifier_template = intent_clarifier_template
         # json解析器

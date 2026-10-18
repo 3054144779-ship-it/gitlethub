@@ -1,0 +1,83 @@
+model_list:
+  # ===== SiliconFlow（6 个 key）=====
+  - model_name: Qwen/Qwen3-8B
+    litellm_params:
+      model: openai/Qwen/Qwen3-8B
+      api_key: os.environ/SILICONFLOW_API_KEY_1
+      api_base: https://api.siliconflow.cn/v1
+      tpm: 50000
+      rpm: 1000
+
+  - model_name: THUDM/GLM-Z1-9B-0414
+    litellm_params:
+      model: openai/THUDM/GLM-Z1-9B-0414
+      api_key: os.environ/SILICONFLOW_API_KEY_2
+      api_base: https://api.siliconflow.cn/v1
+      tpm: 50000
+      rpm: 1000
+
+  - model_name: THUDM/GLM-4-9B-0414
+    litellm_params:
+      model: openai/THUDM/GLM-4-9B-0414
+      api_key: os.environ/SILICONFLOW_API_KEY_3
+      api_base: https://api.siliconflow.cn/v1
+      tpm: 50000
+      rpm: 1000
+
+  - model_name: Qwen/Qwen2.5-7B-Instruct
+    litellm_params:
+      model: openai/Qwen/Qwen2.5-7B-Instruct
+      api_key: os.environ/SILICONFLOW_API_KEY_4
+      api_base: https://api.siliconflow.cn/v1
+      tpm: 50000
+      rpm: 1000
+
+  - model_name: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
+    litellm_params:
+      model: openai/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
+      api_key: os.environ/SILICONFLOW_API_KEY_5
+      api_base: https://api.siliconflow.cn/v1
+      tpm: 50000
+      rpm: 1000
+
+  - model_name: tencent/Hunyuan-MT-7B
+    litellm_params:
+      model: openai/tencent/Hunyuan-MT-7B
+      api_key: os.environ/SILICONFLOW_API_KEY_6
+      api_base: https://api.siliconflow.cn/v1
+      tpm: 50000
+      rpm: 1000
+
+  # ===== DeepSeek（2 个 key）=====
+  - model_name: deepseek-flash
+    litellm_params:
+      model: deepseek/deepseek-flash
+      api_key: os.environ/DEEPSEEK_API_KEY_1
+
+  - model_name: deepseek-flash
+    litellm_params:
+      model: deepseek/deepseek-flash
+      api_key: os.environ/DEEPSEEK_API_KEY_2
+
+litellm_settings:
+  num_retries: 3
+  request_timeout: 60
+  cache: true
+  cache_params:
+    type: redis
+    host: 192.168.12.168
+    port: 6379
+    db: 3
+  enforce_model_rate_limits: true
+  fallbacks:
+    - Qwen/Qwen3-8B: ["THUDM/GLM-Z1-9B-0414", "THUDM/GLM-4-9B-0414", "deepseek-flash"]
+    - deepseek-flash: ["Qwen/Qwen3-8B", "Qwen/Qwen2.5-7B-Instruct"]
+
+router_settings:
+  routing_strategy: least-busy
+  redis_host: 192.168.12.168
+  redis_port: 6379
+  redis_db: 4
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
