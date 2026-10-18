@@ -8,6 +8,7 @@ from jinja2 import Template
 from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import Runnable, RunnableLambda
+from openai import RateLimitError
 
 from client.llm_client import LLMClient
 from schema.domain import IntentResult
@@ -23,7 +24,11 @@ class IntentClarifier:
                  llm_client: BaseChatModel=Provide[Container.intent_clarifier_llm_client],
                  intent_clarifier_template: Template=Provide[Container.intent_clarifier_template]):
         # 用于意图识别的小模型
-        self.llm_client = llm_client.bind(extra_body={"enable_thinking": False})
+        self.llm_client = llm_client.bind(extra_body={"enable_thinking": False}).with_retry(
+            retry_if_exception_type=(RateLimitError,),
+            wait_exponential_jitter=True,
+            stop_after_attempt=5,
+        )
         # 意图识别模板
         self.intent_clarifier_template = intent_clarifier_template
         # json解析器

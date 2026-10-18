@@ -44,6 +44,8 @@ if __name__ == '__main__':
     import yaml
     import uuid
     from time import time
+    from worker.warmup_models import warmup_models
+
     container = Container()
     with open(r"D:\Job_project\gitlet_ai_helper\config.yaml", encoding="utf-8") as f:
         config_data = yaml.safe_load(f)
@@ -53,6 +55,11 @@ if __name__ == '__main__':
         "core.intent_clarifier",
         "schema.nodes.node",
     ])
+
+    # 模型预热
+    warmup_models(container)
+
+    session_id = str(uuid.uuid4())
 
     async def test1():
         prompt = """
@@ -80,7 +87,7 @@ if __name__ == '__main__':
         chat = ChatServiceImpl()
         print("开始执行")
         start_time = time()
-        chat_chat = await chat.chat(ChatDTO(session_id=str(uuid.uuid4()), query=prompt, owner=10001, repo=20005, context=None))
+        chat_chat = await chat.chat(ChatDTO(session_id=session_id, query=prompt, owner=10001, repo=20005, context=None))
         print(chat_chat)
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
@@ -197,7 +204,7 @@ if __name__ == '__main__':
         """
 
         dto = ChatDTO(
-            session_id=str(uuid.uuid4()),
+            session_id=session_id,
             query=prompt,
             owner=10001,
             repo=20005,
@@ -222,7 +229,7 @@ if __name__ == '__main__':
         我记得有个初始化密钥的文件，那段代码是哪个代码来着？能发给我看看吗？
         """
         dto = ChatDTO(
-            session_id=str(uuid.uuid4()),
+            session_id=session_id,
             query=prompt,
             owner=10001,
             repo=20005,
@@ -262,7 +269,7 @@ if __name__ == '__main__':
         chat = ChatServiceImpl()
         print("开始执行")
         start_time = time()
-        chat_chat = await chat.chat(ChatDTO(session_id=str(uuid.uuid4()), query=prompt, owner=10001, repo=20005, context=None))
+        chat_chat = await chat.chat(ChatDTO(session_id=session_id, query=prompt, owner=10001, repo=20005, context=None))
         print(chat_chat)
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
@@ -275,16 +282,20 @@ if __name__ == '__main__':
         chat = ChatServiceImpl()
         print("开始执行")
         start_time = time()
-        chat_chat = await chat.chat(ChatDTO(session_id=str(uuid.uuid4()), query=prompt, owner=10001, repo=20005, context=None))
+        chat_chat = await chat.chat(ChatDTO(session_id=session_id, query=prompt, owner=10001, repo=20005, context=None))
         print(chat_chat)
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
 
     async def main():
         await test1()   # 代码解释
+        await asyncio.sleep(30)   # 让 TPM 窗口回血，避免连续打满限流
         await test2()   # 代码审查
+        await asyncio.sleep(30)
         await test3()   # 语义化搜索
+        await asyncio.sleep(30)
         await test4()   # 代码考古
+        await asyncio.sleep(30)
         await test5()   # 澄清器
 
     asyncio.run(main())
