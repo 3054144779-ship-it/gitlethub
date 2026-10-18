@@ -124,7 +124,12 @@
       "Bash(ls,)",
       "Bash(grep -rln \"visibility\\\\|Repositor\\\\|keyword\" gitlethub-frontend/src)",
       "Bash(sed -n '315,360p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
-      "Bash(sed -n '1,60p' remote-gitlet/src/main/java/org/openapitools/mapper/RemoteCollaboratorMapper.java)"
+      "Bash(sed -n '1,60p' remote-gitlet/src/main/java/org/openapitools/mapper/RemoteCollaboratorMapper.java)",
+      "Bash(curl -s -o /dev/null -w \"index:%{http_code}\\\\n\" http://localhost:5199/)",
+      "Bash(curl -s -o /dev/null -w \"ai-component:%{http_code}\\\\n\" http://localhost:5199/src/components/AIAssistant.vue)",
+      "Bash(curl -s -o /dev/null -w \"pr-view:%{http_code}\\\\n\" http://localhost:5199/src/views/PRDetailView.vue)",
+      "Bash(pkill -f \"vite.*5199\")",
+      "Bash(taskkill //F //FI \"WINDOWTITLE eq *vite*\")"
     ]
   }
 }

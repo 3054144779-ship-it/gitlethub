@@ -5,7 +5,7 @@
 | 状态 | draft |
 | Owner | 花火 |
 | Reviewer | 待指派 |
-| 最后更新 | 2026-10-12 |
+| 最后更新 | 2026-10-19 |
 | 接口冻结 | 未冻结（`docs/openapi.yaml` 定稿后填日期） |
 | 取代 | `gitlethub 设计文档.md`（无状态草稿，保留作参考） |
 
@@ -24,6 +24,11 @@
 > 同时按当前代码校正了几处过时描述（自动 PR 接口已收敛到仓库级、`pull_request` 表字段、测试基线）。
 >
 > 2026-10-12 增补：修改了ai服务的接口信息，新增`/api/ai/search-code`接口，增加说明字段
+> （2026-10-19 核对：该独立搜索接口未在当前代码中落地，搜索由 `/api/ai` 的 `search` 意图承担）
+>
+> 2026-10-19 增补：AI 服务 `gitlet_ai_helper` 已落地（FastAPI + LangGraph + Milvus + RabbitMQ），
+> `remote-gitlet` 新增 AI 代理入口与会话/PR diff 组装。本文按**实际代码**校正了 §4/§6/§7/§8，
+> 并补充 §9 取舍、§10 联调阻塞项与 §13 前端 AI 助手。原理性内容见《设计附录-原理与概念澄清》§七。
 
 ---
 
@@ -74,7 +79,7 @@ CommandHandler commands = new CommandHandler(repo);   // 四个 Handler 均只�
 
 - 一个仓库 = 一个独立实例，同一进程内多个仓库互不干扰。**（已完成）**
 - 用户可以把本地 gitlet 仓库推送到云端、从云端拉取。
-- 提供 AI 辅助：生成提交信息 / 代码审查 / 解释代码。
+- 提供 AI 辅助：代码解释 / 代码审查 / 语义化代码搜索 / 代码考古（提交信息仅作为索引内容，不是独立接口）。
 - **提供 Web 前端**：浏览仓库文件 / 提交 / 分支，管理 PR 与协作者。**（2026-09-29 新增，见 §13）**
 
 ### 非目标
@@ -127,7 +132,22 @@ gitlethub (parent, packaging=pom)
 └── remote-gitlet/     实现 /api/repos/**，依赖 gitlet_core（端口 8080）
 
 gitlethub-frontend      Vue3 + Vite Web 前端，独立工程，在 D:\Job_project\gitlethub-frontend
-gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
+gitlet_ai_helper        AI 服务，独立 project（FastAPI，默认 8000），不在本仓库 → D15
+```
+
+AI 服务内部（独立进程，不共享 Java 容器）：
+
+```
+POST /api/ai
+   └─ ChatServiceImpl
+        ├─ MemoryManager（Redis：会话元信息 / 分层记忆）
+        └─ LangGraph
+             ├─ intent 节点（当前用 LLM 小模型 + JSON 校验；计划换 SetFit）→ explain / review / archaeology / search
+             ├─ RAG：Milvus 稠密 + 稀疏向量召回（BGE-M3）
+             ├─ rerank：BGE reranker
+             └─ prompt(Jinja2) → LLM(Qwen via LiteLLM) → answer
+
+RabbitMQ  pr_merged_queue → 消费 → AST 切分（tree-sitter）→ 向量化 → Milvus
 ```
 
 远程存储：
@@ -153,7 +173,7 @@ gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
 | `gitlet_core` | 仓库操作核心 + CLI（含 `api/GitletClient` 远程客户端） | — |
 | `gateway-service` | 唯一入口。路由、鉴权、限流、日志过滤，**不含业务接口** | ❌ 不得依赖 |
 | `remote-gitlet` | 仓库与对象传输的服务端实现 | ✅ |
-| `gitlet_ai_helper` | AI 三类接口。独立 project，契约跟着那个项目走（1.历史代码讲述，可以根据提交历史对代码设计原因进行讲述2.语义化代码搜索3.代码知识图谱（可选）） | ❌ |
+| `gitlet_ai_helper` | AI 能力：代码解释、代码审查、语义化代码搜索、代码考古（按提交历史讲述设计原因）。独立 project，契约跟着那个项目走；知识图谱未做 | ❌ |
 
 `gateway-service` 是**策略层不是业务层**：它不该出现任何 `/api/repos/**` 的 controller。
 把业务 spec 生成到 gateway 是错的——生成目标是 `remote-gitlet`。
@@ -166,8 +186,9 @@ gitlet_ai_helper        AI 服务，独立 project，不在本仓库 → D15
 | `common-service` | ✅ | ✅ | 共享 po/dto/vo/bo/enums/jwt/exception |
 | `gateway-service` | ✅ | ✅ | 4 个文件，`application.yaml` 无路由，**尚不可用**（见 §10） |
 | `user-service` | ✅ | ✅ | 端口 8081，注册/登录/用户信息可用 |
-| `remote-gitlet` | ✅ | ✅ | 端口 8080，push/pull/clone + PR + 只读接口（见 §6、§13）+ 自验签的 `JwtAuthFilter`（只注入身份、不拦截，见 §6「调用者身份」） |
+| `remote-gitlet` | ✅ | ✅ | 端口 8080，push/pull/clone + PR + 只读接口 + AI 代理（见 §6、§13）+ 自验签的 `JwtAuthFilter`（只注入身份、不拦截，见 §6「调用者身份」） |
 | `gitlethub-frontend` | ✅ | —（独立工程，非 Maven 模块） | Vue3 + Vite，见 §13 |
+| `gitlet_ai_helper` | ✅ | —（Python 独立工程） | FastAPI + LangGraph + Milvus + RabbitMQ 消费者；四类意图已实现（见 §6、§8） |
 
 父 pom `<modules>` 已注册 `gitlet_core`、`gateway-service`、`remote-gitlet`、`user-service`、`common-service` 五个模块
 （§10 阻塞级 4 已解决）；`gateway-service` 虽已注册但内容仍是空壳。
@@ -298,17 +319,79 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
   非可见者一律返回 **`code 30001`（按「仓库不存在」处理，而非 `20002`）**，避免泄露私有仓库的存在。
   拦截器**只拦 GET**；写路径的鉴权仍在 service 层按调用者身份判定。
 
-**python侧 `gitlet_ai_helper`（2026-10-12 修改）**
+### AI 对话接口（2026-10-19 按实际代码更新）
 
-| 方法 | 路径 | 实现方 | 契约在哪 | 说明 |
-| --- | --- | --- | --- | --- |
-| POST | `/api/ai/generate-commit-msg` | `gitlet_ai_helper` | 那个 project 自己维护 | 生成提交信息 |
-| POST | `/api/ai/code-review` | `gitlet_ai_helper` | 同上 | 代码审查 |
-| POST | `/api/ai/explain-code` | `gitlet_ai_helper` | 同上 | ai解释 |
-| POST | `/api/ai/search-code` | `gitlet_ai_helper` | 同上 | 语义化检索代码 |
-| GET | `/health` | `gateway-service` | 不需要契约文件 | ai服务连接状态检查 |
+链路是**两跳**：前端 → `remote-gitlet`（代理 + 补全上下文）→ `gitlet_ai_helper`。
 
-**RabbitMQ（2026-10-13 修改, 2026-10-14 二次修改）**：
+| 方法 | 路径 | 实现方 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/api/ai/{owner}/{repo}/chat` | `remote-gitlet`（手写 `AIController` + `AIServiceImpl`） | 前端唯一入口，返回 `Result<String>` |
+| POST | `/api/ai` | `gitlet_ai_helper`（FastAPI `chat_router`） | 内部契约，只允许 Java 服务调用 |
+
+**前端请求体**（`ChatDTO`）：
+
+```json
+{
+  "id": 123,                       // 可选，PR 场景传 PR 主键；JSON 键是 id，不是 pr_id
+  "session_id": "uuid",           // 前端生成，同一会话复用
+  "query": "解释一下这段改动"
+}
+```
+
+- `ChatDTO.pr_id` 用 `@JsonProperty("id")` 映射：**前端必须发 `id`**，发 `pr_id` 会反序列化成 `null`（见 §10-25）。
+- 不传 `id` 时是普通问答 / 搜索 / 考古；传了才进入 PR 审查场景。
+
+**Java → Python 的 `ChatBO`**：
+
+```json
+{
+  "session_id": "uuid",
+  "query": "解释一下这段改动",
+  "owner": 1,                      // 用户主键，不是用户名
+  "repo": 100,                     // 仓库主键
+  "context": {
+    "pr_id": 123,
+    "diff_data": [
+      {
+        "file_path": "src/OrderService.java",
+        "old_content": "...",
+        "new_content": "...",
+        "diff": "--- a/... +++ b/... @@ ..."
+      }
+    ]
+  }
+}
+```
+
+- **PR 场景由服务端组装 diff，前端只传 `id`**：`AIServiceImpl` 用 PR 的 `source_branch` / `target_branch`
+  找到两个分支 tip 的 `trackedFiles`，交给 `DiffBuilder` 逐文件比较，从对象库读出 blob 并生成 unified diff。
+  `DiffBuilder` 的边界：上下文 3 行、单文件 diff 上限 50,000 字符、二进制文件只回 `(binary file, diff omitted)`；
+  分支或 commit 缺失时返回空列表，AI 仍可用 `query` 继续回答。
+- 非 PR 场景 `diff_data` 为空，代码片段由调用方直接放进 `query`（前端快捷提问就是这么拼的）。
+- Python 侧 `ChatServiceImpl` 先用 `session_id` 初始化会话元信息（`user_id`、`repository_id`、
+  第一个 diff 的 `file_path`；`commit_sha` / `branch_name` 留空，`init_session` 幂等），
+  再执行 LangGraph。**响应是纯字符串 `answer`**，没有流式、没有结构化引用列表；
+  Java 侧包成 `Result.ok(answer)`，即 `{code:0, message:"ok", data:"<answer>"}`。
+
+**四类意图**（由 LangGraph 的 intent 节点识别后路由到子图）：
+
+| 意图 | 场景 | 关键行为 |
+| --- | --- | --- |
+| `explain` | 解释一段代码 / 改动 | 内部再跑一次「debug 模式」审查，回答含问题与影响 |
+| `review` | 审查 PR diff | 三路并行 RAG：影响范围、历史教训、仓库规范一致性 |
+| `archaeology` | 这段代码为什么变成现在这样 | 按文件历史 + 语义相似提交讲述设计原因 |
+| `search` | 找代码 | 语义化检索仓库内容 |
+
+意图不明确时进入澄清节点（`intent_clarify`），不会硬猜。
+
+**RabbitMQ（2026-10-13 修改, 2026-10-14 二次修改, 2026-10-19 校正）**：
+
+拓扑：`gitlet.pr.exchange`（TopicExchange）→ 路由键 `pr.merged` → `pr_merged_queue`
+→ 死信走默认交换机 + 路由键 `pr_merged_dlq` → `pr_merged_dlq`。
+声明方（`remote-gitlet/RabbitMQConfig`）与消费端（`gitlet_ai_helper/client/mq_consumer.py`）
+**必须声明完全一致的队列参数**，否则 `PRECONDITION_FAILED`（原理见附录 §7.1）。
+注意：`RabbitMQConfig` 只声明拓扑，**合并事件的生产代码尚未接入**（当前只有测试类
+`testSimpleMQ` 手工 `convertAndSend`，见 §10-27）。
 
 message格式：
 
@@ -366,6 +449,15 @@ message格式：
 }
 ```
 
+消息语义：
+
+- `tracked_files[].file_path` 必须是 **AI 服务所在机器可读的绝对路径**：消费者用 `os.path.exists()`
+  直接读文件做 AST 切分，不是从对象库取内容。这是两个进程共享文件系统时的临时约定，
+  部署到不同机器前必须改成「按 commit_sha + 相对路径取对象」。
+- `merge_files` 会进入提交信息模板，`tracked_files[].status` 目前只作上下文，不参与去重。
+- 消费者对每个文件先查 Redis 去重键（`HMAC-SHA256(file_path)`），已处理过则跳过；
+  同一消息内用 `asyncio.Semaphore(10)` 限制并发，避免一次性打满嵌入模型。
+
 **统一响应结构**：所有响应（含错误）都是 `{code, message, data}`。`code` 是**业务码段**，
 与 HTTP 状态码解耦；HTTP 状态码仍保留语义给网关和通用中间件用，但**客户端判断分支只看 `code`**。
 
@@ -421,7 +513,7 @@ message格式：
 | --- | --- |
 | 鉴权：JWT 怎么签发、密钥放哪 | → D9 |
 | 限流阈值与维度（按 IP / 按用户 / 按仓库） | → D19 |
-| AI 服务：独立进程 vs 同进程；是否流式；喂 diff 还是整份文件 | → D15 |
+| AI 服务：独立进程、非流式、PR 场景由服务端喂结构化 diff（2026-10-19 落地） | → D15 |
 | PR 作者归属、身份接缝、合并权限 | → D35、D36、D37 |
 
 ---
@@ -484,7 +576,14 @@ Milvus：
 | `text`          | VARCHAR(65535)      | ❌                    | 独立列               | 原始代码 / 文本块             |
 | `dense_vector`  | FLOAT_VECTOR(1024)  | —                    | 向量                 | BGE-M3 稠密向量               |
 | `sparse_vector` | SPARSE_FLOAT_VECTOR | —                    | 向量                 | BGE-M3 稀疏向量               |
-| `metadata`      | JSON                | ❌                    | JSON 字段            | 低频透传字段                  |
+| `metadata`      | JSON                | ❌                    | JSON 字段            | 低频透传字段（代码块才有）    |
+| `content_type`  | VARCHAR(32)         | ✅                    | 独立列               | `code` / `commit_message` / 文档类型，用于检索时过滤 |
+
+索引（`config.yaml` 的 `index_params`）：`dense_vector` 用 HNSW + L2，`sparse_vector` 用
+`SPARSE_INVERTED_INDEX` + IP；其余标量字段用于 `expr` 过滤。检索一律带
+`user_id` + `repository_id` 两个租户条件，缺一不可。
+
+`metadata` 只对 `content_type=code` 的块生成；`commit_message` 与文档块的该列为 `null`。
 
 `metadata` JSON 字段内容
 
@@ -501,7 +600,10 @@ Redis：
 
 ai-helper:
 
-`HMAC-SHA256` 加密 file_path -> `(key, file_path)`
+`HMAC-SHA256` 加密 file_path -> `(key, file_path)`（已索引文件的去重标记）
+
+另有会话记忆（按 `session_id`）与 Milvus 客户端连接，键名由 `MemoryManager` 维护；
+不要与 `remote-gitlet` 的 JWT 黑名单 / 密钥共用 db。
 
 remote-gitlet:
 
@@ -622,6 +724,57 @@ sequenceDiagram
   否则非冲突的 source 改动会在恢复阶段丢失（这是 §9「暂存区策略」的落地细节）。
 - **LCA 以 commit 对象的 `parent`/`secondParent` 为准**（对象库解析），不查 `commit_parent` 表（见 §7、§9）。
 
+### AI 问答链路（2026-10-19 新增）
+
+```mermaid
+sequenceDiagram
+    participant FE as 前端
+    participant SVC as AIServiceImpl
+    participant DB as MySQL
+    participant OBJ as 对象库
+    participant AI as gitlet_ai_helper
+
+    FE->>SVC: POST /api/ai/{owner}/{repo}/chat {id?, session_id, query}
+    alt 传了 id（PR 场景）
+        SVC->>DB: 按 id 取 PR / ownerId / repositoryId
+        SVC->>DB: 取 source / target 分支指针
+        SVC->>OBJ: 读两个 tip 的 commit + blob
+        SVC->>SVC: DiffBuilder 生成 diff_data
+    end
+    SVC->>AI: POST /api/ai (ChatBO)
+    AI->>AI: init_session → intent → 子图 → RAG → rerank → prompt → LLM
+    AI-->>SVC: answer（纯字符串）
+    SVC-->>FE: Result.ok(answer)
+```
+
+要点：
+
+- **上下文补全在 Java 侧**：前端拿不到对象库，也不该自己算 diff；只传 PR 主键即可。
+- **`owner` / `repo` 在 `ChatBO` 里必须是数字主键**（Python schema 声明为 `int`），
+  而 URL 路径上是用户名 / 仓库名，所以 Java 必须先解析成 id。当前实现对路径变量直接
+  `Long.valueOf()`，见 §10-19。
+- **会话是无状态的**：Java 不保存对话历史，`session_id` 由前端生成并复用；
+  记忆由 Python 侧 `MemoryManager` 落 Redis。
+- **同步、非流式**：一次请求等到完整答案，前端需设置更长超时并展示 loading。
+
+### 代码索引链路（PR 合并后）
+
+```
+PR 合并成功
+  → remote-gitlet 发 MQ（exchange=gitlet.pr.exchange, routingKey=pr.merged）※ 待接入，见 §10-27
+  → gitlet_ai_helper 消费 pr_merged_queue
+  → 逐 commit / 逐 tracked_file 判重（Redis）
+  → 按扩展名分流：代码(AST) / Markdown / PDF / Word
+  → 代码：tree-sitter 取语义节点 → 按节点切块 → BGE-M3 稠密+稀疏向量
+  → 另生成一条 commit_message 向量（Jinja2 模板）
+  → 写入 Milvus（带 user_id / repository_id / commit_sha / branch_name / content_type）
+```
+
+- 行号来自 AST 节点的 `start_point` / `end_point`（0-based，入库时 +1），**与 commit_sha 绑定**；
+  后续提交导致代码位移后，旧行号只对旧快照有意义。
+- 同一文件重复合并时，Redis 键相同会跳过；因此**增量更新目前不会替换旧向量**，
+  需要重建索引时必须显式清理（见 §10-22）。
+
 ### 客户端 CLI 远程命令
 
 `gitlet_core/Main.java` 的 switch 现在只有 13 个命令，全是本地操作：
@@ -722,6 +875,13 @@ sequenceDiagram
 | 黑名单 key 用明文 token / 用 jti | 明文会把可重放凭据落进 Redis；`jti` 更标准但要改签发与校验。改用 `jwt:blacklist:` + `SHA-256(token)`：脱敏、定长、改动最小 |
 | 受保护分支对所有人都强制走 PR | 个人 / 小团队场景里属主要能快速自救。改为 OWNER 可绕过直推、非 OWNER 必须走 PR；且判权必须基于**调用者身份**（早期用错人时该绕过形同虚设，见 §6「调用者身份」） |
 | 引入 JLine 做 CLI 密码掩码输入 | 为一次性掩码输入引依赖是过度设计。用 `System.console().readPassword()`，IDE 下返回 null 时降级 `Scanner`（回显，提示到真实终端跑） |
+| AI 服务作为独立 Python 进程，而不是塞进 Java | LangGraph / sentence-transformers / Milvus SDK 都在 Python 生态；独立进程可按 GPU/模型单独扩缩容。代价是跨进程契约和联调成本（见 §10-19） |
+| 意图识别计划改用 SetFit 小模型（当前仍是 LLM） | LLM 路由会让「理解用户意图」本身依赖它要调用的模型，形成循环依赖且多一次延迟；SetFit 微调后在本项目的四类意图上足够稳。**现状**：`IntentClarifier` 仍走 `init_chat_model` + JsonOutputParser，属待替换项（见 §10-26） |
+| AI 回答非流式 | 前端实现简单、Java 代理无需处理 SSE；代价是长回答首字延迟高、超时风险大。若要流式，需同时改 FastAPI、Java 代理与前端三处 |
+| PR diff 由 Java 服务端生成 | 前端没有对象库访问能力，客户端生成会重复实现 blob 读取与 diff 算法；放服务端还能统一截断、二进制处理与权限校验 |
+| Milvus 与 MySQL 分库存储 | 向量检索与事务型元数据查询的索引结构完全不同；Milvus 只存「可检索副本」，权威数据仍在 MySQL/对象库，允许重建 |
+| commit_message 也入 Milvus | 代码考古需要「按变更描述找相似历史」，只有代码块无法回答；用 `content_type` 区分，检索时按场景过滤 |
+| 用 RabbitMQ 解耦索引 | 合并请求不应等待 AST 切分 + 向量化（可能数十秒）；异步失败可进死信重放。代价是索引有延迟、需要幂等与去重 |
 
 > 这一节比「做什么」更值得维护：半年后你不会记得为什么当时没选 JGit。
 
@@ -758,6 +918,15 @@ sequenceDiagram
 | 16 | `PullRequestEventListenerImpl.createBranch` 已无调用点（rejected 路径已改为直接 return） | 死代码，与 §10-13 同类，待清理 |
 | 17 | 暂存区路径命名不统一：代码用 `basePath/temp/merge-{timestamp}`，设计描述是 `.gitlet/pr-staging/{prId}/` | 便于追踪与清理，建议按 prId 命名 |
 | 18 | 可观测性未做：访问日志、关键接口耗时打点、dashboard 均缺失 | 出事难定位（见 §6「gateway 承担的策略」） |
+| 19 | `AIServiceImpl` 对路径变量直接 `Long.valueOf(owner)` / `Long.valueOf(repo)`，但 URL 约定是用户名 / 仓库名 | 非纯数字路径必抛 `NumberFormatException`，AI 接口 500。应先走 `remoteUserMapper.getUserId(owner)` + `getRepositoryId(ownerId, repo)` |
+| 20 | Java 转发地址写死 `http://ai-service/chat`；Python 实际暴露的是 `POST /api/ai`；且工程中**没有 `RestTemplate` Bean** | 即使网络可达也无法调用：路径不匹配 / 启动时注入失败。需要补 Bean、配置化 base-url，并对齐路径 |
+| 21 | `ChatBO` 只有 `@Builder`，没有 getter；`AIController` 用 `@Controller` + `@RequestMapping`，方法直接返回 `Result<String>` 且无 `@ResponseBody` | Jackson 序列化 `ChatBO` 时拿不到属性 → 请求体为空或抛错；`Result` 不会被写回 JSON（会被当成视图/模型属性），且 `@RequestMapping` 接受任意方法。`ChatBO` 需 `@Data`/`@Getter`，controller 改 `@RestController` + `@PostMapping` |
+| 22 | 索引去重键只基于 `file_path`，重复合并时直接跳过 | 文件内容更新后不会替换旧向量，旧快照持续被召回；需改为 `file_path + commit_sha` 或入库前按路径删除旧块 |
+| 23 | MQ 消息里的 `file_path` 是 AI 服务机器上的**绝对路径** | Java 与 Python 不在同一台机器 / 工作目录时 `os.path.exists()` 必失败。需要改成「commit_sha + 相对路径 → 从对象库取内容」，或保证共享挂载 |
+| 24 | `POST /api/ai` 没有服务间鉴权；Java 代理也未校验调用者是否有权访问该仓库 | 知道地址即可消耗模型与向量库资源；代理层应复用 `RepoVisibilityInterceptor` / 调用者身份做授权 |
+| 25 | `ChatDTO.pr_id` 的 JSON 名被 `@JsonProperty("id")` 改成 `id`，与 Python 侧 `context.pr_id` 不一致 | 前端发 `pr_id` 会静默变成 `null`（普通问答）；必须在接口文档/前端里固定用 `id` |
+| 26 | 意图识别仍用 LLM（`IntentClarifier` + `JsonOutputParser`），尚未换成 SetFit | 多一次模型调用与延迟，且意图分类依赖生成模型；`snival/intent-router-zh-setfit-v2` 已选定但未接入 |
+| 27 | **合并事件的生产代码未接入**：`remote-gitlet` 主代码只声明了 exchange/queue，没有任何 `convertAndSend`；发送逻辑只存在于测试类 `testSimpleMQ` | 真实合并后不会触发索引，AI 检索的永远是测试数据或被手工触发的数据。需在合并成功路径（`PullRequestEventListenerImpl`）注入 `RabbitTemplate` 并发送 |
 
 ---
 
@@ -769,7 +938,7 @@ sequenceDiagram
 | M1 | 核心去 `System.out` / `System.exit`，暴露 §5 的契约 | 部分（服务端已能复用核心，见 §13.4） |
 | M2 | 修好 `gateway-service`（依赖 + 路由 + 鉴权/限流），按 spec 生成 `remote-gitlet` 骨架并跑通 `/health` 和第一个真实接口 | `remote-gitlet` 已可用；gateway 仍未修 |
 | M3 | push / pull 全链路 | **已完成**（CLI 侧 push/pull/clone 均已跑通） |
-| M4 | AI 服务接入（独立 project） | 未开始 |
+| M4 | AI 服务接入（独立 project） | **基本完成**：四类意图、Milvus 索引、MQ 消费、Java 代理已实现；联调阻塞见 §10-19～27 |
 | M5 | **Web 前端**：登录/注册/个人中心、仓库详情（文件/提交/分支）、PR 全流程、协作者/设置 | **已完成**（见 §13） |
 
 > M3 验收标准里「两个客户端同 expectedOldSha 先后 push」的并发用例尚未端到端跑过
@@ -891,10 +1060,10 @@ gitlethub-frontend/
     ├── main.js  App.vue  styles.css
     ├── router/index.js   # 路由 + 登录守卫
     ├── stores/auth.js    # Pinia：token/userId/username，localStorage 持久化
-    ├── api/{http.js,user.js,repo.js,pr.js,collab.js}
+    ├── api/{http.js,user.js,repo.js,pr.js,collab.js,ai.js}
     ├── utils/dict.js     # 枚举名/数字码双向归一（PR 状态、协作者等级）
     ├── views/            # Login/Register/Profile/RepoList/RepoDetail/CommitDetail/PRList/PRCreate/PRDetail
-    └── components/       # RepoHeader/FileBrowser/CommitList/BranchList/PRList/CollaboratorPanel/RepoSettings
+    └── components/       # RepoHeader/FileBrowser/CommitList/BranchList/PRList/CollaboratorPanel/RepoSettings/AIAssistant
 ```
 
 > `vite.config.js` 的 `build.commonjsOptions.exclude: [/node_modules[\\/]@vueuse[\\/]/]` 是**必需**的：
@@ -906,16 +1075,35 @@ gitlethub-frontend/
 - **不依赖、不修改 `gitlet_core`**：为保持本地 CLI 轻量，本次所有兼容性 / 只读接口工作
   **自包含在 `remote-gitlet`**（见 §7 的序列化兼容说明）。
 - **不做冲突解决可视化编辑器**：合并冲突仅在 UI 提示，解决走 CLI。
-- 不做标签、AI 三接口（`gitlet_ai_helper` 尚不存在）、网关改造。
+- 不做标签、网关改造。
+- AI 只做**对话式助手**：不做全局悬浮入口、不做回答的 Markdown/代码高亮渲染（当前按纯文本 `pre-wrap` 展示）、不做流式输出。
+  回答中的代码建议到仓库文件页对照阅读。
 
 ### 13.5 验证状态
 
 - ✅ 前端 `npm run build` 通过；Vite dev server 返回 HTTP 200；关键模块 transform 无错。
+- ✅ 2026-10-19：新增 `AIAssistant` 与三处页面接入后重新 `npm run build` 通过。
 - ✅ 后端新测试全绿（`remote-gitlet` 75 个用例全绿）。
 - ✅ PR 合并入口前端已按身份收敛：`PRDetailView.vue` 仅当 `repoInfo.ownerId === auth.userId` 时才渲染「合并」按钮，
   非 owner 显示「只有仓库所有者可以合并该 PR」（**服务端仍做最终裁定**，前端只是不给出无效入口）。
 - ❌ **未做真实端到端**：`192.168.12.168` 上的 Nacos/MySQL/Redis 不可达（TCP 超时），后端无法真正启动；
   且无浏览器自动化，**未验证任何真实数据下的 UI 交互**。修好环境后需按 §12 的「前端」行补跑。
+
+### 13.6 AI 助手（2026-10-19 新增）
+
+| 文件 | 作用 |
+| --- | --- |
+| `src/api/ai.js` | `chatWithAI(owner, repo, payload)` → `POST /api/ai/{owner}/{repo}/chat`，单独把超时放宽到 180s（AI 同步非流式） |
+| `src/components/AIAssistant.vue` | 抽屉式对话：消息列表、loading、快捷提问、Enter 发送 / Shift+Enter 换行、新会话、`crypto.randomUUID()` 生成 `session_id`（无该 API 时降级） |
+| `RepoDetailView.vue` | 「AI 助手」：仓库级问答 / 语义检索 / 考古；首轮可带页面上下文 |
+| `PRDetailView.vue` | 「AI 审查」：把当前 PR 主键作为 `id` 传给后端，由服务端生成 diff |
+| `CommitDetailView.vue` | 「AI 解读提交」：非 PR 场景服务端不组装 diff，前端把提交信息 + 前 3 个变更文件的新旧内容（各截断 4000 字符）拼进**首轮** query |
+
+契约上的注意点：
+
+- 请求体键是 `id`（不是 `pr_id`）；`session_id` 在整个会话内复用，切换仓库 / PR 时组件会重置。
+- 响应是纯字符串，经 axios 拦截器解包后直接就是 `data` 里的 answer，不再有 `{answer}` 包装。
+- 后端联调阻塞项（§10-19～27）修好前，前端只会收到错误提示，无法真正拿到回答。
 
 ---
 
