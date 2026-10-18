@@ -124,6 +124,7 @@ class ChatDTO(TypedDict):
     """
     chat 的 JSON 格式
     {
+      "session_id": "1234567890",
       "query": "解释一下这段改动",
       "owner": 1,
       "repo": 100,
