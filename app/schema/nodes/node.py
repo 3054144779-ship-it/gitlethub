@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import List, TypedDict, NotRequired, Annotated, Dict, Any
 
 from dependency_injector.wiring import Provide, inject
+from langchain.agents import AgentState
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage, AnyMessage
 from redis.asyncio import Redis
@@ -215,7 +216,9 @@ async def generate_answer(state: NodeState, agent=Provide[Container.agent]):
         "messages": [
             SystemMessage(content=f"以下是历史消息{state.get('history_messages', [])}"),
             HumanMessage(content=state["prompt"])
-        ]
+        ],
+        "session_id": state["session_id"],
+        "query": state["query"],
     })
     content = answer["messages"][-1].content
 
@@ -295,7 +298,7 @@ async def generate_explain_prompt(
     service = service_registry[state['intent']]
 
     raw = await redis_client.get(prompt_to_redis_key(state["query"]))
-    review_answer = raw if raw else ""
+    review_answer = raw.decode("utf-8") if raw else ""
 
     if not review_answer:
         review_answer = "代码审查结果为空，请在本次调用中提供代码审查结果"

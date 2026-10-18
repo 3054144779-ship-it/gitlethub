@@ -67,7 +67,7 @@ class MemoryManager:
                 "file_path": meta.get("file_path", ""),
                 "commit_sha": meta.get("commit_sha", ""),
                 "branch_name": meta.get("branch_name", ""),
-                "has_rag_data": False, # 是否有RAG数据
+                "has_rag_data": 0, # 是否有RAG数据
                 "compressed_count": 0, # 压缩消息次数计数
             },
         )
@@ -82,31 +82,43 @@ class MemoryManager:
         }
         meta["user_id"] = int(meta.get("user_id") or 0)
         meta["repository_id"] = int(meta.get("repository_id") or 0)
+        meta["has_rag_data"] = bool(int(meta.get("has_rag_data") or 0))
         return meta
 
-    async def add_message(self, session_id: str, message: AnyMessage):
+    async def add_message(self, session_id: str, messages: List[AnyMessage]):
         """
-        添加消息(存入Redis)
+        批量添加消息(存入Redis)
+        :param session_id: 会话ID
+        :param messages: 消息列表
         :return:
         """
-        message_id = message.id or str(uuid.uuid4())
-        content = message.content if isinstance(message.content, str) else str(message.content)
-        tokens = await self._get_count_tokens(content) # 获取消息的token数
-        payload = json.dumps(
-            {
-                "id": message_id,
-                "type": message.type,
-                "content": content,
-                "tokens": tokens,
-            },
-            ensure_ascii=False,
-        )
+        if not messages:
+            return
+
+        payloads = []
+        total_tokens = 0
+        for message in messages:
+            message_id = message.id or str(uuid.uuid4())
+            content = message.content if isinstance(message.content, str) else str(message.content)
+            tokens = await self._get_count_tokens(content)  # 获取单条消息的token数
+            payloads.append(
+                json.dumps(
+                    {
+                        "id": message_id,
+                        "type": message.type,
+                        "content": content,
+                        "tokens": tokens,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            total_tokens += tokens
 
         # 使用管道批量执行命令，保证原子性
-        with await self.redis_client.pipeline(transaction=True) as pipe:
-            pipe.rpush(session_id, payload) # {session_id : [payload={id, type, content, tokens}]}
-            pipe.incrby(self._tokens_key(session_id), tokens) # {session_id:tokens : total_tokens} 增加token数
-            await pipe.execute() # 执行管道中的命令
+        async with self.redis_client.pipeline(transaction=True) as pipe:
+            pipe.rpush(session_id, *payloads)  # {session_id : [payload={id, type, content, tokens}]} 按顺序追加
+            pipe.incrby(self._tokens_key(session_id), total_tokens)  # {session_id:tokens : total_tokens} 累加本轮总token数
+            await pipe.execute()  # 执行管道中的命令
 
         # 检查token数，如果超过阈值则进行压缩
         await self._check_tokens(session_id)
@@ -177,7 +189,7 @@ class MemoryManager:
         )
 
         # 压缩消息
-        with await self.redis_client.pipeline(transaction=True) as pipe:
+        async with self.redis_client.pipeline(transaction=True) as pipe:
             pipe.lpush(session_id, payload)
             pipe.ltrim(session_id, to_remove, -1)  # 只保留最近2条消息
             pipe.decrby(self._tokens_key(session_id), removed_tokens - compressed_tokens)  # 减少token数
@@ -186,10 +198,10 @@ class MemoryManager:
 
         if not is_less_than_threshold:
             raw_messages = await self.redis_client.lrange(session_id, 0, -1)
-            with await self.redis_client.pipeline(transaction=True) as pipe:
+            async with self.redis_client.pipeline(transaction=True) as pipe:
                 pipe.ltrim(session_id, 0, -1)  # 只保留最近2条消息
                 pipe.set(self._tokens_key(session_id), 0)  # 清空会话
-                pipe.hincrby(f"{session_id}:meta", "has_rag_data", True) # 设置 has_rag_data 标记为True
+                pipe.hincrby(f"{session_id}:meta", "has_rag_data", 1) # 设置 has_rag_data 标记为True
                 await pipe.execute()  # 执行管道中的命令
 
             # json.loads 直接读 bytes，取出每条消息的有效载荷 payload（str）
@@ -258,7 +270,7 @@ class MemoryManager:
         }
 
     async def _get_milvus_messages(self, session_id: str, query: str, meta: dict) -> List[str]:
-        meta = self._get_session_meta(session_id)
+        meta = await self._get_session_meta(session_id)
         vector = await asyncio.to_thread(
             self.embedding_client.to_vector,
             [Document(page_content=query)]
@@ -273,7 +285,7 @@ class MemoryManager:
             user_id=meta["user_id"],
             repo_id=meta["repository_id"],
             output_fields=["text"],
-            filter_expr=f'metadata["session_id"] == {session_id}',
+            filter_expr=f'metadata["session_id"] == "{session_id}"',
             top_k=5
         )
 
@@ -295,9 +307,10 @@ class MemoryManager:
         milvus_messages = ""
         if meta.get("has_rag_data", False):
             # 如果有RAG数据，则从Milvus中获取
-            milvus_messages = self._get_milvus_messages(session_id, query, meta)
-        messages_byte = await self.redis_client.get(session_id)
-        redis_messages = [str(json.loads(message)) for message in messages_byte]
+            milvus_messages = await self._get_milvus_messages(session_id, query, meta)
+        # 消息以 List 类型存储，用 lrange 读取；key 不存在时返回空列表，避免 None 迭代报错
+        raw_messages = await self.redis_client.lrange(session_id, 0, -1)
+        redis_messages = [str(json.loads(raw)) for raw in raw_messages] if raw_messages else "未查询到相关上下文"
         return {
             "milvus_messages": "milvus中检索到的会话上下文（可能为空）：" + str(milvus_messages) if milvus_messages else "",
             "redis_messages": "最近的会话上下文：" + str(redis_messages)

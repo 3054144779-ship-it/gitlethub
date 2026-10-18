@@ -280,16 +280,13 @@ if __name__ == '__main__':
         print(f"耗时: {time() - start_time}秒")
         print("执行结束")
 
+    async def main():
+        await test1()   # 代码解释
+        await test2()   # 代码审查
+        await test3()   # 语义化搜索
+        await test4()   # 代码考古
+        await test5()   # 澄清器
 
-    # 代码解释
-    asyncio.run(test1())
-    # 代码审查
-    asyncio.run(test2())
-    # 语义化搜索
-    asyncio.run(test3())
-    # 代码考古
-    asyncio.run(test4())
-    # 澄清器
-    asyncio.run(test5())
+    asyncio.run(main())
 
 

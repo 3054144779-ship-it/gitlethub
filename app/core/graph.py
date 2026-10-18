@@ -175,6 +175,7 @@ class GitletGraph:
                     "query": state["query"],
                     "owner": state["owner"],
                     "repo": state["repo"],
+                    "session_id": state["session_id"],
                     "context": state["context"],
                     "intent": intent,
                 })

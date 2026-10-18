@@ -1,6 +1,5 @@
 import redis.asyncio as aioredis
 
-from langgraph.graph.state import CompiledStateGraph
 from pymilvus import MilvusClient
 from dependency_injector import containers, providers
 
@@ -139,14 +138,6 @@ class Container(containers.DeclarativeContainer):
         base_url=config.rewrite.base_url
     )
 
-    # 回复agent
-    agent = providers.Singleton(
-        _init_agent,
-        model=config.agent.model,
-        model_provider=config.agent.model_provider,
-        api_key=config.agent.api_key,
-        base_url=config.agent.base_url
-    )
 
     # 创建流程图
     flow_chart = providers.Singleton(
@@ -196,7 +187,17 @@ class Container(containers.DeclarativeContainer):
     memory_manager = providers.Singleton(
         MemoryManager,
         redis_client=redis_client,
-        milvus_client=milvus_client,
+        milvus_client=milvus_repo,
         compress_client=compressor_llm,
         embedding_client=embedding_model,
+    )
+
+    # 回复agent
+    agent = providers.Singleton(
+        _init_agent,
+        model=config.agent.model,
+        model_provider=config.agent.model_provider,
+        api_key=config.agent.api_key,
+        base_url=config.agent.base_url,
+        middleware_instance=memory_manager
     )
