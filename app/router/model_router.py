@@ -16,6 +16,7 @@ def _resolve_device(prefer: str = "cuda") -> str:
         return "cpu"
     return prefer
 
+# TODO: 后续优化到ONNX为CPU加速, 如果云部署没有GPU的话
 DEVICE = _resolve_device(os.getenv("MODEL_DEVICE", "cuda"))
 USE_FP16 = (DEVICE == "cuda")  # CPU 上 fp16 不支持且更慢，强制关闭
 
