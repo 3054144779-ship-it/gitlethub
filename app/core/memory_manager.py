@@ -13,6 +13,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AnyMessage, HumanMessage, AIMessage
 from redis.asyncio import Redis
 from pymilvus import MilvusClient
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from client.embeding import EmbeddingModel
 from repository.milvus_repo import MilvusRepo
@@ -208,27 +209,40 @@ class MemoryManager:
             # 消息合并，防止召回出错
             contents = ", ".join([str(json.loads(raw)) for raw in raw_messages])
             # 如果保留两条依旧大于阈值，则进行RAG化，直接把这长文本切片，存入 Milvus（打上当前 session_id 的标签）
+            # 切分长文本，避免超过 Milvus varchar 字段 65535 限制
+            splitter = RecursiveCharacterTextSplitter(
+                separators=["\n\n", "\n"],
+                chunk_size=1000,
+                chunk_overlap=100,
+                length_function=len,
+            )
+            chunks = splitter.split_text(contents)
+
+            meta = await self._get_session_meta(session_id)
+
+            # 批量向量化所有切片
             vector = await asyncio.to_thread(
                 self.embedding_client.to_vector,
-                [Document(page_content=contents)]
+                [Document(page_content=chunk) for chunk in chunks]
             )
-            dense_docs, sparse_docs = vector[0]
-            meta = await self._get_session_meta(session_id)
-            milvus_po = MilvusPO(
-                id=None,
-                user_id=meta["user_id"],
-                repository_id=meta["repository_id"],
-                file_path=meta["file_path"],
-                commit_sha=meta["commit_sha"],
-                branch_name=meta["branch_name"],
-                dense_vector=dense_docs.tolist(),
-                sparse_vector=sparse_docs,
-                language=None,
-                text=contents,
-                metadata=Metadata(session_id=session_id),
-                content_type="raw_text"
-            )
-            self.milvus_client.insert(milvus_po.to_milvus_dict())
+
+            # 逐片存入 Milvus
+            for (dense_docs, sparse_docs), chunk in zip(vector, chunks):
+                milvus_po = MilvusPO(
+                    id=None,
+                    user_id=meta["user_id"],
+                    repository_id=meta["repository_id"],
+                    file_path=meta["file_path"],
+                    commit_sha=meta["commit_sha"],
+                    branch_name=meta["branch_name"],
+                    dense_vector=dense_docs.tolist(),
+                    sparse_vector=sparse_docs,
+                    language=None,
+                    text=chunk,
+                    metadata=Metadata(session_id=session_id),
+                    content_type="raw_text"
+                )
+                self.milvus_client.insert(milvus_po.to_milvus_dict())
 
     async def _compress_messages(self, session_id: str, messages: List[str]) -> dict:
         """
