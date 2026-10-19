@@ -372,6 +372,9 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
   第一个 diff 的 `file_path`；`commit_sha` / `branch_name` 留空，`init_session` 幂等），
   再执行 LangGraph。**响应是纯字符串 `answer`**，没有流式、没有结构化引用列表；
   Java 侧包成 `Result.ok(answer)`，即 `{code:0, message:"ok", data:"<answer>"}`。
+- **AI 路由必须返回 `PlainTextResponse`（`text/plain`）**，不能直接用 FastAPI 默认的 `JSONResponse`：
+  默认行为会把字符串再 JSON 编码一层（`"answer\n..."`），Java 的 `StringHttpMessageConverter`
+  会原样读到字面量 `\n` 和外层引号，前端 Markdown 渲染器就看不到真正的换行。
 
 **四类意图**（由 LangGraph 的 intent 节点识别后路由到子图）：
 

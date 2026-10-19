@@ -134,7 +134,9 @@
       "Bash(npm audit *)",
       "Bash(node --input-type=module -)",
       "Bash(curl -s http://localhost:5199/src/components/AIAssistant.vue)",
-      "Bash(curl -s -o /dev/null -w \"component:%{http_code}\\\\n\" http://localhost:5199/src/components/AIAssistant.vue)"
+      "Bash(curl -s -o /dev/null -w \"component:%{http_code}\\\\n\" http://localhost:5199/src/components/AIAssistant.vue)",
+      "Bash(.venv/Scripts/python.exe -)",
+      "Bash(.venv/Scripts/python.exe -m py_compile app/router/chat_router.py)"
     ]
   }
 }
