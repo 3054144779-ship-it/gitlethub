@@ -1,0 +1,240 @@
+{
+  "accuracy": 0.6964028776978417,
+  "macro_f1": 0.5491205680821735,
+  "routed_accuracy": 0.6719424460431654,
+  "routed_in_scope_macro_f1": 0.5276721600830794,
+  "domain_accuracy": 0.8762589928057554,
+  "oos_precision": 1.0,
+  "oos_recall": 0.2857142857142857,
+  "oos_f1": 0.4444444444444444,
+  "n_train_before_cap": 5237,
+  "n_body_train": 4306,
+  "n_head_train": 5237,
+  "n_body_action_object_contrasts": 270,
+  "n_head_action_object_contrasts": 270,
+  "action_object_probe": {
+    "samples": 45,
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "per_object_axis": {
+      "alert": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "api_key": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "certificate": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "cluster": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "config": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "database": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "dependency": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "feature_flag": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "index": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "ingress": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "log": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "node": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "pipeline": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "pod": {
+        "samples": 3,
+        "accuracy": 1.0
+      },
+      "service": {
+        "samples": 3,
+        "accuracy": 1.0
+      }
+    },
+    "confusion": {
+      "code_explanation -> code_explanation": 15,
+      "code_search -> code_search": 15,
+      "monitoring_query -> monitoring_query": 15
+    }
+  },
+  "n_rule_validation": 416,
+  "n_calibration": 473,
+  "n_gold_test": 695,
+  "body_max_samples_per_label": 250,
+  "head_class_weighting": "balanced",
+  "head_class_weights": [
+    0.7478506565093994,
+    0.4736388027667999,
+    0.8807332515716553,
+    0.3176414966583252,
+    0.5729501247406006,
+    1.0603853464126587,
+    0.81350177526474,
+    1.0874359607696533,
+    0.9776947498321533,
+    1.3575633764266968,
+    1.0656872987747192,
+    0.5451085567474365,
+    1.3321090936660767,
+    1.3075916767120361,
+    1.1907119750976562,
+    1.2249279022216797,
+    1.098646640777588,
+    0.9389315247535706,
+    1.6146777868270874,
+    1.3575633764266968,
+    1.034647822380066
+  ],
+  "minimum_class_samples": 150,
+  "split_dir": "/root/autodl-tmp/dataset_splits/release_695",
+  "head_type": "SetFitHead",
+  "labels": [
+    "code_authoring",
+    "code_modification",
+    "code_repair",
+    "code_review",
+    "code_explanation",
+    "test_generation",
+    "code_search",
+    "architecture_consultation",
+    "dependency_management",
+    "deployment",
+    "infrastructure_provisioning",
+    "monitoring_query",
+    "incident_response",
+    "pipeline_operation",
+    "config_change",
+    "security_operation",
+    "log_analysis",
+    "context_specification",
+    "workflow_control",
+    "general_inquiry",
+    "out_of_scope"
+  ],
+  "label_map": {
+    "Code Authoring": "code_authoring",
+    "Code Modification": "code_modification",
+    "Code Repair": "code_repair",
+    "Code Review": "code_review",
+    "Code Explanation": "code_explanation",
+    "Test Generation": "test_generation",
+    "Code Search": "code_search",
+    "Architecture Consultation": "architecture_consultation",
+    "Dependency Management": "dependency_management",
+    "Deployment": "deployment",
+    "Infrastructure Provisioning": "infrastructure_provisioning",
+    "Monitoring Query": "monitoring_query",
+    "Incident Response": "incident_response",
+    "Pipeline Operation": "pipeline_operation",
+    "Config Change": "config_change",
+    "Security Operation": "security_operation",
+    "Log Analysis": "log_analysis",
+    "Context Specification": "context_specification",
+    "Workflow Control": "workflow_control",
+    "General Inquiry": "general_inquiry",
+    "Out of Scope": "out_of_scope"
+  },
+  "intent_domains": {
+    "code_authoring": "coding",
+    "code_modification": "coding",
+    "code_repair": "coding",
+    "code_review": "coding",
+    "code_explanation": "coding",
+    "test_generation": "coding",
+    "code_search": "coding",
+    "architecture_consultation": "coding",
+    "dependency_management": "coding",
+    "deployment": "ops",
+    "infrastructure_provisioning": "ops",
+    "monitoring_query": "ops",
+    "incident_response": "ops",
+    "pipeline_operation": "ops",
+    "config_change": "ops",
+    "security_operation": "ops",
+    "log_analysis": "ops",
+    "context_specification": "general_control",
+    "workflow_control": "general_control",
+    "general_inquiry": "general_control",
+    "out_of_scope": "out_of_scope"
+  },
+  "rejection_policy_file": "rejection_policy.json",
+  "keyword_mining": {
+    "real_rows_considered": 3671,
+    "synthetic_rows_excluded": 0,
+    "candidate_terms": 62334,
+    "rejected_for_conflict": 20343,
+    "rejected_for_support": 41105,
+    "accepted_rules": 740
+  },
+  "base_model": "jinaai/jina-embeddings-v5-text-small-classification",
+  "batch_size": [
+    2,
+    64
+  ],
+  "num_epochs": {
+    "body": 2,
+    "head": 8
+  },
+  "num_iterations": 8,
+  "head_learning_rate": 0.005,
+  "head_l2_weight": 0.01,
+  "max_length": 1024,
+  "use_amp": true,
+  "gradient_checkpointing": true,
+  "device": "cuda",
+  "device_name": "cuda:NVIDIA GeForce RTX 5090",
+  "runtime": {
+    "device": "cuda",
+    "device_name": "cuda:NVIDIA GeForce RTX 5090",
+    "logical_cpus": 208,
+    "cgroup_cpu_quota": 25,
+    "boot_compute_threads": 25,
+    "torch_num_threads": 25,
+    "torch_num_interop_threads": 4,
+    "OMP_NUM_THREADS": "25",
+    "MKL_NUM_THREADS": "25",
+    "cuda_available": true,
+    "cuda_mem_gb": 31.36,
+    "cuda_cc": "12.0",
+    "torch_version": "2.13.0+cu130",
+    "pytorch_cuda_alloc_conf": "expandable_segments:True"
+  },
+  "pooling": "lasttoken",
+  "padding_side": "left",
+  "inference_target": "cpu",
+  "sampling_strategy": "oversampling",
+  "note": "Body training uses a capped, class-balanced contrastive set; the differentiable head uses the complete train split.",
+  "checkpointing": {
+    "save_strategy": "steps",
+    "save_steps": 500,
+    "save_total_limit": 1,
+    "output_dir": "/root/autodl-tmp/intent-router/checkpoints"
+  }
+}
