@@ -13,7 +13,7 @@ public class RestTemplateConfig {
     public RestTemplate restTemplate(RestTemplateBuilder builder) {
         return builder
                 .setConnectTimeout(Duration.ofSeconds(5))
-                .setReadTimeout(Duration.ofSeconds(120))
+                .setReadTimeout(Duration.ofSeconds(300))
                 .build();
     }
 }
