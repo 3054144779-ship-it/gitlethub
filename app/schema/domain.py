@@ -130,6 +130,7 @@ class ChatDTO(TypedDict):
       "repo": 100,
       "context": {
         "pr_id": 999,                // 如果是 PR 场景
+        "pr_name": pr信息,
         "diff_data": [               // 前端传过来的结构化 Diff
           {
             "file_path": "OrderService.java",

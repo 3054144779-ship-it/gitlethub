@@ -9,10 +9,15 @@ from router.chat_router import router as chat_router
 from worker.warmup_models import warmup_models
 
 
+import os
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     container = Container()
-    with open("config.yaml", encoding="utf-8") as f:
+    with open(os.path.join(PROJECT_ROOT, "config.yaml"), encoding="utf-8") as f:
         config_data = yaml.safe_load(f)
     container.config.from_dict(config_data["config"])
     container.wire(modules=[
