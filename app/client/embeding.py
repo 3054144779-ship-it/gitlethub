@@ -42,11 +42,14 @@ class EmbeddingModel:
         # fast tokenizer 非线程安全，加锁避免并发 "Already borrowed"
         # with self._lock:
         #     result = self.embedding_model.encode([doc.page_content for doc in documents], return_dense=True, return_sparse=True)
-        data = httpx.post(
-            f"{self.base_url}/model/embeddings",
+        data = self._client.post(
+            url=f"{self.base_url}/model/embeddings",
             json={"texts": [d.page_content for d in documents]},
             headers={"Content-Type": "application/json"},
         )
+
+        # 抛出异常
+        data.raise_for_status()
 
         result = data.json()
         dense_vecs = result.get("dense_vecs", [])

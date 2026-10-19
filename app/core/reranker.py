@@ -80,11 +80,13 @@ class Reranker:
             "normalize": normalize,
         }
 
-        data = httpx.post(
+        data = self._client.post(
             url=f"{self.base_url}/model/rerank",
             json=json_incoming,
             headers={"Content-Type": "application/json"},
         )
+
+        data.raise_for_status()
 
         rerank_result = data.json()
         scores = rerank_result.get("scores")
