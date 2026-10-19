@@ -77,6 +77,7 @@ class RequestDTO:
     status: str
     author: str
     pr_name: str
+    language: str | None
 
     @classmethod
     def from_dict(cls, data):
@@ -92,6 +93,7 @@ class RequestDTO:
             status=data["status"],
             commit_time=data["commit_time"],
             pr_name=data["pr_name"],
+            language=data["language"]
         )
 
 

@@ -30,6 +30,7 @@ class TrackedFile(BaseModel):
     """
     file_path: str
     status: str
+    language: str | None = None
 
 class CommitMessage(BaseModel):
     """

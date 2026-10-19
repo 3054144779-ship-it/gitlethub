@@ -43,8 +43,12 @@ async def start_consume_mq_message(callback: callable):
                 body = message.body.decode()
                 print("获取 MQ 消息:", body)
                 messages.append(body)
-                await callback(body)
-                await message.ack() # 确认消息
+                try:
+                    await callback(body)
+                    await message.ack() # 确认消息
+                except Exception as e:
+                    print(f"处理消息失败: {e}")
+                    await message.reject(requeue=False)  # 进入死信队列，不重新投递
         return messages
 
 if __name__ == '__main__':

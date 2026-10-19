@@ -196,12 +196,13 @@ class CodeParser:
 
         return tree.root_node
 
-    def parse_file(self, file_path: str) -> Optional[Node]:
+    def parse_file(self, file_path: str, language: Optional[str] = None) -> Optional[Node]:
         """
         解析文件
 
         Args:
             file_path: 文件路径
+            language: 语言名称，如不提供则通过文件扩展名检测
 
         Returns:
             AST 根节点
@@ -209,7 +210,7 @@ class CodeParser:
         with open(file_path, 'rb') as f:
             source = f.read()
 
-        return self.parse(source, file_path=file_path)
+        return self.parse(source, language=language, file_path=file_path)
 
     def find_nodes(self, root_node: Node, node_type: str) -> list:
         """

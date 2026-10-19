@@ -48,11 +48,12 @@ async def handle_message_code(
         # 如果传入的文件路径存在, AST切分
         # 创建解析器
         parser = CodeParser()
-        # 解析文件, 获取AST的根节点
-        root = parser.parse_file(request.file_path)
-        # 检测文件语言
-        language = parser.detect_language(request.file_path)
+        # 优先使用传入的 language，否则检测
+        language = request.language or parser.detect_language(request.file_path)
         print(f"文件 {request.file_path} 的语言是 {language}")
+
+        # 解析文件, 获取AST的根节点
+        root = parser.parse_file(request.file_path, language=language)
 
         if root is None:
             raise ValueError("文件解析失败")
@@ -200,7 +201,7 @@ async def handle_message(body: str, redis_client: Redis = Provide[Container.redi
 
         # 处理后的文件存入Redis防止重复处理，如果说文件的SHA值也就是路径相同就跳过，用于去重和追溯
         key = path_to_redis_key(request_dto.file_path)
-        redis_client.set(key, request_dto.file_path)
+        await redis_client.set(key, request_dto.file_path)
 
     async def bounded_file_handler(req: RequestDTO, semaphore: Semaphore):
         async with semaphore:
@@ -210,6 +211,10 @@ async def handle_message(body: str, redis_client: Redis = Provide[Container.redi
     # 遍历提交记录，处理文件
     for commit in request.pr_info.commits:
         for file in commit.tracked_files:
+            # 只处理新增和修改的文件，跳过未变化的
+            if file.status == "UNCHANGED":
+                continue
+
             # Redis判断文件是否已处理
             key = path_to_redis_key(file.file_path)
             if await redis_client.exists(key):
@@ -229,6 +234,7 @@ async def handle_message(body: str, redis_client: Redis = Provide[Container.redi
                 "file_path": file.file_path,
                 "status": file.status,
                 "pr_name": request.pr_info.pr_name,
+                "language": file.language
             })
             tasks.append(bounded_file_handler(req, asyncio.Semaphore(10)))
 
