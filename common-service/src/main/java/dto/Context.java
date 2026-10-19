@@ -27,5 +27,6 @@ import java.util.List;
 @AllArgsConstructor
 public class Context {
     private Long pr_id;
+    private String pr_name;
     private List<DiffData> diff_data;
 }

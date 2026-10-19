@@ -2,12 +2,12 @@ package org.openapitools.controller;
 
 import common.Result;
 import dto.ChatDTO;
+import lombok.extern.slf4j.Slf4j;
 import org.openapitools.service.AIService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
-import vo.ChatVO;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/ai/{owner}/{repo}")
 public class AIController {
@@ -21,6 +21,7 @@ public class AIController {
      */
     @PostMapping("/chat")
     public Result<String> chat(@PathVariable String owner, @PathVariable String repo, @RequestBody ChatDTO chatDTO) {
+        log.info("收到来自的聊天请求 owner: {}, repo: {}, query: {}", owner, repo, chatDTO.getQuery());
         return Result.ok(aiService.chat(owner, repo, chatDTO));
     }
 

@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import static org.openapitools.utils.Utils.join;
 
 @Slf4j
 @Service
@@ -310,6 +311,8 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         List<TrackedFile> trackedFiles = sourceCommit.getTrackedFiles().keySet()
                 .stream()
                 .map(trackedFile -> TrackedFile.builder()
+                        .filePath(join(repositoryPaths.getObject(), sourceCommit.getTrackedFiles()
+                                .get(trackedFile)).toString())
                         .status(getState(trackedFile, sourceCommit.getTrackedFiles(), targetCommit.getTrackedFiles()))
                         .build())
                 .collect(Collectors.toList());
@@ -323,7 +326,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                 .build();
 
         PrInfo prInfo = PrInfo.builder()
-                .prName(pullRequest.getTitle())
+                .prName(pullRequest.getTitle() + "\n" + pullRequest.getDescription()) // 这里用名字+描述
                 .author(author.getUsername())
                 .commits(List.of(commitInfo))
                 .build();

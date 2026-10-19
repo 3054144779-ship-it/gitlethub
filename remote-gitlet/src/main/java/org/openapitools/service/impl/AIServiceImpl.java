@@ -39,10 +39,7 @@ public class AIServiceImpl implements AIService {
 
     @Override
     public String chat(String owner, String repo, ChatDTO chatDTO) {
-        Context context = Context.builder()
-                .pr_id(chatDTO.getPr_id())
-                .build();
-
+        Context context = null;
         Long ownerId = remoteUserMapper.getUserId(owner);
         Long repositoryId = ownerId == null ? null : remoteRepositoryMapper.getRepositoryId(ownerId, repo);
 
@@ -50,6 +47,10 @@ public class AIServiceImpl implements AIService {
         if (chatDTO.getPr_id() != null) {
             PullRequest pr = remotePullRequestMapper.selectById(chatDTO.getPr_id());
             if (pr != null && repositoryId != null) {
+                context = Context.builder()
+                        .pr_id(chatDTO.getPr_id())
+                        .pr_name(pr.getTitle())
+                        .build();
                 context.setDiff_data(
                         diffBuilder.buildPrDiff(repositoryId, pr.getSourceBranch(), pr.getTargetBranch()));
             }

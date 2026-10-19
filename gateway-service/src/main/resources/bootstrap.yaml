@@ -2,6 +2,8 @@ server:
   port: 8080
 
 spring:
+  application:
+    name: gateway-service
   cloud:
     gateway:
       routes:
@@ -9,7 +11,7 @@ spring:
         - id: remote_service
           uri: lb://remote-gitlet
           predicates:
-            - Path=/api/repos/**
+            - Path=/api/repos/**,/api/ai/**
         # 用户服务路由
         - id: user_service
           uri: lb://user-service

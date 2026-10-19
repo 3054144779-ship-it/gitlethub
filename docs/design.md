@@ -390,8 +390,9 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 → 死信走默认交换机 + 路由键 `pr_merged_dlq` → `pr_merged_dlq`。
 声明方（`remote-gitlet/RabbitMQConfig`）与消费端（`gitlet_ai_helper/client/mq_consumer.py`）
 **必须声明完全一致的队列参数**，否则 `PRECONDITION_FAILED`（原理见附录 §7.1）。
-注意：`RabbitMQConfig` 只声明拓扑，**合并事件的生产代码尚未接入**（当前只有测试类
-`testSimpleMQ` 手工 `convertAndSend`，见 §10-27）。
+生产端已在 `PullRequestEventListenerImpl.sendMessage()` 接入：
+合并成功后向 `gitlet.pr.exchange` / `pr.merged` 发送 `MessageQueueRequest`
+（`snake_case` 序列化，见 `MessageConverterConfig`）。
 
 message格式：
 
@@ -761,7 +762,7 @@ sequenceDiagram
 
 ```
 PR 合并成功
-  → remote-gitlet 发 MQ（exchange=gitlet.pr.exchange, routingKey=pr.merged）※ 待接入，见 §10-27
+  → remote-gitlet 发 MQ（exchange=gitlet.pr.exchange, routingKey=pr.merged）
   → gitlet_ai_helper 消费 pr_merged_queue
   → 逐 commit / 逐 tracked_file 判重（Redis）
   → 按扩展名分流：代码(AST) / Markdown / PDF / Word
@@ -916,15 +917,17 @@ PR 合并成功
 | 16 | `PullRequestEventListenerImpl.createBranch` 已无调用点（rejected 路径已改为直接 return） | 死代码，与 §10-13 同类，待清理 |
 | 17 | 暂存区路径命名不统一：代码用 `basePath/temp/merge-{timestamp}`，设计描述是 `.gitlet/pr-staging/{prId}/` | 便于追踪与清理，建议按 prId 命名 |
 | 18 | 可观测性未做：访问日志、关键接口耗时打点、dashboard 均缺失 | 出事难定位（见 §6「gateway 承担的策略」） |
-| 19 | `AIServiceImpl` 对路径变量直接 `Long.valueOf(owner)` / `Long.valueOf(repo)`，但 URL 约定是用户名 / 仓库名 | 非纯数字路径必抛 `NumberFormatException`，AI 接口 500。应先走 `remoteUserMapper.getUserId(owner)` + `getRepositoryId(ownerId, repo)` |
-| 20 | Java 转发地址写死 `http://ai-service/chat`；Python 实际暴露的是 `POST /api/ai`；且工程中**没有 `RestTemplate` Bean** | 即使网络可达也无法调用：路径不匹配 / 启动时注入失败。需要补 Bean、配置化 base-url，并对齐路径 |
-| 21 | `ChatBO` 只有 `@Builder`，没有 getter；`AIController` 用 `@Controller` + `@RequestMapping`，方法直接返回 `Result<String>` 且无 `@ResponseBody` | Jackson 序列化 `ChatBO` 时拿不到属性 → 请求体为空或抛错；`Result` 不会被写回 JSON（会被当成视图/模型属性），且 `@RequestMapping` 接受任意方法。`ChatBO` 需 `@Data`/`@Getter`，controller 改 `@RestController` + `@PostMapping` |
+| 19 | ~~`AIServiceImpl` 对路径变量直接 `Long.valueOf(owner)` / `Long.valueOf(repo)`~~ | **已解决**：改为 `getUserId(owner)` + `getRepositoryId(ownerId, repo)`，`ChatBO.owner/repo` 现在传数字主键 |
+| 20 | ~~Java 转发地址写死、路径与 Python 不一致、缺 `RestTemplate` Bean~~ | **已解决**：`RestTemplateConfig` 提供 Bean；地址改为 `${ai.service.url:http://localhost:8000}`，转发到 `/api/ai` |
+| 21 | ~~`ChatBO` 无 getter；`AIController` 非 `@RestController`~~ | **已解决**：`ChatBO` 加 `@Data`；controller 改为 `@RestController` + `@PostMapping`，`Result<String>` 正常序列化 |
 | 22 | 索引去重键只基于 `file_path`，重复合并时直接跳过 | 文件内容更新后不会替换旧向量，旧快照持续被召回；需改为 `file_path + commit_sha` 或入库前按路径删除旧块 |
 | 23 | MQ 消息里的 `file_path` 是 AI 服务机器上的**绝对路径** | Java 与 Python 不在同一台机器 / 工作目录时 `os.path.exists()` 必失败。需要改成「commit_sha + 相对路径 → 从对象库取内容」，或保证共享挂载 |
 | 24 | `POST /api/ai` 没有服务间鉴权；Java 代理也未校验调用者是否有权访问该仓库 | 知道地址即可消耗模型与向量库资源；代理层应复用 `RepoVisibilityInterceptor` / 调用者身份做授权 |
 | 25 | `ChatDTO.pr_id` 的 JSON 名被 `@JsonProperty("id")` 改成 `id`，与 Python 侧 `context.pr_id` 不一致 | 前端发 `pr_id` 会静默变成 `null`（普通问答）；必须在接口文档/前端里固定用 `id` |
 | 26 | 意图识别仍用 LLM（`IntentClarifier` + `JsonOutputParser`），尚未换成 SetFit | 多一次模型调用与延迟，且意图分类依赖生成模型；`snival/intent-router-zh-setfit-v2` 已选定但未接入 |
-| 27 | **合并事件的生产代码未接入**：`remote-gitlet` 主代码只声明了 exchange/queue，没有任何 `convertAndSend`；发送逻辑只存在于测试类 `testSimpleMQ` | 真实合并后不会触发索引，AI 检索的永远是测试数据或被手工触发的数据。需在合并成功路径（`PullRequestEventListenerImpl`）注入 `RabbitTemplate` 并发送 |
+| 27 | ~~合并事件的生产代码未接入~~ | **已解决**：`PullRequestEventListenerImpl.sendMessage()` 已向 `gitlet.pr.exchange` / `pr.merged` 发送消息 |
+| 28 | `sendMessage()` 构造 `TrackedFile` 时只填了 `status`，**没有填 `filePath`**（`PullRequestEventListenerImpl.java:312-314`） | 消息里的 `tracked_files[].file_path` 全是 `null`，Python 消费者 `path_to_redis_key(null)` / `os.path.exists(null)` 直接失败，索引链路仍然跑不通。需补 `.filePath(trackedFile)`（且路径要对 AI 服务可读，见 §10-23） |
+| 29 | `AIServiceImpl.chat()` 在 `pr_id` 不为空时直接 `pullRequest.getTitle()`，未判空；随后又重复 `selectById` 一次 | 传入不存在的 PR id 会 NPE → 500；同一 PR 查两次。应先判空并复用同一个对象 |
 
 ---
 
@@ -936,7 +939,7 @@ PR 合并成功
 | M1 | 核心去 `System.out` / `System.exit`，暴露 §5 的契约 | 部分（服务端已能复用核心，见 §13.4） |
 | M2 | 修好 `gateway-service`（依赖 + 路由 + 鉴权/限流），按 spec 生成 `remote-gitlet` 骨架并跑通 `/health` 和第一个真实接口 | `remote-gitlet` 已可用；gateway 仍未修 |
 | M3 | push / pull 全链路 | **已完成**（CLI 侧 push/pull/clone 均已跑通） |
-| M4 | AI 服务接入（独立 project） | **基本完成**：四类意图、Milvus 索引、MQ 消费、Java 代理已实现；联调阻塞见 §10-19～27 |
+| M4 | AI 服务接入（独立 project） | **基本完成**：四类意图、Milvus 索引、MQ 消费、Java 代理已实现；仍开放的风险见 §10-22～26、28、29 |
 | M5 | **Web 前端**：登录/注册/个人中心、仓库详情（文件/提交/分支）、PR 全流程、协作者/设置 | **已完成**（见 §13） |
 
 > M3 验收标准里「两个客户端同 expectedOldSha 先后 push」的并发用例尚未端到端跑过
@@ -1030,7 +1033,8 @@ mvn -B -Duser.language=en -Duser.country=US -pl common-service,remote-gitlet -am
 一个 Vue3 + Vite 的**独立前端工程**，位于 `D:\Job_project\gitlethub-frontend`
 （**不在 `gitlethub` 仓库内**，前后端分离开发）。
 
-技术栈：Vue 3 + Vite + Vue Router 4 + Pinia + axios + Element Plus（全量引入）。
+技术栈：Vue 3 + Vite + Vue Router 4 + Pinia + axios + Element Plus（全量引入）；
+AI 回答渲染使用 `marked` + `DOMPurify`。
 
 ### 13.2 与后端如何连
 
@@ -1074,8 +1078,9 @@ gitlethub-frontend/
   **自包含在 `remote-gitlet`**（见 §7 的序列化兼容说明）。
 - **不做冲突解决可视化编辑器**：合并冲突仅在 UI 提示，解决走 CLI。
 - 不做标签、网关改造。
-- AI 只做**对话式助手**：不做全局悬浮入口、不做回答的 Markdown/代码高亮渲染（当前按纯文本 `pre-wrap` 展示）、不做流式输出。
-  回答中的代码建议到仓库文件页对照阅读。
+- AI 只做**对话式助手**：不做全局悬浮入口、不做流式输出。
+- 回答按 **Markdown 渲染**（`marked` + `DOMPurify` 清洗，防 XSS），但不做代码语法高亮；
+  代码块保留深色底和横向滚动，复杂代码建议到仓库文件页对照阅读。
 
 ### 13.5 验证状态
 
@@ -1092,7 +1097,7 @@ gitlethub-frontend/
 | 文件 | 作用 |
 | --- | --- |
 | `src/api/ai.js` | `chatWithAI(owner, repo, payload)` → `POST /api/ai/{owner}/{repo}/chat`，单独把超时放宽到 180s（AI 同步非流式） |
-| `src/components/AIAssistant.vue` | 抽屉式对话：消息列表、loading、快捷提问、Enter 发送 / Shift+Enter 换行、新会话、`crypto.randomUUID()` 生成 `session_id`（无该 API 时降级） |
+| `src/components/AIAssistant.vue` | 抽屉式对话：消息列表、loading、快捷提问、Enter 发送 / Shift+Enter 换行、新会话、`crypto.randomUUID()` 生成 `session_id`（无该 API 时降级）；助手回答用 `marked` 渲染 Markdown，再经 `DOMPurify.sanitize` 清洗后 `v-html` |
 | `RepoDetailView.vue` | 「AI 助手」：仓库级问答 / 语义检索 / 考古；首轮可带页面上下文 |
 | `PRDetailView.vue` | 「AI 审查」：把当前 PR 主键作为 `id` 传给后端，由服务端生成 diff |
 | `CommitDetailView.vue` | 「AI 解读提交」：非 PR 场景服务端不组装 diff，前端把提交信息 + 前 3 个变更文件的新旧内容（各截断 4000 字符）拼进**首轮** query |
@@ -1101,7 +1106,9 @@ gitlethub-frontend/
 
 - 请求体键是 `id`（不是 `pr_id`）；`session_id` 在整个会话内复用，切换仓库 / PR 时组件会重置。
 - 响应是纯字符串，经 axios 拦截器解包后直接就是 `data` 里的 answer，不再有 `{answer}` 包装。
-- 后端联调阻塞项（§10-19～27）修好前，前端只会收到错误提示，无法真正拿到回答。
+- 新增依赖：`marked`（Markdown → HTML）+ `dompurify`（白名单清洗）。**模型输出按不可信内容处理**，
+  不要绕过 `DOMPurify.sanitize` 直接 `v-html`。
+- 后端仍有开放风险（§10-22～26、28、29）；其中 28（`file_path` 未填）会直接阻断索引链路。
 
 ---
 
