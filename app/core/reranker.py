@@ -6,6 +6,7 @@ import logging
 import threading
 from typing import List
 
+import torch
 from FlagEmbedding import FlagReranker
 
 class Reranker:
@@ -15,7 +16,15 @@ class Reranker:
             use_fp16: bool = False, # 是否使用半精度
             device: str = "cuda", # 设备
     ):
-
+        """
+        初始化重排序器
+        :param model_name_or_path: 模型名称或路径
+        :param use_fp16: 是否使用半精度
+        :param device: 设备
+        """
+        if device == "cuda" and not torch.cuda.is_available():
+            logging.warning("CUDA 无法使用, 降级为 CPU")
+            device = "cpu"
         self.reranker = FlagReranker(
             model_name_or_path=model_name_or_path,
             device=device,

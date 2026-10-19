@@ -17,6 +17,9 @@ class EmbeddingModel:
     """向量化模型"""
 
     def __init__(self, model_name_or_path: str = "model/bge-m3", device: str = "cuda"):
+        if device == "cuda" and not torch.cuda.is_available():
+            logging.warning("CUDA 无法使用, 降级为 CPU")
+            device = "cpu"
         self.embedding_model = BGEM3FlagModel(model_name_or_path=model_name_or_path, device=device)
         self._lock = threading.Lock()
 
