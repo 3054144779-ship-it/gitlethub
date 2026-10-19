@@ -448,8 +448,16 @@ class ReviewServiceImpl(ReviewService):
     def _flatten(self, result: list) -> list:
         """将 Milvus 检索结果展平为文档列表"""
         docs = []
-        for hits in result:
-            for hit in hits:
+        if not result:
+            return docs
+        
+        # 判断结果类型：如果是空列表或第一个元素是字典，则为扁平结构（标量检索）
+        # 否则为嵌套结构（向量检索）
+        is_flat = not result or isinstance(result[0], dict)
+        
+        if is_flat:
+            # 标量检索结果：List[Dict]
+            for hit in result:
                 docs.append({
                     "text": hit.get("text"),
                     "file_path": hit.get("file_path"),
@@ -457,6 +465,19 @@ class ReviewServiceImpl(ReviewService):
                     "metadata": hit.get("metadata"),
                     "content_type": hit.get("content_type")
                 })
+        else:
+            # 向量检索结果：List[List[Dict]]
+            for hits in result:
+                for hit in hits:
+                    # Milvus hybrid_search 返回的结果中，字段在 entity 内
+                    entity = hit.get("entity", hit)
+                    docs.append({
+                        "text": entity.get("text"),
+                        "file_path": entity.get("file_path"),
+                        "commit_sha": entity.get("commit_sha"),
+                        "metadata": entity.get("metadata"),
+                        "content_type": entity.get("content_type")
+                    })
         return docs
 
     async def rerank(

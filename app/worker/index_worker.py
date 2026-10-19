@@ -212,7 +212,8 @@ async def handle_message(body: str, redis_client: Redis = Provide[Container.redi
         for file in commit.tracked_files:
             # Redis判断文件是否已处理
             key = path_to_redis_key(file.file_path)
-            if redis_client.exists(key):
+            if await redis_client.exists(key):
+                # 判断文件是否已处理，如果存在则跳过，异步redis会重写redis里面的execute_command方法，所以这里使用await
                 print(f"文件 {file.file_path} 已处理过，跳过")
                 continue
 
