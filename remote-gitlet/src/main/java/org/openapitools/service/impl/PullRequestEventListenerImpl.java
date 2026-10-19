@@ -7,12 +7,15 @@ import common.Result;
 import common.ResultCode;
 import dto.PullRequestDTO;
 import enums.PRStatusEnum;
+import gitlet.commit.Commit;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.handler.MergeHandler;
 import org.openapitools.mapper.*;
 import org.openapitools.message.MsgConstant;
-import org.openapitools.model.PushEvent;
+import org.openapitools.model.*;
 import org.openapitools.service.PullRequestEventListener;
+import org.openapitools.service.support.RepositoryObjectReader;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
@@ -28,6 +31,8 @@ import java.io.File;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -44,9 +49,13 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     private RemoteUserMapper remoteUserMapper;
     @Autowired
     private MergeHandler mergeHandler;
+    @Autowired
+    private RepositoryObjectReader reader;
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
 
 
-    // 创建PR Webhook
+    // 创建PR
     @Async
     @Override
     @EventListener
@@ -154,6 +163,8 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
             // 合并成功：清理暂存区，更新 PR 状态
             cleanupStaging(pullRequest.getId());
             updatePRStatus(pullRequest, PRStatusEnum.MERGED);
+            // 构建消息并发送MQ
+            sendMessage(owner, repo, pullRequest);
         } else if (merge.getCode() == ResultCode.MERGE_CONFLICT) {
             // data 含 "冲突目录|tracked文件" 两个路径时（首次生成暂存区）才写库；
             // 若从暂存区恢复但仍有冲突标记，data 为 null，保持原路径不变，避免 NPE
@@ -167,7 +178,6 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                 log.info("PR {} 合并冲突，暂存区路径已保存：{}", pullRequest.getId(), parts[0]);
             }
         }
-        
         return merge;
     }
 
@@ -272,6 +282,85 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         cleanupStaging(pullRequest.getId());
         updatePRStatus(pullRequest, PRStatusEnum.CLOSED);
         return Result.ok();
+    }
+
+    /**
+     * 发送消息到MQ
+     */
+    private void sendMessage(String owner, String repo, PullRequest pullRequest) {
+        RepositoryPaths repositoryPaths = reader.resolvePaths(owner, repo);
+
+        Long userId = remoteUserMapper.getUserId(owner);
+        Long repositoryId = pullRequest.getRepositoryId();
+        String branchName = pullRequest.getTargetBranch();
+        // 获取PR创建者的提交信息
+        User author = remoteUserMapper.selectById(pullRequest.getAuthorId());
+        BranchPointer sourceBranchPointer = branchPointerMapper
+                .getBranchPointer(repositoryId, pullRequest.getSourceBranch());
+        BranchPointer targetBranchPointer = branchPointerMapper
+                .getBranchPointer(repositoryId, pullRequest.getTargetBranch());
+
+        // 解析Commit
+        String sourceCommitSha = sourceBranchPointer.getCommitSha();
+        String targetCommitSha = targetBranchPointer.getCommitSha();
+
+        Commit sourceCommit = reader.readCommitObject(repositoryPaths, sourceCommitSha);
+        Commit targetCommit = reader.readCommitObject(repositoryPaths, targetCommitSha);
+
+        List<TrackedFile> trackedFiles = sourceCommit.getTrackedFiles().keySet()
+                .stream()
+                .map(trackedFile -> TrackedFile.builder()
+                        .status(getState(trackedFile, sourceCommit.getTrackedFiles(), targetCommit.getTrackedFiles()))
+                        .build())
+                .collect(Collectors.toList());
+
+        CommitInfo commitInfo = CommitInfo.builder()
+                .commitSha(sourceCommitSha)
+                .message(sourceCommit.getMessage())
+                .time(sourceCommit.getTime())
+                .mergeFiles(sourceCommit.getMergeFiles())
+                .trackedFiles(trackedFiles)
+                .build();
+
+        PrInfo prInfo = PrInfo.builder()
+                .prName(pullRequest.getTitle())
+                .author(author.getUsername())
+                .commits(List.of(commitInfo))
+                .build();
+
+        MessageQueueRequest mq = MessageQueueRequest.builder()
+                .userId(userId)
+                .repositoryId(repositoryId)
+                .branchName(branchName)
+                .prInfo(prInfo)
+                .build();
+
+        log.info("发送消息到MQ：{}", mq);
+        rabbitTemplate.convertAndSend("gitlet.pr.exchange", "pr.merged", mq);
+    }
+
+    private String getState(String trackedFile,
+                            Map<String, String> sourceTrackedFiles, Map<String, String> targetTrackedFiles) {
+        String fileSha1 = sourceTrackedFiles.get(trackedFile);
+        String fileSha2 = targetTrackedFiles.get(trackedFile);
+
+        String state = "UNKNOWN_OPERATION";
+
+        if (fileSha1 == null && fileSha2 != null) {
+            // 目标分支没有，源分支有，表示新增
+            state = "ADDED";
+        } else if (fileSha1 != null && fileSha2 == null) {
+            // 源分支没有，目标分支有，表示删除
+            state = "DELETED";
+        } else if (fileSha1 != null && fileSha2 != null) {
+            if (fileSha1.equals(fileSha2)) {
+                // sha1相同说明没变化
+                state = "UNCHANGED";
+            } else {
+                state = "MODIFIED";
+            }
+        }
+        return state;
     }
 
     /** owner/repo -> repositoryId；任一环节缺失返回 null */
