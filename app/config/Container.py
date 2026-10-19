@@ -82,8 +82,9 @@ class Container(containers.DeclarativeContainer):
     # 创建EmbeddingModel实例
     embedding_model = providers.Singleton(
         EmbeddingModel,
-        model_name_or_path=config.embedding.model_name_or_path,
-        device=config.embedding.device
+        # model_name_or_path=config.embedding.model_name_or_path,
+        # device=config.embedding.device
+        base_url=config.embedding.base_url
     )
 
     # 创建jinja2环境
@@ -118,9 +119,10 @@ class Container(containers.DeclarativeContainer):
     # 创建reranker实例
     reranker = providers.Singleton(
         Reranker,
-        model_name_or_path=config.reranker.model_name_or_path,
-        use_fp16=config.reranker.use_fp16,
-        device=config.reranker.device
+        # model_name_or_path=config.reranker.model_name_or_path,
+        # use_fp16=config.reranker.use_fp16,
+        # device=config.reranker.device
+        base_url = config.reranker.base_url
     )
 
     # 创建代码考古功能单例模板

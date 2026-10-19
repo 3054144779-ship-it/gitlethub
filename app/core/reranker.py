@@ -6,31 +6,36 @@ import logging
 import threading
 from typing import List
 
+import httpx
 import torch
 from FlagEmbedding import FlagReranker
 
 class Reranker:
-    def __init__(
-            self,
-            model_name_or_path: str = "BAAI/bge-reranker-v2-m3",
-            use_fp16: bool = False, # 是否使用半精度
-            device: str = "cuda", # 设备
-    ):
-        """
-        初始化重排序器
-        :param model_name_or_path: 模型名称或路径
-        :param use_fp16: 是否使用半精度
-        :param device: 设备
-        """
-        if device == "cuda" and not torch.cuda.is_available():
-            logging.warning("CUDA 无法使用, 降级为 CPU")
-            device = "cpu"
-        self.reranker = FlagReranker(
-            model_name_or_path=model_name_or_path,
-            device=device,
-            use_fp16=use_fp16,
-        )
-        self._lock = threading.Lock()
+    # def __init__(
+    #         self,
+    #         model_name_or_path: str = "BAAI/bge-reranker-v2-m3",
+    #         use_fp16: bool = False, # 是否使用半精度
+    #         device: str = "cuda", # 设备
+    # ):
+    #     """
+    #     初始化重排序器
+    #     :param model_name_or_path: 模型名称或路径
+    #     :param use_fp16: 是否使用半精度
+    #     :param device: 设备
+    #     """
+    #     if device == "cuda" and not torch.cuda.is_available():
+    #         logging.warning("CUDA 无法使用, 降级为 CPU")
+    #         device = "cpu"
+    #     self.reranker = FlagReranker(
+    #         model_name_or_path=model_name_or_path,
+    #         device=device,
+    #         use_fp16=use_fp16,
+    #     )
+    #     self._lock = threading.Lock()
+
+    def __init__(self, base_url: str):  # 不再本地加载模型
+        self.base_url = base_url
+        self._client = httpx.Client(timeout=30)
 
     def rerank(
             self,
@@ -60,12 +65,35 @@ class Reranker:
         pairs = [(query, text) for text in texts]
 
         # fast tokenizer 非线程安全，加锁避免并发 "Already borrowed"
-        with self._lock:
-            scores = self.reranker.compute_score(
-                pairs,
-                batch_size=batch_size,  # 批处理大小
-                normalize=normalize,  # 是否归一化
-            )
+        # with self._lock:
+        #     scores = self.reranker.compute_score(
+        #         pairs,
+        #         batch_size=batch_size,  # 批处理大小
+        #         normalize=normalize,  # 是否归一化
+        #     )
+
+        json_incoming = {
+            "pairs": pairs,
+            "top_k": top_k,
+            "text_field": text_field,
+            "batch_size": batch_size,
+            "normalize": normalize,
+        }
+
+        data = httpx.post(
+            url=f"{self.base_url}/model/rerank",
+            json=json_incoming,
+            headers={"Content-Type": "application/json"},
+        )
+
+        rerank_result = data.json()
+        scores = rerank_result.get("scores")
+
+        if not scores:
+            logging.warning("rerank 未返回有效 scores，跳过重排序: %s", rerank_result)
+            for doc in documents:
+                doc["rerank_score"] = 0
+            return documents[:top_k]
 
         if isinstance(scores, float):
             # 处理单个分数的情况
