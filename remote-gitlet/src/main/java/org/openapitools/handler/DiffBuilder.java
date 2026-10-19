@@ -55,24 +55,34 @@ public class DiffBuilder {
     public List<DiffData> buildPrDiff(Long repositoryId, String sourceBranch, String targetBranch) {
         RepositoryPaths paths = getRepositoryPaths(repositoryId);
         if (paths == null) {
+            log.warn("buildPrDiff 失败: getRepositoryPaths 返回 null, repositoryId={}", repositoryId);
             return List.of();
         }
+        log.info("buildPrDiff 路径: commits={}, object={}", paths.getCommits(), paths.getObject());
+        
         BranchPointer source = branchPointerMapper.getBranchPointer(repositoryId, sourceBranch);
         BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
         if (source == null || target == null
                 || source.getCommitSha() == null || target.getCommitSha() == null) {
-            log.warn("分支指针缺失: repoId={}, source={}, target={}", repositoryId, sourceBranch, targetBranch);
+            log.warn("分支指针缺失: repoId={}, source={}, target={}, sourcePointer={}, targetPointer={}", 
+                     repositoryId, sourceBranch, targetBranch, source, target);
             return List.of();
         }
+        log.info("分支指针: source sha={}, target sha={}", source.getCommitSha(), target.getCommitSha());
+        
         Commit sourceCommit = readCommit(paths, source.getCommitSha());
         Commit targetCommit = readCommit(paths, target.getCommitSha());
         if (sourceCommit == null || targetCommit == null) {
+            log.warn("Commit 读取失败: sourceCommit={}, targetCommit={}", sourceCommit, targetCommit);
             return List.of();
         }
+        log.info("Commit 读取成功: source trackedFiles={}, target trackedFiles={}", 
+                 sourceCommit.getTrackedFiles().size(), targetCommit.getTrackedFiles().size());
 
         Set<String> allFiles = new TreeSet<>();
         allFiles.addAll(sourceCommit.getTrackedFiles().keySet());
         allFiles.addAll(targetCommit.getTrackedFiles().keySet());
+        log.info("allFiles size={}", allFiles.size());
 
         List<DiffData> result = new ArrayList<>();
         for (String fileName : allFiles) {
@@ -90,6 +100,7 @@ public class DiffBuilder {
                     .diff(buildUnifiedDiff(fileName, oldContent, newContent))
                     .build());
         }
+        log.info("buildPrDiff 完成: result size={}", result.size());
         return result;
     }
 

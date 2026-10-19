@@ -13,9 +13,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import lombok.extern.slf4j.Slf4j;
 import po.PullRequest;
 import vo.ChatVO;
 
+@Slf4j
 @Service
 public class AIServiceImpl implements AIService {
 
@@ -47,12 +49,16 @@ public class AIServiceImpl implements AIService {
         if (chatDTO.getPr_id() != null) {
             PullRequest pr = remotePullRequestMapper.selectById(chatDTO.getPr_id());
             if (pr != null && repositoryId != null) {
+                log.info("PR diff 构建入参: repositoryId={}, sourceBranch={}, targetBranch={}", 
+                         repositoryId, pr.getSourceBranch(), pr.getTargetBranch());
                 context = Context.builder()
                         .pr_id(chatDTO.getPr_id())
                         .pr_name(pr.getTitle())
                         .build();
                 context.setDiff_data(
                         diffBuilder.buildPrDiff(repositoryId, pr.getSourceBranch(), pr.getTargetBranch()));
+                log.info("PR diff 构建结果: diff_data size={}", 
+                         context.getDiff_data() == null ? "null" : context.getDiff_data().size());
             }
         }
 
