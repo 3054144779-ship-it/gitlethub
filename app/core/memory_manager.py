@@ -211,12 +211,13 @@ class MemoryManager:
             # 如果保留两条依旧大于阈值，则进行RAG化，直接把这长文本切片，存入 Milvus（打上当前 session_id 的标签）
             # 切分长文本，避免超过 Milvus varchar 字段 65535 限制
             splitter = RecursiveCharacterTextSplitter(
-                separators=["\n\n", "\n"],
+                separators=["\n\n", "\n", " ", ""],
                 chunk_size=1000,
                 chunk_overlap=100,
                 length_function=len,
             )
             chunks = splitter.split_text(contents)
+            print(f"[memory] contents 长度: {len(contents)}, 切分后 chunks 数量: {len(chunks)}, 最大 chunk 长度: {max(len(c) for c in chunks) if chunks else 0}")
 
             meta = await self._get_session_meta(session_id)
 
