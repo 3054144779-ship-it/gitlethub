@@ -5,7 +5,8 @@ from typing import List, TypedDict, NotRequired, Annotated, Dict, Any
 from dependency_injector.wiring import Provide, inject
 from langchain.agents import AgentState
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage, HumanMessage, AnyMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AnyMessage, AIMessageChunk
+from langgraph.config import get_stream_writer
 from redis.asyncio import Redis
 
 from config.Container import Container
@@ -205,27 +206,47 @@ async def generate_prompt(state: NodeState):
     }
 
 @inject
-async def generate_answer(state: NodeState, agent=Provide[Container.agent]):
+async def generate_answer(state: NodeState, agent=Provide[Container.agent], *, forward: bool = True):
     """
     生成答案节点
     :param agent: 模型
     :param state: 节点状态
+    :param forward: 是否把 token 冒泡给外层流（explain 内部的中间审查步骤传 False）
     :return: 生成回复
     """
-    answer = await agent.ainvoke({
-        "messages": [
-            SystemMessage(content=f"以下是历史消息{state.get('history_messages', [])}"),
-            HumanMessage(content=state["prompt"])
-        ],
-        "session_id": state["session_id"],
-        "query": state["query"],
-    })
-    content = answer["messages"][-1].content
+    writer = get_stream_writer()
+    intent = state.get("intent", "")
+    parts = []
+    final_message = None
+
+    async for chunk, _meta in agent.astream(
+            {
+                "messages": [
+                    SystemMessage(content=f"以下是历史消息{state.get('history_messages', [])}"),
+                    HumanMessage(content=state["prompt"]),
+                ],
+                "session_id": state["session_id"],
+                "query": state["query"],
+            },
+            stream_mode="messages",
+    ):
+        # 只取模型生成的文本，过滤 ToolMessage / 纯工具调用片段
+        if not isinstance(chunk, AIMessageChunk):
+            continue
+        final_message = chunk if final_message is None else final_message + chunk
+        text = chunk.content if isinstance(chunk.content, str) else ""
+        if not text:
+            continue
+        parts.append(text)
+        if forward:
+            writer({"intent": intent, "text": text})
+
+    content = "".join(parts)
 
     return {
         "answer": content,
-        "answers": [{"intent": state.get("intent", ""), "content": content}],  # 追加到聚合列表
-        "llm_messages": [answer]
+        "answers": [{"intent": intent, "content": content}],
+        "llm_messages": [final_message] if final_message is not None else [],
     }
 
 async def intent_node(state: NodeState):
@@ -278,7 +299,7 @@ async def review_generate(
     :param state: 节点状态
     :return: 节点状态
     """
-    result = await generate_answer(state)
+    result = await generate_answer(state, forward=False)
     ans = result.get("answer", "")
     # 将结果保存到redis
     await redis_client.set(name=prompt_to_redis_key(state["query"]), value=str(ans), ex=3600) # 1小时过期

@@ -43,17 +43,24 @@ class ChatServiceImpl(ChatService):
         # res = await graph.ainvoke(chat_dto)
         # answer = res.get("answer", "")
         # return answer
-        async for chunk, metadata in graph.astream(
+        last_state = None
+        streamed = False
+        async for ns, mode, payload in graph.astream(
                 chat_dto,
-                stream_mode="messages"
+                stream_mode=["custom", "values"],
+                subgraphs=True,
         ):
-            node_name = metadata.get("langgraph_node", "") # 获取节点名称
-            if node_name == "generate_answer":
-                # 获取生成的答案
-                if hasattr(chunk, "content"):
-                    # 如果有content元素
-                    yield chunk.content
+            if mode == "custom":
+                text = payload.get("text") if isinstance(payload, dict) else payload
+                if text:
+                    streamed = True
+                    yield text
+            elif ns == ():  # 只保留根图最终 state，供非流式路径兜底
+                last_state = payload
 
+        # 兜底：intent_clarify 等不产生 custom 流的节点，一次性发出 answer
+        if not streamed and last_state and last_state.get("answer"):
+            yield last_state["answer"]
 
 
 if __name__ == '__main__':
