@@ -3,6 +3,7 @@
 
 """
 import asyncio
+from typing import AsyncGenerator
 
 from dependency_injector.wiring import Provide, inject
 from langgraph.graph.state import CompiledStateGraph
@@ -24,21 +25,36 @@ class ChatServiceImpl(ChatService):
             chat_dto: ChatDTO,
             graph: CompiledStateGraph = Provide[Container.flow_chart],
             memory_manager: MemoryManager = Provide[Container.memory_manager],
-    ) -> str:
+    ) -> AsyncGenerator[str, None]:
         # 会话元信息初始化（init_session 内部幂等，多轮重复调用不会覆盖）
         context = chat_dto.get("context") or {}
         diff_data = context.get("diff_data") or []
-        await memory_manager.init_session(chat_dto["session_id"], {
-            "user_id": chat_dto["owner"],
-            "repository_id": chat_dto["repo"],
-            "file_path": diff_data[0]["file_path"] if diff_data else "",
-            "commit_sha": "",
-            "branch_name": "",
-        })
+        await memory_manager.init_session(
+            chat_dto["session_id"],
+            {
+                "user_id": chat_dto["owner"],
+                "repository_id": chat_dto["repo"],
+                "file_path": diff_data[0]["file_path"] if diff_data else "",
+                "commit_sha": "",
+                "branch_name": "",
+            }
+        )
 
-        res = await graph.ainvoke(chat_dto)
-        answer = res.get("answer", "")
-        return answer
+        # res = await graph.ainvoke(chat_dto)
+        # answer = res.get("answer", "")
+        # return answer
+        async for chunk, metadata in graph.astream(
+                chat_dto,
+                stream_mode="messages"
+        ):
+            node_name = metadata.get("langgraph_node", "") # 获取节点名称
+            if node_name == "generate_answer":
+                # 获取生成的答案
+                if hasattr(chunk, "content"):
+                    # 如果有content元素
+                    yield chunk.content
+
+
 
 if __name__ == '__main__':
     import yaml
