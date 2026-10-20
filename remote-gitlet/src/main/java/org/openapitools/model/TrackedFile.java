@@ -20,4 +20,5 @@ import lombok.NoArgsConstructor;
 public class TrackedFile {
     private String filePath;
     private String status;
+    private String language;  // 明确指定语言
 }

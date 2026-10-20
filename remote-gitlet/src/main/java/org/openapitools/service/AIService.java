@@ -2,6 +2,7 @@ package org.openapitools.service;
 
 import common.Result;
 import dto.ChatDTO;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import vo.ChatVO;
 
 public interface AIService {
@@ -12,5 +13,5 @@ public interface AIService {
      * @param chatDTO 对话数据
      * @return 响应结果
      */
-    String chat(String owner, String repo, ChatDTO chatDTO);
+    SseEmitter chat(String owner, String repo, ChatDTO chatDTO);
 }

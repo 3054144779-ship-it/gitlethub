@@ -155,6 +155,12 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
 
         log.info("合并 Pull Request {} by user {}", pullRequest.getId(), actorId);
 
+        // 合并前先记录目标分支基线 commit：合并会推进 master 指针，
+        // 若合并后再读 master，diff 会因两边树一致而全部变成 UNCHANGED
+        BranchPointer targetBasePointer = branchPointerMapper
+                .getBranchPointer(repositoryId, pullRequest.getTargetBranch());
+        String targetBaseSha = targetBasePointer == null ? null : targetBasePointer.getCommitSha();
+
         // 传递 PR ID，让 MergeHandler 检查暂存区
         Result<String> merge = mergeHandler.merge(pullRequest.getRepositoryId(),
                 pullRequest.getSourceBranch(), pullRequest.getTargetBranch(), 
@@ -165,7 +171,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
             cleanupStaging(pullRequest.getId());
             updatePRStatus(pullRequest, PRStatusEnum.MERGED);
             // 构建消息并发送MQ
-            sendMessage(owner, repo, pullRequest);
+            sendMessage(owner, repo, pullRequest, targetBaseSha);
         } else if (merge.getCode() == ResultCode.MERGE_CONFLICT) {
             // data 含 "冲突目录|tracked文件" 两个路径时（首次生成暂存区）才写库；
             // 若从暂存区恢复但仍有冲突标记，data 为 null，保持原路径不变，避免 NPE
@@ -287,8 +293,9 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
 
     /**
      * 发送消息到MQ
+     * @param targetBaseSha 合并前目标分支的基线 commit SHA，用于计算真实的 diff
      */
-    private void sendMessage(String owner, String repo, PullRequest pullRequest) {
+    private void sendMessage(String owner, String repo, PullRequest pullRequest, String targetBaseSha) {
         RepositoryPaths repositoryPaths = reader.resolvePaths(owner, repo);
 
         Long userId = remoteUserMapper.getUserId(owner);
@@ -298,15 +305,13 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         User author = remoteUserMapper.selectById(pullRequest.getAuthorId());
         BranchPointer sourceBranchPointer = branchPointerMapper
                 .getBranchPointer(repositoryId, pullRequest.getSourceBranch());
-        BranchPointer targetBranchPointer = branchPointerMapper
-                .getBranchPointer(repositoryId, pullRequest.getTargetBranch());
 
         // 解析Commit
         String sourceCommitSha = sourceBranchPointer.getCommitSha();
-        String targetCommitSha = targetBranchPointer.getCommitSha();
 
         Commit sourceCommit = reader.readCommitObject(repositoryPaths, sourceCommitSha);
-        Commit targetCommit = reader.readCommitObject(repositoryPaths, targetCommitSha);
+        // 使用合并前的基线，而不是合并后已推进的 master 指针
+        Commit targetCommit = reader.readCommitObject(repositoryPaths, targetBaseSha);
 
         List<TrackedFile> trackedFiles = sourceCommit.getTrackedFiles().keySet()
                 .stream()
@@ -314,6 +319,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                         .filePath(join(repositoryPaths.getObject(), sourceCommit.getTrackedFiles()
                                 .get(trackedFile)).toString())
                         .status(getState(trackedFile, sourceCommit.getTrackedFiles(), targetCommit.getTrackedFiles()))
+                        .language(resolveLanguage(trackedFile))
                         .build())
                 .collect(Collectors.toList());
 
@@ -349,11 +355,11 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
 
         String state = "UNKNOWN_OPERATION";
 
-        if (fileSha1 == null && fileSha2 != null) {
-            // 目标分支没有，源分支有，表示新增
+        if (fileSha1 != null && fileSha2 == null) {
+            // 源分支有、目标基线没有 => 本次 PR 新增
             state = "ADDED";
-        } else if (fileSha1 != null && fileSha2 == null) {
-            // 源分支没有，目标分支有，表示删除
+        } else if (fileSha1 == null && fileSha2 != null) {
+            // 源分支没有、目标基线有 => 本次 PR 删除
             state = "DELETED";
         } else if (fileSha1 != null && fileSha2 != null) {
             if (fileSha1.equals(fileSha2)) {
@@ -521,6 +527,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
      * @param sourceBranch 源分支名
      */
     private void createPullRequestObject(PushEvent pushEvent, String sourceBranch) {
+        // TODO: 后续接入ai，根据提交内容生成 PR 标题和描述
         Repository repository = remoteRepositoryMapper.selectById(pushEvent.getRepositoryId());
         PullRequest pr = PullRequest.builder()
                 .repositoryId(pushEvent.getRepositoryId())
@@ -558,4 +565,52 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                 .build();
         branchPointerMapper.insert(branchPointer);
     }
+
+    /**
+     * 根据文件扩展名推断编程语言。
+     * 返回 null 表示无对应语言（如 markdown / word / txt 等非代码文件），此时不填充 language。
+     */
+    private String resolveLanguage(String filePath) {
+        if (filePath == null || filePath.isEmpty()) {
+            return null;
+        }
+        // 先去掉目录部分，避免 Windows 路径中的目录名含 '.' 造成误判
+        String fileName = filePath.replace('\\', '/');
+        int slash = fileName.lastIndexOf('/');
+        if (slash >= 0) {
+            fileName = fileName.substring(slash + 1);
+        }
+        int dot = fileName.lastIndexOf('.');
+        if (dot < 0 || dot == fileName.length() - 1) {
+            return null;
+        }
+        String ext = fileName.substring(dot + 1).toLowerCase();
+        return EXTENSION_LANGUAGE_MAP.get(ext);
+    }
+
+    private static final Map<String, String> EXTENSION_LANGUAGE_MAP = Map.ofEntries(
+            Map.entry("java", "java"),
+            Map.entry("py", "python"),
+            Map.entry("js", "javascript"),
+            Map.entry("jsx", "javascript"),
+            Map.entry("ts", "typescript"),
+            Map.entry("tsx", "typescript"),
+            Map.entry("go", "go"),
+            Map.entry("rs", "rust"),
+            Map.entry("c", "c"),
+            Map.entry("h", "c"),
+            Map.entry("cpp", "cpp"),
+            Map.entry("cxx", "cpp"),
+            Map.entry("cc", "cpp"),
+            Map.entry("hpp", "cpp"),
+            Map.entry("hxx", "cpp"),
+            Map.entry("hh", "cpp"),
+            Map.entry("rb", "ruby"),
+            Map.entry("php", "php"),
+            Map.entry("cs", "c_sharp"),
+            Map.entry("html", "html"),
+            Map.entry("css", "css"),
+            Map.entry("json", "json")
+    );
+
 }

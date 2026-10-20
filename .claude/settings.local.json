@@ -136,7 +136,25 @@
       "Bash(curl -s http://localhost:5199/src/components/AIAssistant.vue)",
       "Bash(curl -s -o /dev/null -w \"component:%{http_code}\\\\n\" http://localhost:5199/src/components/AIAssistant.vue)",
       "Bash(.venv/Scripts/python.exe -)",
-      "Bash(.venv/Scripts/python.exe -m py_compile app/router/chat_router.py)"
+      "Bash(.venv/Scripts/python.exe -m py_compile app/router/chat_router.py)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft/Edge/Application/**)",
+      "Read(//c/Program Files/Microsoft/Edge/Application/**)",
+      "Bash(curl *)",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --hide-scrollbars --window-size=900,900 --virtual-time-budget=6000 --screenshot=\"D:/Job_project/gitlethub-frontend/shot1.png\" \"http://localhost:5199/mock.html?mockai\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --hide-scrollbars --window-size=900,900 --virtual-time-budget=6000 --screenshot=\"D:/Job_project/gitlethub-frontend/shot2.png\" \"http://localhost:5199/mock.html?mockai\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --window-size=900,900 --virtual-time-budget=8000 --screenshot=\"D:/Job_project/gitlethub-frontend/shot3.png\" \"http://localhost:5199/mock.html?mockai=bottom\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --window-size=900,900 --virtual-time-budget=10000 --screenshot=\"D:/Job_project/gitlethub-frontend/shot4.png\" \"http://localhost:5199/mock.html?mockai=bottom\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --virtual-time-budget=10000 --dump-dom \"http://localhost:5199/mock.html?mockai=bottom\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --virtual-time-budget=10000 --screenshot=\"D:/Job_project/gitlethub-frontend/shot5.png\" \"http://localhost:5199/mock.html?mockai=bottom\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --window-size=1000,900 --virtual-time-budget=15000 --screenshot=\"D:/Job_project/gitlethub-frontend/dyn1.png\" \"http://localhost:5199/mock.html\")",
+      "Bash(node -e \"console.log\\(require\\('D:/Job_project/gitlethub-frontend/node_modules/element-plus/package.json'\\).version\\)\")",
+      "Bash(node *)",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --window-size=1000,900 --virtual-time-budget=15000 --screenshot=\"D:/Job_project/gitlethub-frontend/dyn2.png\" \"http://localhost:5199/mock.html\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --window-size=800,520 --virtual-time-budget=15000 --screenshot=\"D:/Job_project/gitlethub-frontend/dyn3.png\" \"http://localhost:5199/mock.html\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --window-size=800,520 --virtual-time-budget=15000 --screenshot=\"D:/Job_project/gitlethub-frontend/old1.png\" \"http://localhost:5199/mock.html\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --window-size=800,520 --virtual-time-budget=15000 --dump-dom \"http://localhost:5199/mock.html\")",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --window-size=800,520 --virtual-time-budget=15000 --screenshot=\"D:/Job_project/gitlethub-frontend/new1.png\" \"http://localhost:5199/mock.html\")",
+      "Bash(D:/Job_project/gitlet_ai_helper/.venv/Scripts/python.exe *)"
     ]
   }
 }
