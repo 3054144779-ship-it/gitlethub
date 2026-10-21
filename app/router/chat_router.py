@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 
 from dependency_injector.wiring import inject
 from fastapi import APIRouter
@@ -56,9 +57,11 @@ async def chat(chat_dto: ChatDTO):
                 # 心跳注释行，原样透传，不加 data: 前缀
                 yield token
                 continue
-            for line in token.splitlines():
-                yield f"data: {line}\n"
-            yield "\n"
+            # 每条 token 编码成单行 JSON：换行在 JSON 里是字面量 \n，不会产生空 data 行。
+            # 原因：Spring 的 ServerSentEventHttpMessageReader 会丢弃空 data 行，
+            # 多行 data 传输时尾换行和空行会在 Java 侧丢失。
+            # event: chunk 用于和 [DONE]、心跳区分，前端据此决定是否 JSON 解码。
+            yield f"event: chunk\ndata: {json.dumps(token, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
 
     # 必须返回纯文本：默认 JSONResponse 会把字符串再编码一层，
