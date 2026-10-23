@@ -3,6 +3,7 @@
 
 """
 import asyncio
+import hashlib
 import json
 import uuid
 from typing import List
@@ -49,6 +50,12 @@ class MemoryManager:
         self.embedding_client = embedding_client
         # 获取编码器，进程内复用
         self._encode = tiktoken.get_encoding(encoding_name="cl100k_base")
+        self.splitter = RecursiveCharacterTextSplitter(
+                separators=["\n\n", "\n", " ", ""],
+                chunk_size=1000,
+                chunk_overlap=100,
+                length_function=len,
+            )
 
     async def init_session(self, session_id: str, meta: dict):
         """
@@ -202,7 +209,6 @@ class MemoryManager:
             async with self.redis_client.pipeline(transaction=True) as pipe:
                 pipe.ltrim(session_id, 0, -1)  # 只保留最近2条消息
                 pipe.set(self._tokens_key(session_id), 0)  # 清空会话
-                pipe.hincrby(f"{session_id}:meta", "has_rag_data", 1) # 设置 has_rag_data 标记为True
                 await pipe.execute()  # 执行管道中的命令
 
             # json.loads 直接读 bytes，取出每条消息的有效载荷 payload（str）
@@ -210,25 +216,24 @@ class MemoryManager:
             contents = ", ".join([str(json.loads(raw)) for raw in raw_messages])
             # 如果保留两条依旧大于阈值，则进行RAG化，直接把这长文本切片，存入 Milvus（打上当前 session_id 的标签）
             # 切分长文本，避免超过 Milvus varchar 字段 65535 限制
-            splitter = RecursiveCharacterTextSplitter(
-                separators=["\n\n", "\n", " ", ""],
-                chunk_size=1000,
-                chunk_overlap=100,
-                length_function=len,
-            )
-            chunks = splitter.split_text(contents)
-            print(f"[memory] contents 长度: {len(contents)}, 切分后 chunks 数量: {len(chunks)}, 最大 chunk 长度: {max(len(c) for c in chunks) if chunks else 0}")
+
+            chunks = self.splitter.split_text(contents)
 
             meta = await self._get_session_meta(session_id)
 
-            # 批量向量化所有切片
+            # 关键改造：不再把原始碎片直接入库，而是先抽取“脱离本次会话仍成立”的稳定事实
+            facts = await self._extract_semantic_facts(chunks)
+            if not facts:
+                return
+
+            # 批量向量化每条事实
             vector = await asyncio.to_thread(
                 self.embedding_client.to_vector,
-                [Document(page_content=chunk) for chunk in chunks]
+                [Document(page_content=fact) for fact in facts]
             )
 
-            # 逐片存入 Milvus
-            for (dense_docs, sparse_docs), chunk in zip(vector, chunks):
+            # 逐条存入 Milvus：按 user_id/repository_id 归置（去 session 绑定，仅留 session_id 作溯源）
+            for (dense_docs, sparse_docs), fact in zip(vector, facts):
                 milvus_po = MilvusPO(
                     id=None,
                     user_id=meta["user_id"],
@@ -239,11 +244,60 @@ class MemoryManager:
                     dense_vector=dense_docs.tolist(),
                     sparse_vector=sparse_docs,
                     language=None,
-                    text=chunk,
+                    text=fact,
                     metadata=Metadata(session_id=session_id),
-                    content_type="raw_text"
+                    content_type="semantic_fact"
                 )
                 self.milvus_client.insert(milvus_po.to_milvus_dict())
+
+            # 写入“用户+仓库”级存在标记，替代原来的 session 级 has_rag_data 闸门
+            await self.redis_client.set(
+                self._semantic_flag_key(meta["user_id"], meta["repository_id"]),
+                1,
+            )
+
+    def _semantic_flag_key(self, user_id: int, repository_id: int) -> str:
+        """语义记忆存在性标记键：按 用户+仓库 维度（跨会话），替代 session 级 has_rag_data"""
+        return f"semantic:exists:{user_id}:{repository_id}"
+
+    async def _extract_semantic_facts(self, contents: List[str]) -> List[str]:
+        """
+        从冷对话文本中抽取“脱离本次会话仍然为真、且未来会话值得复用”的稳定事实
+        （用户长期偏好、项目技术决策等），丢弃一次性细节与闲聊。
+        :param contents: 冷对话原文
+        :return: 事实句列表（每行一条）
+        """
+        prompt = f"""
+        你是一个记忆提炼器。请从下面这段对话中，抽取“脱离本次会话后依然成立、且未来会话值得复用”的稳定事实。
+
+        ## 只抽取这类信息
+        - 用户的长期偏好（代码风格、语言、工具选择、回答方式等）
+        - 项目/仓库层面的既定事实与技术决策（框架、库、架构约定、配置规范）
+        - 明确确立的命名、路径、约束等可复用结论
+
+        ## 必须丢弃
+        - 仅本次任务相关的临时上下文、一次性细节
+        - 具体报错内容、闲聊、情绪化表达
+        - 无法脱离本次会话独立成立的信息
+
+        ## 输出要求
+        - 每行一条，独立成句、第三人称陈述，不要编号
+        - 关键实体（文件路径、函数名、配置项）原样保留，禁止改写或翻译
+        - 若没有任何符合条件的稳定事实，只输出一个词：无
+        - 不要输出任何解释或前缀
+
+        ## 待提炼对话
+        {contents}
+        """
+        resp = await self.compress_client.ainvoke(prompt)
+        text = resp.content if isinstance(resp.content, str) else str(resp.content)
+        facts: List[str] = []
+        for line in text.splitlines():
+            line = line.strip().lstrip("-•* \t")
+            if not line or line in ("无", "None"):
+                continue
+            facts.append(line)
+        return facts
 
     async def _compress_messages(self, session_id: str, messages: List[str]) -> dict:
         """
@@ -285,6 +339,7 @@ class MemoryManager:
         }
 
     async def _get_milvus_messages(self, session_id: str, query: str, meta: dict) -> List[str]:
+        # 检索当前仓库的语义记忆信息
         meta = await self._get_session_meta(session_id)
         vector = await asyncio.to_thread(
             self.embedding_client.to_vector,
@@ -300,7 +355,7 @@ class MemoryManager:
             user_id=meta["user_id"],
             repo_id=meta["repository_id"],
             output_fields=["text"],
-            filter_expr=f'metadata["session_id"] == "{session_id}"',
+            # filter_expr=f'metadata["session_id"] == "{session_id}"',
             top_k=5
         )
 
@@ -311,6 +366,63 @@ class MemoryManager:
 
         return messages
 
+    async def memory_compress(self, session_id: str, messages: List[str]):
+        """
+        语义化压缩入向量库（每轮主动沉淀稳定事实，按 user/repo 跨会话）
+        :param session_id: 会话ID
+        :param messages: 待压缩的消息
+        :return: 压缩后的消息
+        """
+        # 抽取语义事实
+        facts = await self._extract_semantic_facts(messages)
+        if not facts:
+            return
+
+        meta = await self._get_session_meta(session_id)
+        flag_key = self._semantic_flag_key(meta["user_id"], meta["repository_id"])
+
+        split_documents = await asyncio.to_thread(
+            self.splitter.split_documents,
+            [Document(page_content=fact) for fact in facts]
+        )
+
+        vector = await asyncio.to_thread(
+            self.embedding_client.to_vector,
+            split_documents
+        )
+
+        inserted = False
+        dedup_key = f"semantic:fp:{meta['user_id']}:{meta['repository_id']}"
+        # 按 split_documents 遍历，text 用 doc.page_content，避免与 vector 错位
+        for (dense_docs, sparse_docs), doc in zip(vector, split_documents):
+            fact_text = doc.page_content
+            # 指纹去重：同 user/repo 下已沉淀过相同事实则跳过（去空白+小写+md5，精确匹配）
+            fp = hashlib.md5("".join(fact_text.split()).lower().encode("utf-8")).hexdigest()
+            if await self.redis_client.sismember(dedup_key, fp):
+                continue
+            milvus_po = MilvusPO(
+                id=None,
+                user_id=meta["user_id"],
+                repository_id=meta["repository_id"],
+                file_path=meta["file_path"],
+                commit_sha=meta["commit_sha"],
+                branch_name=meta["branch_name"],
+                dense_vector=dense_docs.tolist(),
+                sparse_vector=sparse_docs,
+                language=None,
+                text=fact_text,
+                metadata=Metadata(session_id=session_id),
+                content_type="semantic_fact"
+            )
+            self.milvus_client.insert(milvus_po.to_milvus_dict())
+            # 插入成功后登记指纹，避免失败的写入被误标记为“已存在”
+            await self.redis_client.sadd(dedup_key, fp)
+            inserted = True
+
+        # 只有真正写入了事实，才打开跨会话召回闸门
+        if inserted:
+            await self.redis_client.set(flag_key, 1)
+
     async def get_history_messages(self, session_id: str, query: str) -> dict:
         """
         获取历史消息
@@ -320,11 +432,15 @@ class MemoryManager:
         """
         meta = await self._get_session_meta(session_id)
         milvus_messages = ""
-        if meta.get("has_rag_data", False):
-            # 如果有RAG数据，则从Milvus中获取
+        # 语义记忆是“用户+仓库”级、跨会话的，闸门不能再依赖 session 级 has_rag_data
+        has_semantic = await self.redis_client.get(
+            self._semantic_flag_key(meta["user_id"], meta["repository_id"])
+        )
+        if has_semantic:
+            # 只要有该 user/repo 的语义事实，就按 query 跨会话语义召回
             milvus_messages = await self._get_milvus_messages(session_id, query, meta)
         # 消息以 List 类型存储，用 lrange 读取；key 不存在时返回空列表，避免 None 迭代报错
-        raw_messages = await self.redis_client.lrange(session_id, 0, -1)
+        raw_messages = await self.redis_client.lrange(session_id, 0, -1) # 压缩的会话
         redis_messages = [str(json.loads(raw)) for raw in raw_messages] if raw_messages else "未查询到相关上下文"
         return {
             "milvus_messages": "milvus中检索到的会话上下文（可能为空）：" + str(milvus_messages) if milvus_messages else "",

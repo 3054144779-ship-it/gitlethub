@@ -42,7 +42,10 @@ class MemoryManagerMiddleware(AgentMiddleware):
         }
 
     async def aafter_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
+        # 每次执行后，进行一次简单的语义压缩
+        await self.memory_manager.memory_compress(state["session_id"], state["messages"])
         # 添加消息到内存管理器中
         await self.memory_manager.add_message(state["session_id"], state["messages"])
+
         return None
 
