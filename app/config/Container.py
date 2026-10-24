@@ -2,10 +2,12 @@ import redis.asyncio as aioredis
 
 from pymilvus import MilvusClient
 from dependency_injector import containers, providers
+from redis.asyncio import Redis
 
 from client.memory_manager_middleware import MemoryManagerMiddleware
 from config.Settings import Settings
 from core.memory_manager import MemoryManager
+from core.procedure_store import ProcedureStore
 from core.tools import read_file
 from client.llm_client import LLMClient
 from core.reranker import Reranker
@@ -204,3 +206,10 @@ class Container(containers.DeclarativeContainer):
         base_url=config.agent.base_url,
         middleware_instance=memory_manager
     )
+
+    # 创建程序性记忆管理器
+    procedure_store = providers.Singleton(
+        ProcedureStore,
+        redis_client=redis_client
+    )
+

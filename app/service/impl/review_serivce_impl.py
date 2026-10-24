@@ -6,6 +6,7 @@ from dependency_injector.wiring import Provide
 from langchain_core.documents import Document
 
 from config.Container import Container
+from core.procedure_store import ProcedureStore
 from core.reranker import Reranker
 from schema.domain import Context, DiffData
 from service.func_service import ArchaeologyService, ExplainService, ReviewService
@@ -527,10 +528,12 @@ class ReviewServiceImpl(ReviewService):
             model: int = 2,
             context: Context | None = None,
             code_review_template: Template = Provide[Container.code_review_template],
+            procedure_store: ProcedureStore = Provide[Container.procedure_store],
     ):
         """
         prompt
-        :param context:
+        :param procedure_store: 程序记忆存储器
+        :param context: 上下文
         :param model: 模式
         :param code_review_template: 代码审查模板
         :param query: 查询内容
@@ -553,6 +556,9 @@ class ReviewServiceImpl(ReviewService):
         history_docs = retrieval_rerank_result.get("history_docs", [])
         repository_consistency_docs = retrieval_rerank_result.get("repository_consistency_docs", [])
 
+        # 取本意图的 SOP：user > repo > global 逐层覆盖
+        procedure = await procedure_store.get("review", user_id=owner, repo_id=repo)
+
         embedded_to_template = {
             "query": query,
             "owner": owner,
@@ -563,7 +569,8 @@ class ReviewServiceImpl(ReviewService):
             "diff_data": diff_datas,
             "influence_docs": influence_docs,
             "history_docs": history_docs,
-            "repository_consistency_docs": repository_consistency_docs
+            "repository_consistency_docs": repository_consistency_docs,
+            "procedure": procedure,
         }
 
         prompt_result = code_review_template.render(embedded_to_template)

@@ -3,7 +3,8 @@
   必填: query, owner, repo
   可选: review_model(默认2；1=Debug 快速审查, 2=完整审查), pr_id, pr_name,
         diff_data: List[{file_path, old_content, new_content, diff}],
-        influence_docs / history_docs / repository_consistency_docs: List[doc]（rerank 后含 rerank_score）
+        influence_docs / history_docs / repository_consistency_docs: List[doc]（rerank 后含 rerank_score）,
+        procedure: str 本仓库/用户的定制审查步骤（程序性记忆，可能为空）
 -#}
 {%- set mode        = review_model | default(2, true) -%}
 {%- set diffs       = diff_data | default([], true) -%}
@@ -12,6 +13,7 @@
 {%- set consistency = repository_consistency_docs | default([], true) -%}
 {%- set pr_id_val   = pr_id | default(None, true) -%}
 {%- set pr_name_val = pr_name | default('', true) -%}
+{%- set proc        = procedure | default('', true) -%}
 {%- set has_refs    = influence or history or consistency -%}
 
 你是一名资深代码审查专家。你的任务是结合本次代码变更、仓库上下文与检索到的参考资料，对变更进行专业审查并给出可执行的反馈.
@@ -35,6 +37,12 @@
 - **规范一致性**：与同模块/同层级现有代码风格是否一致（结合下方"仓库规范参考"资料）
 {% endif %}
 
+{% if proc %}
+## 本仓库/用户的定制审查步骤（优先于通用模式执行）
+
+{{ proc }}
+
+{% endif %}
 ## 回答要求
 
 1. **基于事实**：仅依据下方提供的资料和变更内容进行审查，不假设资料之外的代码逻辑。
