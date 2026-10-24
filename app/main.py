@@ -26,6 +26,10 @@ async def lifespan(app: FastAPI):
         "schema.nodes.node",
         "worker.index_worker",
         "service.impl.ai_service_impl",
+        "service.impl.explain_service_impl",
+        "service.impl.archaeology_service_impl",
+        "service.impl.semantic_search_service_impl",
+        "service.impl.review_serivce_impl",
     ])
 
     # 预热模型

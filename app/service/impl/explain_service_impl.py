@@ -9,6 +9,7 @@ from langchain_core.documents import Document
 from client import embeding
 from config.Container import Container
 from core.reranker import Reranker
+from core.procedure_store import ProcedureStore
 from schema.domain import Context, DiffData
 from service.func_service import ArchaeologyService, ExplainService, ReviewService
 from repository.milvus_repo import MilvusRepo
@@ -239,9 +240,11 @@ class ExplainServiceImpl(ExplainService):
             review_answer: str,
             context: Context | None = None,
             code_explain_template: Template = Provide[Container.code_explain_template],
+            procedure_store: ProcedureStore = Provide[Container.procedure_store],
     ):
         """
         prompt
+        :param procedure_store: 程序记忆存储器
         :param context: 上下文
         :param review_answer: 代码审核结果
         :param code_explain_template: 代码解释模板
@@ -254,13 +257,17 @@ class ExplainServiceImpl(ExplainService):
         code_documents = retrieval_rerank_result.get("code_documents", [])
         commit_documents = retrieval_rerank_result.get("commit_documents", [])
 
+        # 取本意图的 SOP：user > repo > global 逐层覆盖
+        procedure = await procedure_store.get("explain", user_id=owner, repo_id=repo)
+
         embedded_to_template = {
             "query": query,
             "code_documents": code_documents,
             "commit_documents": commit_documents,
             "owner": owner,
             "repo": repo,
-            "review_answer": review_answer
+            "review_answer": review_answer,
+            "procedure": procedure,
         }
 
         prompt_result = code_explain_template.render(embedded_to_template)

@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, NotRequired, List
 
 from langchain.agents import AgentState
@@ -30,10 +31,21 @@ class MemoryManagerMiddleware(AgentMiddleware):
         self.memory_manager = memory_manager
 
     async def aafter_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
-        # 每次执行后，进行一次简单的语义压缩
-        await self.memory_manager.memory_compress(state["session_id"], state["messages"])
-        # 添加消息到内存管理器中
-        await self.memory_manager.add_message(state["session_id"], state["messages"])
+        # await self.memory_manager.memory_compress(state["session_id"], state["messages"])
+        # await self.memory_manager.add_message(state["session_id"], state["messages"])
+
+        await asyncio.gather(
+            asyncio.to_thread(
+                # 每次执行后，进行一次简单的语义压缩
+                self.memory_manager.memory_compress,
+                state["session_id"], state["messages"]
+            ),
+            asyncio.to_thread(
+                # 添加消息到内存管理器中
+                self.memory_manager.add_message,
+                state["session_id"], state["messages"]
+            )
+        )
 
         return None
 
