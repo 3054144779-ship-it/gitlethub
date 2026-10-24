@@ -29,18 +29,6 @@ class MemoryManagerMiddleware(AgentMiddleware):
         super().__init__(*args, **kwargs)
         self.memory_manager = memory_manager
 
-    async def abefore_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
-        """
-        在agent执行前，从内存管理器中获取历史会话，注入到节点状态中
-        :param state: 节点状态
-        :param runtime: 运行时
-        :return: 节点状态
-        """
-        history_messages = await self.memory_manager.get_history_messages(state["session_id"], state["query"])
-        return {
-            "history_messages": history_messages,
-        }
-
     async def aafter_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
         # 每次执行后，进行一次简单的语义压缩
         await self.memory_manager.memory_compress(state["session_id"], state["messages"])

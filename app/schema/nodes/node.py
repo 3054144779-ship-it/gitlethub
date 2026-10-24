@@ -1,3 +1,5 @@
+import json
+import logging
 import operator
 from dataclasses import dataclass
 from typing import List, TypedDict, NotRequired, Annotated, Dict, Any
@@ -11,6 +13,8 @@ from redis.asyncio import Redis
 
 from config.Container import Container
 from core.intent_clarifier import intent_recognition
+from core.memory_manager import MemoryManager
+from core.procedure_store import ProcedureStore
 from core.redis_key import prompt_to_redis_key
 from schema.domain import IntentResult, Context
 from service.impl.archaeology_service_impl import ArchaeologyServiceImpl
@@ -52,7 +56,7 @@ class NodeState(TypedDict):
     answer: NotRequired[str]
     answers: NotRequired[Annotated[List[dict], operator.add]]  # 各子图结果聚合，结果追加
     llm_messages: NotRequired[Annotated[List[AnyMessage], operator.add]] # 节点消息
-    history_messages: NotRequired[Annotated[List[AnyMessage], operator.add]] # 历史会话消息
+    history_messages: NotRequired[List[str]] # 历史会话消息
 
     # review流程独有
     review_model: NotRequired[int]       # 审查模式：1=debug（快速审查）, 2=深度审查
@@ -65,10 +69,34 @@ class NodeState(TypedDict):
     repository_consistency_docs: NotRequired[List[dict]] # 仓库一致性文档列表
     docs_name: NotRequired[str]
 
+
 @inject
-async def rewrite_query(state: NodeState, rewrite_llm: BaseChatModel = Provide[Container.rewrite_llm]):
+async def load_history(
+        state: NodeState,
+        memory_manager: MemoryManager = Provide[Container.memory_manager],
+):
+    history_messages = await memory_manager.get_history_messages(state["session_id"], state["query"])
+    text = "\n".join(filter(
+        None,
+        [
+            history_messages.get("milvus_messages", ""),
+            history_messages.get("redis_messages", "")
+        ]
+    ))
+    return {
+        "history_messages": [text],
+    }
+
+@inject
+async def rewrite_query(
+        state: NodeState,
+        rewrite_llm: BaseChatModel = Provide[Container.rewrite_llm],
+        procedure_store: ProcedureStore = Provide[Container.procedure_store],
+
+):
     """
     重写查询节点
+    :param procedure_store: 存储器
     :param rewrite_llm: 重写模型
     :param state: 节点状态
     :return: 重写后的查询信息
@@ -111,12 +139,91 @@ async def rewrite_query(state: NodeState, rewrite_llm: BaseChatModel = Provide[C
         ReviewServiceImpl prompt template reference
     """
 
+    CORRECT_SYSTEM_MESSAGE = """你是一个“纠错信号识别器”。判断用户这句话是否在【纠正/补充/否定】上一轮助手的输出；若是，把这次纠正抽象成一条可复用的规则，供程序性记忆沉淀。
+
+        ## 判定为“纠正”的情形（满足任一）
+        1. 指正遗漏：上一轮漏掉了用户认为必须覆盖的内容（如“你怎么没看 SQL 注入”）
+        2. 否定结论：不认可上一轮的判断或结论（如“这个不算问题”“你判断错了”）
+        3. 补充要求：追加本次/后续任务应遵循的要求（如“以后都按这个格式输出”）
+        4. 侧重/格式反馈：指出应更重视某方面或调整输出（如“太啰嗦了，精简点”“先说安全再说性能”）
+
+        ## 不算“纠正”的情形（一律 is_correction=false）
+        - 开启一个与原任务无关的新问题
+        - 只是追问细节、希望展开说明（没有否定或指正）
+        - 单纯称赞或确认（如“好的”“可以”“谢谢”）
+        - 信息不足、无法判断
+
+        ## 抽取规则的要求（仅当 is_correction=true）
+        - 用一句话、第三人称、祈使语气描述“以后遇到同类任务应当怎么做”
+        - 必须去掉一次性细节：具体文件名、变量名、本次报错原文、具体行号
+        - 保留可长期复用的技术要点（如“必须检查 SQL 注入”“输出控制在 300 字内”）
+        - 若该纠正只对本次成立、不具备复用价值，则 is_correction=false 且 rule 为空字符串
+
+        ## scope 判定
+        - user：与某个人的偏好/习惯相关（输出风格、语言、详略程度）
+        - repo：与某个仓库/项目/技术栈相关（如“本项目用 MyBatis，需防 ${} 注入”）
+        - global：通用工程实践，不依赖具体人或仓库
+
+        ## 输出格式
+        只输出一个 JSON 对象，不要 markdown 代码块、不要任何解释文字：
+        {"is_correction": true, "target_intent": "review", "scope": "repo", "rule": "审查时必须检查 SQL 注入风险"}
+
+        无纠正时输出：
+        {"is_correction": false, "target_intent": "unknown", "scope": "global", "rule": ""}
+
+        ## 字段说明
+        - target_intent：本次纠正针对的功能，取值 explain/review/archaeology/search/unknown
+        - scope：规则应沉淀到哪一层作用域
+        - rule：可复用的祈使句规则，无则为空字符串
+    """
+
+    # 重写用户问题
     rewrite = await rewrite_llm.ainvoke([
         SystemMessage(content=REWRITE_SYSTEM_MESSAGE),
         HumanMessage(content=state["query"])
     ],
         extra_body={"enable_thinking": False}
     )
+
+
+    history = state.get("history_messages", [])
+    if history:
+        previous_answer = history[-1]
+
+        # 纠正信号识别
+        correct = await rewrite_llm.ainvoke(
+            [
+                SystemMessage(content=CORRECT_SYSTEM_MESSAGE),
+                HumanMessage(content=f"上一轮的输出：{previous_answer}, 这一轮的输入: {state["query"]}")
+            ],
+            extra_body={"enable_thinking": False}
+        )
+
+        """
+        {
+            "is_correction": true, 
+            "target_intent": "review", 
+            "scope": "repo", 
+            "rule": "审查时必须检查 SQL 注入风险"
+        }
+        """
+        signal = {}
+        try:
+            signal = json.loads(str(correct.content))
+        except json.JSONDecodeError:
+            logging.warning("ai信息识别结构生成失败")
+
+
+        if signal.get("is_correction") and signal.get("rule"):
+            await procedure_store.append(
+                intent=state.get("intent", "unknown"),
+                procedure=signal["rule"],
+                scope=signal["scope"], # user/repo/global 作用域
+                scope_id=state["owner"] if signal["scope"] == "user"
+                                        else state["repo"]
+                                        if signal["scope"] == "repo"
+                                        else None # 作用域唯一id
+            )
 
     return {
         "rewritten_query": rewrite.content,
@@ -275,9 +382,10 @@ async def review_debug(state: NodeState):
     :return: 节点状态
     """
     service = service_registry["review"]
+    message = f"历史消息：{state.get('history_messages', [])}， 当前消息：{state["query"]}"
     # 生成prompt
     prompt = await service.prompt(
-        query=state["query"],
+        query=message,
         owner=state["owner"],
         repo=state["repo"],
         retrieval_rerank_result={}, # 临时解决

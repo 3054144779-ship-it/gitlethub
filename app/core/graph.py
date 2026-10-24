@@ -7,7 +7,7 @@ from schema.nodes.child_nodes import explain, archaeology, review, search
 from schema.nodes.node import (
     NodeState, rewrite_query, rag_search, rerank_search, generate_prompt,
     generate_answer, intent_clarify, intent_node, review_debug,
-    review_generate, generate_explain_prompt, rerank_review_search,
+    review_generate, generate_explain_prompt, rerank_review_search, load_history,
 )
 
 def build_explain_subgraph():
@@ -19,6 +19,7 @@ def build_explain_subgraph():
     builder = StateGraph(NodeState)  # type: ignore
     builder.add_node("explain", explain)  # type: ignore
     builder.add_node("rewrite_query", rewrite_query)  # type: ignore
+    builder.add_node("load_history", load_history)  # type: ignore
     builder.add_node("rag_search", rag_search)  # type: ignore
     builder.add_node("rerank_search", rerank_search)  # type: ignore
     # defer = True 表示生成节点的执行将被推迟，直到所有依赖的节点都完成
@@ -28,8 +29,9 @@ def build_explain_subgraph():
     builder.add_node("review_generate", review_generate)  # type: ignore
 
     builder.add_edge(START, "explain")
-    builder.add_edge("explain", "rewrite_query")
-    builder.add_edge("explain", "review_debug")
+    builder.add_edge("explain", "load_history")
+    builder.add_edge("load_history", "rewrite_query")
+    builder.add_edge("load_history", "review_debug")
     builder.add_edge("review_debug", "review_generate")
     builder.add_edge("review_generate", "generate_explain_prompt")
     builder.add_edge("rewrite_query", "rag_search")
@@ -48,13 +50,15 @@ def build_archaeology_subgraph():
     builder = StateGraph(NodeState)  # type: ignore
     builder.add_node("archaeology", archaeology)  # type: ignore
     builder.add_node("rewrite_query", rewrite_query)  # type: ignore
+    builder.add_node("load_history", load_history)  # type: ignore
     builder.add_node("rag_search", rag_search)  # type: ignore
     builder.add_node("rerank_search", rerank_search)  # type: ignore
     builder.add_node("generate_prompt", generate_prompt)  # type: ignore
     builder.add_node("generate_answer", generate_answer)  # type: ignore
 
     builder.add_edge(START, "archaeology")
-    builder.add_edge("archaeology", "rewrite_query")
+    builder.add_edge("archaeology", "load_history")
+    builder.add_edge("load_history", "rewrite_query")
     builder.add_edge("rewrite_query", "rag_search")
     builder.add_edge("rag_search", "rerank_search")
     builder.add_edge("rerank_search", "generate_prompt")
@@ -73,13 +77,15 @@ def build_review_subgraph():
     builder = StateGraph(NodeState)
     builder.add_node("review", review)
     builder.add_node("rewrite_query", rewrite_query)
+    builder.add_node("load_history", load_history)  # type: ignore
     builder.add_node("rag_search", rag_search)
     builder.add_node("rerank_review_search", rerank_review_search)
     builder.add_node("generate_prompt", generate_prompt, defer=True)
     builder.add_node("generate_answer", generate_answer)
 
     builder.add_edge(START, "review")
-    builder.add_edge("review", "rewrite_query")
+    builder.add_edge("review", "load_history")
+    builder.add_edge("load_history", "rewrite_query")
     builder.add_edge("rewrite_query", "rag_search")
 
     # 条件路由
@@ -113,11 +119,12 @@ def build_review_subgraph():
 def build_search_subgraph():
     """
     search 子图：复用同一套管道节点函数
-    search -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer
+    search -> load_history -> rewrite_query -> rag_search -> rerank_search -> generate_prompt -> generate_answer
     """
     builder = StateGraph(NodeState)
 
     builder.add_node("search", search)
+    builder.add_node("load_history", load_history)
     builder.add_node("rewrite_query", rewrite_query)
     builder.add_node("rag_search", rag_search)
     builder.add_node("rerank_search", rerank_search)
@@ -125,7 +132,8 @@ def build_search_subgraph():
     builder.add_node("generate_answer", generate_answer)
 
     builder.add_edge(START, "search")
-    builder.add_edge("search", "rewrite_query")
+    builder.add_edge("search", "load_history")
+    builder.add_edge("load_history", "rewrite_query")
     builder.add_edge("rewrite_query", "rag_search")
     builder.add_edge("rag_search", "rerank_search")
     builder.add_edge("rerank_search", "generate_prompt")
