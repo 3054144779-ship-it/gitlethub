@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Any, NotRequired, List
 
 from langchain.agents import AgentState
@@ -31,21 +32,20 @@ class MemoryManagerMiddleware(AgentMiddleware):
         self.memory_manager = memory_manager
 
     async def aafter_agent(self, state: StateT, runtime: Runtime[ContextT]) -> dict[str, Any] | None:
-        # await self.memory_manager.memory_compress(state["session_id"], state["messages"])
-        # await self.memory_manager.add_message(state["session_id"], state["messages"])
+        session_id = state["session_id"]
+        messages = state["messages"]
 
-        await asyncio.gather(
-            asyncio.to_thread(
-                # 每次执行后，进行一次简单的语义压缩
-                self.memory_manager.memory_compress,
-                state["session_id"], state["messages"]
-            ),
-            asyncio.to_thread(
-                # 添加消息到内存管理器中
-                self.memory_manager.add_message,
-                state["session_id"], state["messages"]
-            )
-        )
+        # 1) 先把本轮消息落盘（内部按 token 阈值触发压缩）
+        try:
+            await self.memory_manager.add_message(session_id, messages)
+        except Exception:
+            logging.exception("add_message 失败 session_id=%s", session_id)
+
+        # 2) 再做本轮主动语义沉淀（抽稳定事实入 Milvus）
+        try:
+            await self.memory_manager.memory_compress(session_id, messages)
+        except Exception:
+            logging.exception("memory_compress 失败 session_id=%s", session_id)
 
         return None
 
