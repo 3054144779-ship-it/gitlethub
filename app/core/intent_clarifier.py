@@ -1,7 +1,7 @@
 """
 意图识别器，用于识别用户意图
 """
-from typing import Dict, Union, List
+from typing import Any, Dict, Union, List
 
 from dependency_injector.wiring import inject, Provide
 from jinja2 import Template
@@ -13,6 +13,9 @@ from openai import RateLimitError
 from client.llm_client import LLMClient
 from schema.domain import IntentResult
 from config.Container import Container
+
+# 合法的意图枚举，用于过滤模型幻觉值
+VALID_INTENTS = ("explain", "review", "archaeology", "search")
 
 class IntentClarifier:
     """
@@ -27,8 +30,9 @@ class IntentClarifier:
         self.llm_client = llm_client.bind(extra_body={"enable_thinking": False})
         # 意图识别模板
         self.intent_clarifier_template = intent_clarifier_template
-        # json解析器
-        self.json_parser = JsonOutputParser(pydantic_object=IntentResult)
+        # json解析器：langchain-core>=1.x 的 JsonOutputParser 已不再按 pydantic_object 校验，
+        # 这里只做 JSON 提取，结构校验交给 _normalize
+        self.json_parser = JsonOutputParser()
 
         # 意图识别链
         self.clarify_intent_chain = (
@@ -39,6 +43,53 @@ class IntentClarifier:
 
     def _render_prompt(self, data: Dict[str, str]) -> str:
         return self.intent_clarifier_template.render(query=data["query"])
+
+    @staticmethod
+    def _normalize(raw: Any) -> Dict[str, Any]:
+        """
+        将模型输出的各种非标准结构归一化为 IntentResult 可接受的 dict
+        :param raw: 模型解析后的原始结果
+        :return: 归一化后的 dict
+        """
+        if isinstance(raw, IntentResult):
+            return raw.model_dump()
+
+        # 模型直接返回 ["archaeology", "search"] 的兜底
+        if isinstance(raw, list):
+            raw = {"intent": raw}
+
+        # 模型返回 {"intents": [...]} / {"intent": [...]} 的兜底
+        if isinstance(raw, dict) and "intent" not in raw and "intents" in raw:
+            raw = {**raw, "intent": raw["intents"]}
+
+        if not isinstance(raw, dict):
+            raise ValueError(f"意图识别结果结构非法: {raw!r}")
+
+        intent_value = raw.get("intent")
+        if isinstance(intent_value, str):
+            intent_value = [intent_value]
+        if not isinstance(intent_value, list):
+            intent_value = []
+
+        # 过滤非法枚举并去重，保持模型给出的顺序
+        intents = [
+            item for item in dict.fromkeys(intent_value)
+            if isinstance(item, str) and item in VALID_INTENTS
+        ]
+
+        try:
+            confidence = float(raw.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        confidence = min(max(confidence, 0.0), 1.0)
+
+        return {
+            "intent": intents,
+            "confidence": confidence,
+            "reason": str(raw.get("reason") or ""),
+            # 意图为空时必然需要澄清，避免空意图 + need_clarify=False 落到澄清节点却没有话术
+            "need_clarify": bool(raw.get("need_clarify")) or not intents,
+        }
 
     async def clarify_intent(self, query) -> IntentResult:
         """
@@ -55,7 +106,7 @@ class IntentClarifier:
 
         """
         result = await self.clarify_intent_chain.ainvoke({"query": query})
-        return IntentResult.model_validate(result)
+        return IntentResult.model_validate(self._normalize(result))
 
 async def intent_recognition(query) -> IntentResult | None:
     """
@@ -69,7 +120,15 @@ async def intent_recognition(query) -> IntentResult | None:
 
     # 意图识别
     async def get_intent(count: int, user_query: str) -> IntentResult | None:
-        intent_result = await clarifier.clarify_intent(user_query)
+        try:
+            intent_result = await clarifier.clarify_intent(user_query)
+        except Exception as e:
+            # 解析失败 / 结构非法 / 校验失败都不应击穿图，重试即可
+            print(f"意图识别第 {count + 1} 次失败: {e!r}")
+            if count >= 2:
+                return None
+            return await get_intent(count + 1, user_query)
+
         if await format_validator(intent_result):
             print("意图识别结果: ", intent_result)
             return intent_result
@@ -95,7 +154,7 @@ async def intent_recognition(query) -> IntentResult | None:
 
     if not await format_validator(user_intent):
         # 如果意图识别结果无效，则返回一个默认的意图识别结果，提示用户重新描述
-        return IntentResult(intent=[], confidence=0.0, reason="未能识别您的意图，请再描述一下？", need_clarify=True)
+        return IntentResult(intent=[], confidence=0.0, reason="我没能准确理解你的意图，能具体说说你想了解哪部分代码吗？", need_clarify=True)
 
     return user_intent
 

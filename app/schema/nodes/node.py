@@ -300,13 +300,19 @@ async def generate_prompt(state: NodeState):
     """
     service = service_registry[state["intent"]]
 
-    prompt = await service.prompt(
-        query=state["query"],
-        retrieval_rerank_result=state["reranked_docs"],
-        owner=state["owner"],
-        repo=state["repo"],
-        context=state["context"],
-    )
+    prompt_kwargs = {
+        "query": state["query"],
+        "retrieval_rerank_result": state["reranked_docs"],
+        "owner": state["owner"],
+        "repo": state["repo"],
+        "context": state["context"],
+    }
+    # PR 审查每次都是一次独立会话：把 session_id 带进提示词作为缓存盐，
+    # 避免同一提交重复审查时命中上游完全相同提示词的缓存
+    if state["intent"] == "review":
+        prompt_kwargs["session_id"] = state.get("session_id")
+
+    prompt = await service.prompt(**prompt_kwargs)
 
     return {
         "prompt": prompt,

@@ -527,6 +527,7 @@ class ReviewServiceImpl(ReviewService):
             retrieval_rerank_result: dict,
             model: int = 2,
             context: Context | None = None,
+            session_id: str | None = None,
             code_review_template: Template = Provide[Container.code_review_template],
             procedure_store: ProcedureStore = Provide[Container.procedure_store],
     ):
@@ -564,6 +565,7 @@ class ReviewServiceImpl(ReviewService):
             "owner": owner,
             "repo": repo,
             "review_model": model,
+            "session_id": session_id,
             "pr_id": pr_id,
             "pr_name": pr_name,
             "diff_data": diff_datas,
