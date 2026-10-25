@@ -48,7 +48,7 @@ class SearchServiceImpl(ArchaeologyService):
         vector = await asyncio.to_thread(
             embedding_model.to_vector, [Document(page_content=query)]
         )
-        dense_vecs, sparse_vecs = vector[0]
+        dense_vecs = vector[0]
         result = await asyncio.to_thread(
             milvus_repo.retrieval,
             "dense_vector",
@@ -56,7 +56,7 @@ class SearchServiceImpl(ArchaeologyService):
             user_id=owner,
             repo_id=repo,
             dense_vector=dense_vecs,
-            sparse_vector=sparse_vecs,
+            sparse_query=query,
             top_k=50,
             output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
         )

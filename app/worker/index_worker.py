@@ -65,14 +65,14 @@ async def handle_message_code(
         nodes = parser.find_semantic_nodes(root=root, language=language)
         # AST切分
         code_chunks = parser.ast_split(nodes=nodes)
-        # 获取稠密向量和稀疏向量
+        # 只取稠密向量；稀疏向量由 Milvus BM25 Function 在写入时生成
         vector = embedding_model.to_vector([Document(page_content=chunk) for chunk in code_chunks])
 
         datas = []
         chunk_index = 0 # 当前块索引
 
         # 遍历代码块
-        for (dense_vecs, sparse_vecs), code_chunk, node in zip(vector, code_chunks, nodes):
+        for dense_vecs, code_chunk, node in zip(vector, code_chunks, nodes):
             milvus_po = MilvusPO(
                 id=None,
                 user_id=request.user_id,
@@ -81,7 +81,6 @@ async def handle_message_code(
                 commit_sha=request.commit_sha,
                 branch_name=request.branch_name,
                 dense_vector=dense_vecs.tolist(),
-                sparse_vector=sparse_vecs,
                 language=language,
                 text=code_chunk,
                 metadata=_generate_metadata(
@@ -114,7 +113,7 @@ async def handle_message_code(
         commit_message = commit_message_template.render(to_template)
         vector = embedding_model.to_vector([Document(page_content=commit_message)])
 
-        for (dense_vecs, sparse_vecs) in vector:
+        for dense_vecs in vector:
             milvus_po = MilvusPO(
                 id=None,
                 user_id=request.user_id,
@@ -123,7 +122,6 @@ async def handle_message_code(
                 commit_sha=request.commit_sha,
                 branch_name=request.branch_name,
                 dense_vector=dense_vecs.tolist(),
-                sparse_vector=sparse_vecs,
                 language=None,
                 text=commit_message,
                 metadata=None,
@@ -155,7 +153,7 @@ async def handle_message_markdown_pdf_word(
         chunk_index = 0
 
         datas = []
-        for document, (dense_vec, sparse_vec) in zip(documents, vector):
+        for document, dense_vec in zip(documents, vector):
             milvus_po = MilvusPO(
                 id=None,
                 user_id=request.user_id,
@@ -164,7 +162,6 @@ async def handle_message_markdown_pdf_word(
                 commit_sha=request.commit_sha,
                 branch_name=request.branch_name,
                 dense_vector=dense_vec.tolist(),
-                sparse_vector=sparse_vec,
                 language=None,
                 text=document.page_content,
                 metadata=None, # 文档不需要元数据

@@ -48,6 +48,24 @@ model_list:
       tpm: 50000
       rpm: 1000
 
+  - model_name: BAAI/bge-m3
+    litellm_params:
+      model: openai/BAAI/bge-m3
+      api_key: os.environ/SILICONFLOW_API_KEY_7
+      api_base: https://api.siliconflow.cn/v1
+      tpm: 50000
+      rpm: 2000
+
+  - model_name: BAAI/bge-reranker-v2-m3
+    litellm_params:
+      # SiliconFlow 的 rerank 是 Cohere 兼容格式；用 hosted_vllm 让它把
+      # api_base 规范成 /v1/rerank，cohere provider 不会自动补路径
+      model: hosted_vllm/BAAI/bge-reranker-v2-m3
+      api_key: os.environ/SILICONFLOW_API_KEY_8
+      api_base: https://api.siliconflow.cn/v1
+      tpm: 50000
+      rpm: 2000
+
   # ===== DeepSeek（2 个 key）=====
   - model_name: deepseek-flash
     litellm_params:
@@ -65,7 +83,7 @@ litellm_settings:
   cache: true
   cache_params:
     type: redis
-    host: 192.168.12.168
+    host: 100.117.188.7
     port: 6379
     db: 3
   enforce_model_rate_limits: true
@@ -75,7 +93,7 @@ litellm_settings:
 
 router_settings:
   routing_strategy: least-busy
-  redis_host: 192.168.12.168
+  redis_host: 100.117.188.7
   redis_port: 6379
   redis_db: 4
 

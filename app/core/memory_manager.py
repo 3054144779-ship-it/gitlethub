@@ -233,7 +233,7 @@ class MemoryManager:
             )
 
             # 逐条存入 Milvus：按 user_id/repository_id 归置（去 session 绑定，仅留 session_id 作溯源）
-            for (dense_docs, sparse_docs), fact in zip(vector, facts):
+            for dense_docs, fact in zip(vector, facts):
                 milvus_po = MilvusPO(
                     id=None,
                     user_id=meta["user_id"],
@@ -242,7 +242,6 @@ class MemoryManager:
                     commit_sha=meta["commit_sha"],
                     branch_name=meta["branch_name"],
                     dense_vector=dense_docs.tolist(),
-                    sparse_vector=sparse_docs,
                     language=None,
                     text=fact,
                     metadata=Metadata(session_id=session_id),
@@ -345,13 +344,13 @@ class MemoryManager:
             self.embedding_client.to_vector,
             [Document(page_content=query)]
         )
-        dense_docs, sparse_docs = vector[0]
+        dense_docs = vector[0]
         milvus_messages = await asyncio.to_thread(
             self.milvus_client.retrieval,
             dense_anns_field="dense_vector",
             sparse_anns_field="sparse_vector",
             dense_vector=dense_docs.tolist(),
-            sparse_vector=sparse_docs,
+            sparse_query=query,
             user_id=meta["user_id"],
             repo_id=meta["repository_id"],
             output_fields=["text"],
@@ -394,7 +393,7 @@ class MemoryManager:
         inserted = False
         dedup_key = f"semantic:fp:{meta['user_id']}:{meta['repository_id']}"
         # 按 split_documents 遍历，text 用 doc.page_content，避免与 vector 错位
-        for (dense_docs, sparse_docs), doc in zip(vector, split_documents):
+        for dense_docs, doc in zip(vector, split_documents):
             fact_text = doc.page_content
             # 指纹去重：同 user/repo 下已沉淀过相同事实则跳过（去空白+小写+md5，精确匹配）
             fp = hashlib.md5("".join(fact_text.split()).lower().encode("utf-8")).hexdigest()
@@ -408,7 +407,6 @@ class MemoryManager:
                 commit_sha=meta["commit_sha"],
                 branch_name=meta["branch_name"],
                 dense_vector=dense_docs.tolist(),
-                sparse_vector=sparse_docs,
                 language=None,
                 text=fact_text,
                 metadata=Metadata(session_id=session_id),

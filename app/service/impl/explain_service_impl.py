@@ -54,12 +54,12 @@ class ExplainServiceImpl(ExplainService):
         initial_vector = await asyncio.to_thread(
             embedding_model.to_vector, [Document(page_content=query)]
         )
-        dense_vecs, sparse_vecs = initial_vector[0]
+        dense_vecs = initial_vector[0]
         initial_result = await asyncio.to_thread(
             milvus_repo.retrieval,
             "dense_vector", "sparse_vector",
             user_id=owner, repo_id=repo,
-            dense_vector=dense_vecs, sparse_vector=sparse_vecs,
+            dense_vector=dense_vecs, sparse_query=query,
             top_k=10,
             output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
         )
@@ -126,7 +126,7 @@ class ExplainServiceImpl(ExplainService):
                 milvus_repo.retrieval,
                 "dense_vector", "sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=three_vectors[0][0], sparse_vector=three_vectors[0][1],
+                dense_vector=three_vectors[0], sparse_query=three_queries[0],
                 top_k=20,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
             ),
@@ -134,7 +134,7 @@ class ExplainServiceImpl(ExplainService):
                 milvus_repo.retrieval,
                 "dense_vector", "sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=three_vectors[1][0], sparse_vector=three_vectors[1][1],
+                dense_vector=three_vectors[1], sparse_query=three_queries[1],
                 top_k=20,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
             ),
@@ -142,7 +142,7 @@ class ExplainServiceImpl(ExplainService):
                 milvus_repo.retrieval,
                 "dense_vector", "sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=initial_vector[0][0], sparse_vector=initial_vector[0][1],
+                dense_vector=initial_vector[0], sparse_query=query,
                 top_k=20,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"],
                 filter_expr=file_filter

@@ -17,8 +17,7 @@ class MilvusPO:
     branch_name: str
     language: str | None
     text: str
-    dense_vector: List[List[float]]
-    sparse_vector: List[Dict[int, float]]
+    dense_vector: List[float]
     metadata: Metadata | None
     content_type: str | None
 
@@ -36,7 +35,6 @@ class MilvusPO:
             "language": self.language or "",
             "text": self.text,
             "dense_vector": self.dense_vector,
-            "sparse_vector": self.sparse_vector,
             "metadata": self.metadata.model_dump(exclude_none=True) if self.metadata else {},
             "content_type": self.content_type or ""
         }
@@ -58,7 +56,6 @@ class MilvusPO:
             language=data["language"],
             text=data["text"],
             dense_vector=data["dense_vector"],
-            sparse_vector=data["sparse_vector"],
             content_type=data["content_type"],
             metadata=Metadata(**data["metadata"])
         )

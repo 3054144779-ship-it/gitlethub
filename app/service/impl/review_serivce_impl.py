@@ -80,7 +80,7 @@ class ReviewServiceImpl(ReviewService):
             [Document(page_content=diff_content)]
         )
 
-        dense_vecs, sparse_vecs = vector[0]
+        dense_vecs = vector[0]
         result = await asyncio.to_thread(
             milvus_repo.retrieval,
             "dense_vector",
@@ -88,7 +88,7 @@ class ReviewServiceImpl(ReviewService):
             user_id=owner,
             repo_id=repo,
             dense_vector=dense_vecs,
-            sparse_vector=sparse_vecs,
+            sparse_query=diff_content,
             top_k=50,
             output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
         )
@@ -201,7 +201,7 @@ class ReviewServiceImpl(ReviewService):
             embedding_model.to_vector,
             [Document(page_content=diff_summary)]
         )
-        dense_vecs, sparse_vecs = vector[0]
+        dense_vecs = vector[0]
 
         # ========== 3. 两路并行检索 ==========
         # 路 A：同模块（目录前缀）
@@ -226,7 +226,7 @@ class ReviewServiceImpl(ReviewService):
                 milvus_repo.retrieval,
                 "dense_vector", "sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=dense_vecs, sparse_vector=sparse_vecs,
+                dense_vector=dense_vecs, sparse_query=diff_summary,
                 top_k=15,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"],
                 filter_expr=module_filter,
@@ -236,7 +236,7 @@ class ReviewServiceImpl(ReviewService):
                 milvus_repo.retrieval,
                 "dense_vector", "sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=dense_vecs, sparse_vector=sparse_vecs,
+                dense_vector=dense_vecs, sparse_query=diff_summary,
                 top_k=10,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"],
                 filter_expr=layer_filter,
@@ -301,7 +301,7 @@ class ReviewServiceImpl(ReviewService):
             embedding_model.to_vector,
             [Document(page_content=query)]
         )
-        dense_vecs, sparse_vecs = vector[0]
+        dense_vecs = vector[0]
 
         # 检索
         path_history_result, semantic_history_result = await asyncio.gather(
@@ -318,7 +318,7 @@ class ReviewServiceImpl(ReviewService):
                 milvus_repo.retrieval,
                 "dense_vector", "sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=dense_vecs, sparse_vector=sparse_vecs,
+                dense_vector=dense_vecs, sparse_query=query,
                 top_k=20,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"],
                 filter_expr=f"content_type == 'commit_message'"
@@ -404,7 +404,7 @@ class ReviewServiceImpl(ReviewService):
                  milvus_repo.retrieval,
                 "dense_vector","sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=vector[0][0], sparse_vector=vector[0][1],
+                dense_vector=vector[0], sparse_query=three_queries[0],
                 top_k=20,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
             ),
@@ -412,7 +412,7 @@ class ReviewServiceImpl(ReviewService):
                 milvus_repo.retrieval,
                 "dense_vector","sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=vector[1][0], sparse_vector=vector[1][1],
+                dense_vector=vector[1], sparse_query=three_queries[1],
                 top_k=20,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"]
             ),
@@ -420,7 +420,7 @@ class ReviewServiceImpl(ReviewService):
                 milvus_repo.retrieval,
                 "dense_vector","sparse_vector",
                 user_id=owner, repo_id=repo,
-                dense_vector=vector[2][0], sparse_vector=vector[2][1],
+                dense_vector=vector[2], sparse_query=three_queries[2],
                 top_k=20,
                 output_fields=["text", "file_path", "commit_sha", "metadata", "content_type"],
                 filter_expr=file_filers
@@ -533,6 +533,7 @@ class ReviewServiceImpl(ReviewService):
     ):
         """
         prompt
+        :param session_id: 会话id
         :param procedure_store: 程序记忆存储器
         :param context: 上下文
         :param model: 模式

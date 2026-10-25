@@ -3,12 +3,9 @@
 """
 
 import logging
-import threading
 from typing import List
 
 import httpx
-import torch
-from FlagEmbedding import FlagReranker
 
 class Reranker:
     # def __init__(
@@ -34,8 +31,8 @@ class Reranker:
     #     self._lock = threading.Lock()
 
     def __init__(self, base_url: str):  # 不再本地加载模型
-        self.base_url = base_url
-        self._client = httpx.Client(timeout=30)
+        self.base_url = base_url.rstrip("/")
+        self._client = httpx.Client(timeout=120)
 
     def rerank(
             self,
