@@ -188,7 +188,9 @@
       "Bash(sed -n '200,340p' src/styles.css)",
       "Bash(sed -n '1,50p' src/components/PRList.vue)",
       "Bash(netstat -ano)",
-      "Bash(user)"
+      "Bash(user)",
+      "Bash(javap -classpath __TRACKED_VAR__/.m2/repository/com/aliyun/oss/aliyun-sdk-oss/3.18.4/aliyun-sdk-oss-3.18.4.jar com.aliyun.oss.model.GeneratePresignedUrlRequest)",
+      "Bash(npm --prefix D:/Job_project/gitlethub-frontend run build)"
     ]
   }
 }

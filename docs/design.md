@@ -257,7 +257,8 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | POST | `/user/registration`     | 用户注册（BCrypt）                   |
 | GET  | `/user/{user_id}`        | 获取用户资料（`UserProfileVO`，不返回密码） |
 | POST | `/user/login`            | 用户登录                             |
-| PUT  | `/user/profile`          | 修改当前登录用户资料：邮箱 + 可选改密码（改密码需原密码；身份取自 `Authorization`） |
+| PUT  | `/user/profile`          | 修改当前登录用户资料：邮箱 / 头像 + 可选改密码（改密码需原密码；身份取自 `Authorization`） |
+| GET  | `/api/oss/presigned-url?fileName=&contentType=` | 获取 OSS 直传预签名地址，返回 `uploadUrl`、`accessUrl` 与参与签名的 `contentType`（浏览器 PUT 时必须发送同一个值）；网关路由到 user-service |
 | POST | `/user/logout`           | 用户登出（Token 加入黑名单）         |
 | GET  | `/user/search?username=` | 搜索用户（添加协作者时需要）         |
 | POST | `/user/avatar`           | 上传/更换头像(可选)                  |
@@ -648,7 +649,7 @@ MySQL：
 
 | 表名                          | 字段                                                         | 备注                                                         |
 | ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| 用户信息表（user）            | id, username, password, email, create_time, update_time, is_deleted(逻辑删除) | 用户密码使用`BCrypt`加密存储                                 |
+| 用户信息表（user）            | id, username, password, email, avatar, create_time, update_time, is_deleted(逻辑删除) | 用户密码使用`BCrypt`加密存储；`avatar` 保存 OSS 直传后的访问地址 |
 | 仓库列表（repository_list）   | id, owner_id(属于哪个用户), name, visibility(可见性，0私有, 1公开),  description(仓库信息), create_time, update_time, default_branch(默认分支), is_deleted(逻辑删除) | 这里的 `user_id` 其实是 `owner_id`（仓库拥有者）             |
 | 分支指针（branch_pointer）    | id, branch_name, commit_sha(分支指针指向的commit的SHA1值), repository_id(属于哪个仓库), is_protected(是否为保护分支), version(版本号用于乐观锁), update_time, is_deleted(逻辑删除) |                                                              |
 | 协作者权限（collaborator）    | id, level(权限等级), user_id(协作者的用户id), repository_id(属于哪个仓库), create_time, is_deleted(逻辑删除), auto_create_pr(该协作者的自动PR开关) | 注意列名是 `auto_create_pr`，与仓库级的 `repository.allow_auto_pr` 不同 |

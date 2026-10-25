@@ -159,6 +159,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
 
         boolean emailChanged = false;
+        boolean avatarChanged = false;
         boolean passwordChanged = false;
 
         if (userUpdateDTO.getEmail() != null) {
@@ -169,6 +170,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             // 空串表示清空邮箱
             user.setEmail(email.isEmpty() ? null : email);
             emailChanged = true;
+        }
+
+        if (userUpdateDTO.getAvatar() != null) {
+            String avatar = userUpdateDTO.getAvatar().trim();
+            if (avatar.length() > 512) {
+                return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.AVATAR_URL_TOO_LONG);
+            }
+            // 空串表示恢复默认头像
+            user.setAvatar(avatar.isEmpty() ? null : avatar);
+            avatarChanged = true;
         }
 
         String newPassword = userUpdateDTO.getNewPassword();
@@ -186,7 +197,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             passwordChanged = true;
         }
 
-        if (!emailChanged && !passwordChanged) {
+        if (!emailChanged && !avatarChanged && !passwordChanged) {
             return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.EMPTY_PROFILE_UPDATE);
         }
 
@@ -198,6 +209,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 .set(User::getUpdateTime, now);
         if (emailChanged) {
             update.set(User::getEmail, user.getEmail());
+        }
+        if (avatarChanged) {
+            update.set(User::getAvatar, user.getAvatar());
         }
         if (passwordChanged) {
             update.set(User::getPassword, user.getPassword());
@@ -214,6 +228,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 .id(user.getId())
                 .username(user.getUsername())
                 .email(user.getEmail())
+                .avatar(user.getAvatar())
                 .createTime(user.getCreateTime())
                 .updateTime(user.getUpdateTime())
                 .build();

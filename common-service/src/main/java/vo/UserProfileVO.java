@@ -18,6 +18,7 @@ public class UserProfileVO {
     private Long id;
     private String username;
     private String email;
+    private String avatar;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

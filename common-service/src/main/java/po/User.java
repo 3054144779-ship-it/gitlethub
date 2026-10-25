@@ -26,6 +26,9 @@ public class User {
     @TableField("email")
     private String email;
 
+    @TableField("avatar")
+    private String avatar;
+
     @TableField("create_time")
     private LocalDateTime createTime;
 

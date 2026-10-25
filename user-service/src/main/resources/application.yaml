@@ -20,6 +20,19 @@ com:
       expires-time: 604800 # 一周过期
       key-size: 2048
 
+aliyun:
+  oss:
+    # 华北2（北京）的固定 Endpoint
+    endpoint: oss-cn-beijing.aliyuncs.com
+
+    # AccessKey (环境变量注入)
+    access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID}
+    access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET}
+    # 你的 Bucket 名称
+    bucket-name: huahuo-tlias
+    # 拼接好的访问前缀（前端拿到这个前缀加上路径就能直接访问图片）
+    url-prefix: https://huahuo-tlias.oss-cn-beijing.aliyuncs.com/
+
 hm:
   db:
     database: gitlethub
