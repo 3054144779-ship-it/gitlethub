@@ -5,12 +5,15 @@ import gitlet.exception.GitletException;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Formatter;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 
 /** Assorted utilities.
@@ -187,6 +190,35 @@ public class Utils {
      * 不表示目录。 */
     public static List<String> plainFilenamesIn(String dir) {
         return plainFilenamesIn(new File(dir));
+    }
+
+    /** 递归返回目录 DIR 下所有普通文件的相对路径（统一用 '/' 分隔，按字典序），
+     *  并跳过仓库元数据目录 .gitlet / .git。DIR 不是目录时返回 null。 */
+    public static List<String> recursiveFilenamesIn(File dir) {
+        if (!dir.isDirectory()) {
+            return null;
+        }
+        Path base = dir.toPath();
+        try (Stream<Path> walk = Files.walk(base)) {
+            return walk.filter(Files::isRegularFile)
+                    .map(path -> relativeName(base, path))
+                    .filter(name -> !isMetadataPath(name))
+                    .sorted()
+                    .collect(Collectors.toList());
+        } catch (IOException excp) {
+            throw new IllegalArgumentException(excp.getMessage());
+        }
+    }
+
+    /** 是否为版本库元数据路径（相对工作目录）：.gitlet 或 .git 及其子文件 */
+    public static boolean isMetadataPath(String name) {
+        return name.equals(".gitlet") || name.startsWith(".gitlet/")
+                || name.equals(".git") || name.startsWith(".git/");
+    }
+
+    /** 把 FILE 相对 BASE 的路径转成仓库内统一使用的形式（'/' 分隔）。 */
+    public static String relativeName(Path base, Path file) {
+        return base.relativize(file).toString().replace(File.separatorChar, '/');
     }
 
     /* OTHER FILE UTILITIES */

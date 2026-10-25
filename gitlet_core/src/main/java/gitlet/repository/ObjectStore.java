@@ -4,8 +4,12 @@ import gitlet.commit.Commit;
 import gitlet.utils.Utils;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * 对象存储类
@@ -78,20 +82,49 @@ public class ObjectStore {
     }
 
     /**
-     * 获取工作目录下的所有文件
+     * 获取工作目录下的所有文件（递归），路径相对工作目录、统一用 '/' 分隔
      * @return
      */
     public List<String> getCwdFiles() {
-        return Utils.plainFilenamesIn(paths.getCwd());
+        return Utils.recursiveFilenamesIn(paths.getCwd());
     }
 
     /**
-     * 删除工作目录下的文件
-     * @param name
+     * 删除工作目录下的文件，并顺手清理因此变空的父目录。
+     * 只允许删除工作目录内的路径，避免提交里出现 ../ 时删到仓库外。
+     * @param name 相对工作目录的路径
      */
     public void deleteCwdFile(String name) {
-        File file = Utils.join(paths.getCwd(), name);
-        Utils.restrictedDelete(file);
+        Path cwd = paths.getCwd().toPath().toAbsolutePath().normalize();
+        Path target = cwd.resolve(name).normalize();
+        if (!target.startsWith(cwd) || Files.isDirectory(target)) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(target);
+        } catch (IOException e) {
+            throw new IllegalArgumentException(e.getMessage());
+        }
+        deleteEmptyParents(target.getParent(), cwd);
+    }
+
+    /** 自底向上删除空目录，遇到工作目录本身或非空目录就停 */
+    private void deleteEmptyParents(Path dir, Path cwd) {
+        while (dir != null && !dir.equals(cwd) && dir.startsWith(cwd)) {
+            try (Stream<Path> entries = Files.list(dir)) {
+                if (entries.findAny().isPresent()) {
+                    return;
+                }
+            } catch (IOException e) {
+                return;
+            }
+            try {
+                Files.deleteIfExists(dir);
+            } catch (IOException e) {
+                return;
+            }
+            dir = dir.getParent();
+        }
     }
 
     /**

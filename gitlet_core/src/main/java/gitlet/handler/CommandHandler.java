@@ -8,10 +8,14 @@ import gitlet.stag.Staging;
 import gitlet.utils.Utils;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /** 核心命令：init / add / commit / rm / log / global-log / find / checkout / reset。 */
 public class CommandHandler {
@@ -64,21 +68,47 @@ public class CommandHandler {
     }
 
     /*
-     * add 添加操作，如果添加的文件不存在直接返回 "File does not exist." 错误
-     * 如果 .gitlet 仓库中已经存在 add 的 file 文件，并且与当前 add 的 file 文件相同
-     * 就直接清空缓存区的 file 文件，不相同就检查是否和暂存区的文件相同，相同不用做任何操作
-     * 如果不相同就直接添加即可。
+     * add 添加操作，支持单个文件、多个文件、目录和 "."。
+     * 目录会递归展开，仓库内统一用相对路径（'/' 分隔）作为 key。
+     * 如果添加的文件不存在直接返回 "File does not exist." 错误。
+     * 如果添加的文件与最新提交相同，就撤销暂存区里的对应记录；
+     * 与暂存区相同则什么都不做，否则写入对象库并暂存。
      * */
-    // 添加一个文件
     public void add(String name) {
-        /* 合法性判断 */
-        // 如果不存在这文件直接报错
-        File file = Utils.join(paths.getCwd(), name);
-        if (!file.exists()) {
+        Path cwd = paths.getCwd().toPath().toAbsolutePath().normalize();
+        Path target = cwd.resolve(name).normalize();
+
+        // .gitlet / .git 是版本库元数据，不能当普通文件/目录添加
+        if (target.startsWith(paths.getGitletDir().toPath().toAbsolutePath().normalize())
+                || target.startsWith(cwd.resolve(".git"))) {
+            Utils.message("Cannot add version-control metadata (.gitlet / .git).");
+            return;
+        }
+        // 只允许添加工作目录内的文件；不存在直接报错
+        if (!target.startsWith(cwd) || !Files.exists(target)) {
             Utils.message("File does not exist.");
             return;
         }
 
+        if (Files.isDirectory(target)) {
+            List<String> relFiles = Utils.recursiveFilenamesIn(target.toFile());
+            if (relFiles == null) {
+                return;
+            }
+            String prefix = Utils.relativeName(cwd, target);
+            for (String rel : relFiles) {
+                String repoPath = prefix.isEmpty() ? rel : prefix + "/" + rel;
+                stageFile(repoPath, target.resolve(rel).toFile());
+            }
+        } else {
+            stageFile(Utils.relativeName(cwd, target), target.toFile());
+        }
+
+        repo.saveStaging();
+    }
+
+    /** 把单个文件按仓库内相对路径 name 加入暂存区 */
+    private void stageFile(String name, File file) {
         // 获取当前文件的sha1值
         String nowSha1 = objects.getFileSha1(file);
 
@@ -89,26 +119,19 @@ public class CommandHandler {
         // 获取暂存区的信息
         String stagingSha1 = stage.getStagingMap().getOrDefault(name, null);
 
-        // 如果当前提交的文件与最新一次提交的文件(因为只能单个提交)SHA-1值相同就删除暂存区的的文件
-        // 如果本来存在删除标记，现在add这个被删掉的文件之后就不存在删除标记了
+        // 如果当前文件与最新一次提交的文件 SHA-1 值相同就删除暂存区的文件
+        // 如果本来存在删除标记，现在 add 这个被删掉的文件之后就不存在删除标记了
         if (nowSha1.equals(headNowFile)) {
-            // 删除文件标记
             stage.resetFile(name);
-            repo.saveStaging();
-
             return;
         }
 
         // 如果当前文件和暂存区中的文件是相同的就直接结束
-        // 如果最新提交不相同并且与暂存区的文件也不相同
         if (!nowSha1.equals(stagingSha1)) {
             // 把文件的实际内容作为 Blob 存入文件系统
             objects.saveFile(nowSha1, file);
-            // 将暂存区信息持久化储存起来
             stage.addFile(name, nowSha1);
         }
-
-        repo.saveStaging();
     }
 
     /** 将暂存区的文件提交，常规情况下会继承父提交中未修改的文件，并更新新的暂存区的提交进去。
@@ -176,35 +199,80 @@ public class CommandHandler {
                 .anyMatch(s -> s.contains("<<<<<<< HEAD") || s.contains(">>>>>>>") || s.contains("======="));
     }
 
-    /** 删除文件，如果在暂存区就删除暂存区的，如果在提交中被追踪，就删除工作目录下的文件，并进行标记。 */
+    /** 删除文件或目录：目录会递归处理其中所有已暂存 / 已追踪的文件。
+     *  如果在暂存区就删除暂存区的记录；如果在提交中被追踪，就删除工作目录下的文件，并进行标记。 */
     public void rm(String name) {
-        Staging stage = repo.getStaging();
-        // 获取暂存文件的信息
-        Map<String, String> stagingFiles = stage.getStagingMap();
-        boolean flag1 = stagingFiles.containsKey(name);
-
-        // 获取最新提交所记录的文件
-        boolean flag2 = new BranchManager(repo).getHeadCommitTrackedFilesMap().containsKey(name);
-
-        // 不存在暂存区也不被最新的提交追踪
-        if (!flag1 && !flag2) {
+        Path cwd = paths.getCwd().toPath().toAbsolutePath().normalize();
+        Path target = cwd.resolve(name).normalize();
+        if (!target.startsWith(cwd)) {
             Utils.message("No reason to remove the file.");
             return;
+        }
+
+        Staging stage = repo.getStaging();
+        // 获取最新提交所记录的文件
+        Set<String> trackedFiles = new BranchManager(repo).getHeadCommitTrackedFilesMap().keySet();
+
+        if (Files.isDirectory(target)) {
+            String prefix = Utils.relativeName(cwd, target);
+            // 目录下现有的文件，加上可能已被手动删除但仍在暂存区 / HEAD 里的文件
+            Set<String> candidates = new TreeSet<>();
+            List<String> existing = Utils.recursiveFilenamesIn(target.toFile());
+            if (existing != null) {
+                for (String rel : existing) {
+                    candidates.add(prefix.isEmpty() ? rel : prefix + "/" + rel);
+                }
+            }
+            for (String file : stage.getStagingMap().keySet()) {
+                if (isUnder(file, prefix)) {
+                    candidates.add(file);
+                }
+            }
+            for (String file : trackedFiles) {
+                if (isUnder(file, prefix)) {
+                    candidates.add(file);
+                }
+            }
+            for (String file : candidates) {
+                rmFile(file, trackedFiles);
+            }
+            repo.saveStaging();
+            return;
+        }
+
+        if (!rmFile(Utils.relativeName(cwd, target), trackedFiles)) {
+            Utils.message("No reason to remove the file.");
+            return;
+        }
+        repo.saveStaging();
+    }
+
+    private boolean isUnder(String file, String dir) {
+        return dir.isEmpty() || file.startsWith(dir + "/");
+    }
+
+    /** 返回是否确实处理了该文件（在暂存区或被 HEAD 追踪） */
+    private boolean rmFile(String name, Set<String> trackedFiles) {
+        Staging stage = repo.getStaging();
+        Map<String, String> stagingFiles = stage.getStagingMap();
+        boolean staged = stagingFiles.containsKey(name);
+        boolean tracked = trackedFiles.contains(name);
+
+        // 不存在暂存区也不被最新的提交追踪
+        if (!staged && !tracked) {
+            return false;
         }
 
         // 将暂存区的文件删除(如果没有会返回 null)
         stagingFiles.remove(name);
 
         // 如果在提交中被追踪，就删除工作目录下的文件，并进行标记。
-        if (flag2) {
-            // 将最新提交的文件标记
+        if (tracked) {
             stage.getRemoveSet().add(name);
-            // 删除工作目录下的文件
             objects.deleteCwdFile(name);
-
         }
 
-        repo.saveStaging();
+        return true;
     }
 
     public void log() {

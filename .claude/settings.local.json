@@ -190,7 +190,11 @@
       "Bash(netstat -ano)",
       "Bash(user)",
       "Bash(javap -classpath __TRACKED_VAR__/.m2/repository/com/aliyun/oss/aliyun-sdk-oss/3.18.4/aliyun-sdk-oss-3.18.4.jar com.aliyun.oss.model.GeneratePresignedUrlRequest)",
-      "Bash(npm --prefix D:/Job_project/gitlethub-frontend run build)"
+      "Bash(npm --prefix D:/Job_project/gitlethub-frontend run build)",
+      "Bash(sed -n '99,200p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
+      "Bash(sed -n '605,700p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
+      "Bash(sed -n '70,120p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/handler/DiffBuilder.java)",
+      "Bash(sed -n '325,360p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/service/impl/PullRequestEventListenerImpl.java)"
     ]
   }
 }

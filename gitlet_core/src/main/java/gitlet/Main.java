@@ -60,10 +60,14 @@ public class Main {
                 commands.init();
                 break;
             case "add":
-                // add 添加的时候一次只能添加一个文件
+                // add 支持一个或多个操作数：文件、目录（递归）或 "."
                 checkGitLet(repo.getPaths());
-                validateNumArgs("add", args, 2);
-                commands.add(args[1]);
+                if (args.length < 2) {
+                    throw new RuntimeException("Incorrect operands.");
+                }
+                for (int i = 1; i < args.length; i++) {
+                    commands.add(args[i]);
+                }
                 break;
             case "commit":
                 checkGitLet(repo.getPaths());
