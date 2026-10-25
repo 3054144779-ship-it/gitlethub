@@ -20,6 +20,14 @@ public class MsgConstant {
     public static final String THE_COLLABORATOR_DOES_NOT_EXIST = "协作者不存在";
     public static final String NOT_REPOSITORY_OWNER = "只有仓库所有者可以管理协作者";
     public static final String ONLY_OWNER_CAN_MERGE = "只有仓库所有者可以合并该 PR";
+    public static final String ONLY_MEMBERS_CAN_CONTRIBUTE = "只有仓库所有者或贡献者可以操作";
+    public static final String CANNOT_REVIEW_OWN_PR = "不能评审自己创建的 PR";
+    public static final String NOT_COMMENT_AUTHOR = "只有评论作者可以编辑该评论";
+    public static final String CANNOT_DELETE_COMMENT = "只有评论作者或仓库所有者可以删除该评论";
+    public static final String TAG_ALREADY_EXISTS = "标签已存在";
+    public static final String TAG_NAME_INVALID = "标签名不合法";
+    public static final String PR_REVIEW_REJECTED = "PR 存在待修改的评审，不能合并";
+    public static final String PR_APPROVAL_REQUIRED = "保护分支至少需要一条通过评审才能合并";
     public static final String SYSTEM_ERROR = "系统错误";
     public static final String REJECT_MERGING_IRRELEVANT_HISTORY = "拒绝合并无关历史";
 }

@@ -255,12 +255,11 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | 方法 | 路径                     | 用途                                 |
 | ---- | ------------------------ | ------------------------------------ |
 | POST | `/user/registration`     | 用户注册（BCrypt）                   |
-| GET  | `/user/{user_id}`        | 获取用户详细信息                     |
+| GET  | `/user/{user_id}`        | 获取用户资料（`UserProfileVO`，不返回密码） |
 | POST | `/user/login`            | 用户登录                             |
-| PUT  | `/user`                  | 修改用户信息（邮箱、头像等）(待实现) |
+| PUT  | `/user/profile`          | 修改当前登录用户资料：邮箱 + 可选改密码（改密码需原密码；身份取自 `Authorization`） |
 | POST | `/user/logout`           | 用户登出（Token 加入黑名单）         |
 | GET  | `/user/search?username=` | 搜索用户（添加协作者时需要）         |
-| PUT  | `/user/password`         | 修改密码(可选)                       |
 | POST | `/user/avatar`           | 上传/更换头像(可选)                  |
 
 **实现方 `remote-gitlet`**
@@ -318,6 +317,98 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 - 详情与所有子资源（分支 / 提交 / 文件 / PR / 协作者）由 MVC 拦截器 `RepoVisibilityInterceptor` 统一兜底：
   非可见者一律返回 **`code 30001`（按「仓库不存在」处理，而非 `20002`）**，避免泄露私有仓库的存在。
   拦截器**只拦 GET**；写路径的鉴权仍在 service 层按调用者身份判定。
+
+### PR 评论 / 评审、Tag、AI 审查接口（2026-10-22 新增，已实现）
+
+四组接口都由 `remote-gitlet` 实现，统一返回 `Result<T>`。GET 路径沿用
+`/api/repos/**`，自动受 `RepoVisibilityInterceptor` 保护；写路径从
+`@RequestAttribute("userId")` 取调用者身份，`actorId == null` 时直接拒绝。
+响应中的枚举按枚举名序列化（`"INLINE"` / `"APPROVED"` / `"SUCCESS"`），请求 DTO 里用数字码。
+
+> 这些接口尚未写入 `openapi.yaml`。该文件是 `remote-gitlet` 的生成源，落地前必须同步，
+> 否则下次 `openapi-generator` 会把新增 Controller 覆盖掉。
+
+**PR 评论**（`pr_comment`）
+
+| 方法 | 路径 | 返回 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/repos/{owner}/{repo}/pull-request/{id}/comments?comment_type=, page_num=, page_size=` | `IPage<PrCommentVO>` | 按 `create_time` 升序；`comment_type` 可选，1 整体 / 2 行级；**只对顶级评论分页**，回复一次性挂在 `replies` 上 |
+| POST | `/api/repos/{owner}/{repo}/pull-request/{id}/comments` | `String` | body `PrCommentCreateDTO`；登录用户且为仓库 OWNER/CONTRIBUTOR |
+| PUT | `/api/repos/{owner}/{repo}/pull-request/{id}/comments/{commentId}` | `PrCommentVO` | body `{body}`；仅评论作者可编辑 |
+| DELETE | `/api/repos/{owner}/{repo}/pull-request/{id}/comments/{commentId}` | `String` | 评论作者或仓库 OWNER；逻辑删除 |
+
+`PrCommentCreateDTO`：
+
+```json
+{
+  "body": "这段需要判空，否则会 NPE",
+  "commentType": 2,
+  "filePath": "src/OrderService.java",
+  "lineNumber": 42,
+  "diffSide": 1,
+  "commitSha": "a1b2c3...",
+  "replyToId": null
+}
+```
+
+- `commentType=2` 时 `filePath`、`lineNumber`、`diffSide` 必填；`commentType=1` 时忽略这三个字段。
+- `replyToId` 必须指向同一个 PR 的评论；`reviewId` 由服务端在评论随评审提交时回填，前端不传。
+- `PrCommentVO` 在 PO 字段外补充 `userName`（join 用户名），便于列表直接渲染。
+
+**PR 评审**（`pr_review`）
+
+| 方法 | 路径 | 返回 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/repos/{owner}/{repo}/pull-request/{id}/reviews` | `List<PrReviewVO>` | 按 `create_time` 升序，含历史记录 |
+| POST | `/api/repos/{owner}/{repo}/pull-request/{id}/reviews` | `PrReviewVO` | body `PrReviewCreateDTO`；OWNER/CONTRIBUTOR，且不能评审自己创建的 PR |
+
+`PrReviewCreateDTO`：
+
+```json
+{
+  "state": 1,
+  "body": "逻辑没问题，补充一个并发测试",
+  "commitSha": "a1b2c3..."
+}
+```
+
+- `state`：0 COMMENTED / 1 APPROVED / 2 CHANGES_REQUESTED；响应里是枚举名。
+- 同一评审人可多次提交，判定时**取每人最新一条**：
+  存在 `CHANGES_REQUESTED` 即视为请求修改；至少一条 `APPROVED` 才算通过。
+- **合并门禁**：目标分支 `is_protected=1` 时，合并前检查上述汇总结果。
+  未满足时拒绝合并：存在 `CHANGES_REQUESTED` 返回 `20004`（评审未通过），
+  一条 `APPROVED` 都没有返回 `20005`（缺少批准）。`20003` 已被 `BRANCH_PROTECTED` 占用，勿复用。
+  非保护分支不受影响。
+
+**Tag / Release**（`tag`）
+
+| 方法 | 路径 | 返回 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/repos/{owner}/{repo}/tags` | `List<TagVO>` | 按 `create_time` 倒序 |
+| GET | `/api/repos/{owner}/{repo}/tags/{tagName}` | `TagVO` | 单个标签详情 |
+| POST | `/api/repos/{owner}/{repo}/tags` | `TagVO` | body `TagCreateDTO`；OWNER/CONTRIBUTOR |
+| DELETE | `/api/repos/{owner}/{repo}/tags/{tagName}` | `String` | OWNER/CONTRIBUTOR；逻辑删除 |
+
+- `TagCreateDTO`：`{tagName, commitSha, description}`。
+- `tagName` 需满足 Git ref 命名规则，且在**未删除**的标签中唯一；`commitSha` 必须存在，
+  服务端校验后落 `tag` 表，`user_id` 取调用者身份。
+- `tagName` 出现在路径里时前端/网关需做 URL 编码（如 `v1.0.0+build.1` 的 `+`）。
+- `TagVO` 补充 `userName`，供前端展示创建者。
+
+**AI 审查记录**（`ai_review_record`）
+
+| 方法 | 路径 | 返回 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/api/repos/{owner}/{repo}/ai-reviews` | `AiReviewRecordVO` | body `{pullRequestId}` 或 `{commitSha}`，二选一；OWNER/CONTRIBUTOR |
+| GET | `/api/repos/{owner}/{repo}/ai-reviews?pullRequestId=&commitSha=&page=&size=` | `List<AiReviewRecordVO>` | 按 `create_time` 倒序，条件可组合 |
+| GET | `/api/repos/{owner}/{repo}/ai-reviews/{recordId}` | `AiReviewRecordVO` | 轮询状态 / 读取结论 |
+
+- 创建时服务端先落一条 `status=RUNNING` 的记录并返回 `id`，再由 `AiReviewWorker` 异步调用
+  `/api/ai`；完成回写 `SUCCESS` + `conclusion`，异常回写 `FAILED` + `errorMessage`。
+  `CANCELLED` 为预留状态，当前没有取消入口。
+- `diffSha256`、`durationMs` 由服务端计算，`model` 取配置 `ai.review.model`，前端不传。
+- `diffSha256` 命中同仓库历史 `SUCCESS` 记录时可直接复用结论，避免重复消耗模型额度。
+- 该接口只负责“留痕 + 查询”，不替代 `/api/ai/{owner}/{repo}/chat`；后者仍是对话/流式入口。
 
 ### AI 对话接口（2026-10-19 按实际代码更新）
 
@@ -563,8 +654,16 @@ MySQL：
 | 协作者权限（collaborator）    | id, level(权限等级), user_id(协作者的用户id), repository_id(属于哪个仓库), create_time, is_deleted(逻辑删除), auto_create_pr(该协作者的自动PR开关) | 注意列名是 `auto_create_pr`，与仓库级的 `repository.allow_auto_pr` 不同 |
 | 提交记录（submission_record） | id, submit_time, commit_sha1(关联对象存储中真实的 SHA-1), user_id(提交的用户id), repository_id(仓库id), branch_name(提交到了哪个分支) | 在 Git 的世界里，没有 `branch_id` 这个概念，用branch_name更合理 |
 | 提交图谱索引(commit_parent)   | id, repository_id, commit_sha, parent_sha                    | 记录 commit 之间的父子关系。**注意：目前不可靠**——`pushWrite` 每次推送只写一条边（parent 指向推送前的分支 tip），批量推送的中间提交没有记录。遍历历史一律以 commit 对象内的 `parent`/`secondParent` 为准 |
-| 标签（tag）                   | id, repository_id, tag_name, commit_sha, user_id, create_time, is_deleted | 标签功能                                                     |
+| 标签（tag）                   | id, repository_id, tag_name, commit_sha, user_id, description, create_time, is_deleted | 标签 / Release notes。同一仓库内标签名唯一（软删除后允许重建，由服务层校验） |
 | PR机制表（pull_request）      | id, repository_id, title, description, source_branch, target_branch, status, author_id, create_time, update_time, `staging_path`(冲突暂存区路径), `staging_path_tracked`(已自动合并的文件映射序列化路径), is_deleted | PR 机制（合并请求）。**自动 PR 开关不在本表**——仓库级在 `repository.allow_auto_pr`、用户级在 `collaborator.auto_create_pr`。`staging_path` 只在合并冲突时写入；`staging_path_tracked` 保存三路合并中**已自动合并好的文件映射**，恢复合并时以它为基准，避免非冲突改动丢失（见 §8） |
+| PR 评论（pr_comment）         | id, repository_id, pull_request_id, user_id, body, comment_type(1 整体/2 行级), file_path, line_number, diff_side(0 旧行/1 新行), commit_sha, reply_to_id, review_id, create_time, update_time, is_deleted | 整体评论与行级评论共用一张表；行级评论用 `file_path + line_number + diff_side + commit_sha` 定位 diff 行，`reply_to_id` 支持盖楼 |
+| PR 评审（pr_review）          | id, repository_id, pull_request_id, reviewer_id, state(0 COMMENTED/1 APPROVED/2 CHANGES_REQUESTED), body, commit_sha, create_time, update_time, is_deleted | 同一评审人可多次提交，合并门禁取每人最新一条：存在 `CHANGES_REQUESTED` 时不可合并；保护分支至少需要一条 `APPROVED` |
+| AI 审查记录（ai_review_record） | id, repository_id, pull_request_id, commit_sha, diff_sha256, model, status(0 RUNNING/1 SUCCESS/2 FAILED/3 CANCELLED), conclusion, error_message, duration_ms, trigger_user_id, create_time, update_time, is_deleted | 沉淀 AI 审查结论；`diff_sha256` 为「仓库 + 目标 + diff 内容」摘要，相同输入可复用上次结论 |
+
+> 新增表（`tag` / `pr_comment` / `pr_review` / `ai_review_record`）的建表脚本见
+> [`gitlethub-schema.sql`](./gitlethub-schema.sql)，均为 `CREATE TABLE IF NOT EXISTS`，可重复执行。
+> 表间不建物理外键，关联关系由服务层维护，与现有表保持一致。对应接口尚未实现，
+> 落地时沿用 `PullRequestController` 现有的身份注入与权限校验方式。
 
 Milvus：
 
@@ -916,7 +1015,7 @@ PR 合并成功
 | 12 | 模块命名 `gitlet_core` vs `gitlet-core` 未统一 | 可读性 → D4 |
 | 13 | `gitlet/dump/`（`DumpObj`、`Dumpable`）疑似死代码 | 待确认后删除 |
 | 14 | `remote-gitlet` 自行验签是 gateway 未就绪期的临时方案，与 §6「gateway 承担的策略」的最终形态（网关统一验签）不一致；且无效 token 走**匿名放行**（返回 `200` 而非 `401`），与 `openapi.yaml` 中 `Unauthorized` 的「由 gateway 拦截」注释矛盾 | 待 gateway 修好后收敛 → D36 |
-| 15 | `closePullRequest` 仍**无权限校验**（任何人可关任意 PR）；push 仍把操作者记成 `owner`（`submission_record` 的作者归属） | 越权关闭 / 作者归属错误 → D35 |
+| 15 | ~~`closePullRequest` 无权限校验~~ **已解决**：现仅 PR 作者或仓库 OWNER 可关闭；push 仍把操作者记成 `owner`（`submission_record` 的作者归属） | 作者归属错误 → D35 |
 | 16 | `PullRequestEventListenerImpl.createBranch` 已无调用点（rejected 路径已改为直接 return） | 死代码，与 §10-13 同类，待清理 |
 | 17 | 暂存区路径命名不统一：代码用 `basePath/temp/merge-{timestamp}`，设计描述是 `.gitlet/pr-staging/{prId}/` | 便于追踪与清理，建议按 prId 命名 |
 | 18 | 可观测性未做：访问日志、关键接口耗时打点、dashboard 均缺失 | 出事难定位（见 §6「gateway 承担的策略」） |

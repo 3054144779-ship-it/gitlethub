@@ -36,6 +36,12 @@ public final class ResultCode {
     /** 分支被保护 */
     public static final int BRANCH_PROTECTED = 20003;
 
+    /** 评审存在“请求修改”，不能合并 */
+    public static final int REVIEW_REJECTED = 20004;
+
+    /** 保护分支缺少批准 */
+    public static final int REVIEW_APPROVAL_REQUIRED = 20005;
+
     /** 仓库不存在 */
     public static final int REPOSITORY_NOT_FOUND = 30001;
 

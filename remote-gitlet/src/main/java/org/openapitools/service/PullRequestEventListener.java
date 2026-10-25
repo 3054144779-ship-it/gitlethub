@@ -70,5 +70,5 @@ public interface PullRequestEventListener {
      * @param pullRequestId  (required) pull request 的 id
      * @return 关闭结果
      */
-    Result<String> closePullRequest(String owner, String repo, String pullRequestId);
+    Result<String> closePullRequest(String owner, String repo, String pullRequestId, Long actorId);
 }

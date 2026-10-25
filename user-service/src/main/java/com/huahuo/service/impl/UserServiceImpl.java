@@ -2,19 +2,25 @@ package com.huahuo.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.jwt.JWT;
 import cn.hutool.jwt.JWTUtil;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.huahuo.mapper.UserMapper;
 import com.huahuo.message.MsgConstant;
 import com.huahuo.service.UserService;
+import common.Result;
+import common.ResultCode;
 import dto.UserDTO;
 import dto.UserLoginDTO;
 import dto.UserPageSearch;
 import dto.UserSearchVO;
+import dto.UserUpdateDTO;
 import exception.LoginException;
 import jwt.KeyPairManager;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +30,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import po.User;
 import vo.UserLoginVO;
+import vo.UserProfileVO;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -125,12 +133,89 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     /**
-     * 根据用户名查询用户信息
+     * 根据用户ID查询用户资料（不含密码）
      * @param userId 用户ID
-     * @return 用户信息
+     * @return 用户信息，不存在时返回 null
      */
     @Override
-    public User searchUser(Long userId) {
-        return userMapper.selectById(userId);
+    public UserProfileVO searchUser(Long userId) {
+        return toProfileVO(userId == null ? null : userMapper.selectById(userId));
+    }
+
+    /**
+     * 修改当前登录用户的资料：邮箱按传入值更新，密码仅在 newPassword 非空时修改
+     * @param userId 当前登录用户ID
+     * @param userUpdateDTO 修改内容
+     * @return 更新后的用户资料
+     */
+    @Override
+    public Result<UserProfileVO> updateProfile(Long userId, UserUpdateDTO userUpdateDTO) {
+        if (userUpdateDTO == null) {
+            return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.EMPTY_PROFILE_UPDATE);
+        }
+        User user = userId == null ? null : userMapper.selectById(userId);
+        if (user == null) {
+            return Result.fail(ResultCode.USER_NOT_FOUND, MsgConstant.USER_NOT_FOUND);
+        }
+
+        boolean emailChanged = false;
+        boolean passwordChanged = false;
+
+        if (userUpdateDTO.getEmail() != null) {
+            String email = userUpdateDTO.getEmail().trim();
+            if (email.length() > 255) {
+                return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.EMAIL_TOO_LONG);
+            }
+            // 空串表示清空邮箱
+            user.setEmail(email.isEmpty() ? null : email);
+            emailChanged = true;
+        }
+
+        String newPassword = userUpdateDTO.getNewPassword();
+        if (StrUtil.isNotBlank(newPassword)) {
+            if (StrUtil.isBlank(userUpdateDTO.getOldPassword())) {
+                return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.OLD_PASSWORD_REQUIRED);
+            }
+            if (!bCryptPasswordEncoder.matches(userUpdateDTO.getOldPassword(), user.getPassword())) {
+                return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.OLD_PASSWORD_INCORRECT);
+            }
+            if (newPassword.length() < 6 || newPassword.length() > 64) {
+                return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.PASSWORD_LENGTH_INVALID);
+            }
+            user.setPassword(bCryptPasswordEncoder.encode(newPassword));
+            passwordChanged = true;
+        }
+
+        if (!emailChanged && !passwordChanged) {
+            return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.EMPTY_PROFILE_UPDATE);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        user.setUpdateTime(now);
+        // updateById 默认忽略 null 字段，清空邮箱要显式 set
+        LambdaUpdateWrapper<User> update = Wrappers.<User>lambdaUpdate()
+                .eq(User::getId, userId)
+                .set(User::getUpdateTime, now);
+        if (emailChanged) {
+            update.set(User::getEmail, user.getEmail());
+        }
+        if (passwordChanged) {
+            update.set(User::getPassword, user.getPassword());
+        }
+        userMapper.update(null, update);
+        return Result.ok(toProfileVO(user));
+    }
+
+    private UserProfileVO toProfileVO(User user) {
+        if (user == null) {
+            return null;
+        }
+        return UserProfileVO.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .createTime(user.getCreateTime())
+                .updateTime(user.getUpdateTime())
+                .build();
     }
 }

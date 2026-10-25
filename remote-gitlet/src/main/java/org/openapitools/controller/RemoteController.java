@@ -240,9 +240,11 @@ public class RemoteController {
     @PostMapping("/pull-request/{pullRequestId}/close")
     public ResponseEntity<Result<String>> closePullRequest(
             @PathVariable String owner, @PathVariable String repo,
-            @PathVariable String pullRequestId) {
+            @PathVariable String pullRequestId,
+            @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId
+    ) {
         Result<String> response =
-                pullRequestEventListener.closePullRequest(owner, repo, pullRequestId);
+                pullRequestEventListener.closePullRequest(owner, repo, pullRequestId, actorId);
         return ResponseEntity.ok(response);
     }
 

@@ -2,12 +2,15 @@ package com.huahuo.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
+import common.Result;
 import dto.UserDTO;
 import dto.UserLoginDTO;
 import dto.UserPageSearch;
 import dto.UserSearchVO;
+import dto.UserUpdateDTO;
 import po.User;
 import vo.UserLoginVO;
+import vo.UserProfileVO;
 
 import java.util.List;
 
@@ -39,9 +42,17 @@ public interface UserService extends IService<User> {
     IPage<UserSearchVO> getUserByUserNamePage(UserPageSearch userPageSearch);
 
     /**
-     * 根据用户名查询用户
-      * @param userId 用户ID
+     * 根据用户ID查询用户资料（不含密码）
+     * @param userId 用户ID
       * @return 用户信息
      */
-    User searchUser(Long userId);
+    UserProfileVO searchUser(Long userId);
+
+    /**
+     * 修改当前登录用户的资料：邮箱按传入值更新，密码仅在 newPassword 非空时修改
+     * @param userId 当前登录用户ID
+     * @param userUpdateDTO 修改内容
+     * @return 更新后的用户资料
+     */
+    Result<UserProfileVO> updateProfile(Long userId, UserUpdateDTO userUpdateDTO);
 }

@@ -7,6 +7,7 @@ import common.Result;
 import common.ResultCode;
 import dto.PullRequestDTO;
 import enums.PRStatusEnum;
+import enums.PrReviewStateEnum;
 import gitlet.commit.Commit;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.handler.MergeHandler;
@@ -22,6 +23,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import po.BranchPointer;
 import po.Collaborator;
+import po.PrReview;
 import po.PullRequest;
 import po.Repository;
 import po.User;
@@ -30,6 +32,7 @@ import vo.PullRequestVO;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -40,6 +43,8 @@ import static org.openapitools.utils.Utils.join;
 public class PullRequestEventListenerImpl implements PullRequestEventListener {
     @Autowired
     private RemotePullRequestMapper remotePullRequestMapper;
+    @Autowired
+    private RemotePrReviewMapper remotePrReviewMapper;
     @Autowired
     private RemoteRepositoryMapper remoteRepositoryMapper;
     @Autowired
@@ -159,6 +164,13 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         // 若合并后再读 master，diff 会因两边树一致而全部变成 UNCHANGED
         BranchPointer targetBasePointer = branchPointerMapper
                 .getBranchPointer(repositoryId, pullRequest.getTargetBranch());
+        // 保护分支要求评审通过：取每人最新一条评审判定
+        if (targetBasePointer != null && Integer.valueOf(1).equals(targetBasePointer.getIsProtected())) {
+            Result<String> gate = checkReviewGate(repositoryId, pullRequest.getId());
+            if (gate != null) {
+                return gate;
+            }
+        }
         String targetBaseSha = targetBasePointer == null ? null : targetBasePointer.getCommitSha();
 
         // 传递 PR ID，让 MergeHandler 检查暂存区
@@ -274,7 +286,11 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
      * @return 关闭结果
      */
     @Override
-    public Result<String> closePullRequest(String owner, String repo, String pullRequestId) {
+    public Result<String> closePullRequest(String owner, String repo, String pullRequestId, Long actorId) {
+        log.info("关闭 Pull Request {} by user {}", pullRequestId, actorId);
+        if (actorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
         Long repositoryId = resolveRepositoryId(owner, repo);
         if (repositoryId == null) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, "仓库不存在");
@@ -282,6 +298,10 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         PullRequest pullRequest = findPullRequest(repositoryId, pullRequestId);
         if (pullRequest == null) {
             return Result.fail(ResultCode.BAD_REQUEST, "PR 不存在");
+        }
+        // PR 作者或仓库 OWNER 可以关闭；其他人一律拒绝
+        if (!actorId.equals(pullRequest.getAuthorId()) && checkOwner(repositoryId, actorId) != null) {
+            return Result.fail(ResultCode.FORBIDDEN, "只有 PR 作者或仓库所有者可以关闭该 PR");
         }
         if (pullRequest.getStatus() != PRStatusEnum.OPEN) {
             return Result.fail(ResultCode.BAD_REQUEST, "只有 open 状态的 PR 可以关闭");
@@ -393,6 +413,39 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         boolean deleted = self != null && self.getIsDeleted() != null && self.getIsDeleted() == 1;
         if (self == null || deleted || self.getLevel() == null || !self.getLevel().isOwner()) {
             return Result.fail(ResultCode.FORBIDDEN, MsgConstant.ONLY_OWNER_CAN_MERGE);
+        }
+        return null;
+    }
+
+    /**
+     * 保护分支合并门禁：同一评审人取最新一条，
+     * 存在 CHANGES_REQUESTED 即拒绝，至少一条 APPROVED 才放行。
+     */
+    private Result<String> checkReviewGate(Long repositoryId, Long prId) {
+        List<PrReview> reviews = remotePrReviewMapper.selectList(
+                Wrappers.<PrReview>lambdaQuery()
+                        .eq(PrReview::getRepositoryId, repositoryId)
+                        .eq(PrReview::getPullRequestId, prId)
+                        .orderByAsc(PrReview::getCreateTime)
+                        .orderByAsc(PrReview::getId));
+        Map<Long, PrReview> latestByReviewer = new HashMap<>();
+        for (PrReview review : reviews) {
+            latestByReviewer.put(review.getReviewerId(), review);
+        }
+        boolean changesRequested = false;
+        boolean approved = false;
+        for (PrReview latest : latestByReviewer.values()) {
+            if (latest.getState() == PrReviewStateEnum.CHANGES_REQUESTED) {
+                changesRequested = true;
+            } else if (latest.getState() == PrReviewStateEnum.APPROVED) {
+                approved = true;
+            }
+        }
+        if (changesRequested) {
+            return Result.fail(ResultCode.REVIEW_REJECTED, MsgConstant.PR_REVIEW_REJECTED);
+        }
+        if (!approved) {
+            return Result.fail(ResultCode.REVIEW_APPROVAL_REQUIRED, MsgConstant.PR_APPROVAL_REQUIRED);
         }
         return null;
     }
