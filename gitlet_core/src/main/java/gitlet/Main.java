@@ -134,8 +134,6 @@ public class Main {
                 // 检查仓库是否初始化
                 checkGitLet(repo.getPaths());
 
-                // TODO：当前为全量推送，后续优化为增量推送
-
                 // 获取远程仓库仓库路径
                 // gitlet push origin main => origin = 远程仓库别名
 

@@ -20,7 +20,7 @@ public class RepositoryPaths {
     /** 储存提交的文件备份*/
     private final File object;
     /** refs/heads 目录储存分支  */
-    private final File branchDir;
+//    private final File branchDir;
     /** 储存 HEAD 指针  */
     private final File headFile;
     /** 储存 commit 的文件夹  */
@@ -35,7 +35,7 @@ public class RepositoryPaths {
         this.gitletDir = join(cwd, ".gitlet");
         this.repositoryId = join(gitletDir, repoId);
         this.object = join(repositoryId, "Objects");
-        this.branchDir = join(repositoryId, "refs", "heads");
+//        this.branchDir = join(repositoryId, "refs", "heads");
         this.headFile = join(repositoryId, "HEAD");
         this.commits = join(object, "commits");
         this.PRStaging = join(repositoryId, "storage");

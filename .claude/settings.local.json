@@ -194,7 +194,13 @@
       "Bash(sed -n '99,200p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
       "Bash(sed -n '605,700p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
       "Bash(sed -n '70,120p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/handler/DiffBuilder.java)",
-      "Bash(sed -n '325,360p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/service/impl/PullRequestEventListenerImpl.java)"
+      "Bash(sed -n '325,360p' D:/Job_project/gitlethub/remote-gitlet/src/main/java/org/openapitools/service/impl/PullRequestEventListenerImpl.java)",
+      "Bash(javap -p -c -classpath gitlet_core/target/classes gitlet.handler.CommandHandler)",
+      "Bash(mvn -q -pl remote-gitlet -am -DskipTests compile)",
+      "WebSearch",
+      "Bash(sed -n '130,145p' app/service/impl/archaeology_service_impl.py)",
+      "Bash(sed -n '130,145p' app/service/impl/semantic_search_service_impl.py)",
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\"; cat \"{}\"')"
     ]
   }
 }

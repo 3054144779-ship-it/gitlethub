@@ -10,6 +10,7 @@ import org.openapitools.model.RefView;
 
 
 import org.openapitools.filter.JwtAuthFilter;
+import org.openapitools.handler.DiffBuilder;
 import org.openapitools.service.BlobQueryService;
 import org.openapitools.service.BranchQueryService;
 import org.openapitools.service.CommitQueryService;
@@ -26,6 +27,7 @@ import vo.BlobVO;
 import vo.CommitVO;
 import vo.FileChangeVO;
 import vo.FileEntryVO;
+import vo.PrDiffFileVO;
 import vo.PullRequestVO;
 
 import javax.annotation.Nullable;
@@ -46,6 +48,8 @@ public class RemoteController {
     private CommitQueryService commitQueryService;
     @Autowired
     private BlobQueryService blobQueryService;
+    @Autowired
+    private DiffBuilder diffBuilder;
 
     /**
      * pull 拉取对象
@@ -208,6 +212,28 @@ public class RemoteController {
         Result<PullRequestVO> response =
                 pullRequestEventListener.getPullRequestById(owner, repo, pullRequestId);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 查看 pull request 的结构化差异（含新旧行号，供行级评论定位）
+     * @param owner  (required) 当前仓库的所有者
+     * @param repo  (required) 当前仓库的名称
+     * @param pullRequestId  (required) pull request 的 id
+     * @return 按文件分组的差异行
+     */
+    @GetMapping("/pull-request/{pullRequestId}/diff")
+    public ResponseEntity<Result<List<PrDiffFileVO>>> diffPullRequest(
+            @PathVariable String owner, @PathVariable String repo,
+            @PathVariable String pullRequestId) {
+        Result<PullRequestVO> prResult =
+                pullRequestEventListener.getPullRequestById(owner, repo, pullRequestId);
+        PullRequestVO pr = prResult.getData();
+        if (pr == null) {
+            return ResponseEntity.ok(Result.<List<PrDiffFileVO>>fail(
+                    prResult.getCode(), prResult.getMessage()));
+        }
+        return ResponseEntity.ok(Result.ok(
+                diffBuilder.buildPrDiffView(pr.getRepositoryId(), pr.getSourceBranch(), pr.getTargetBranch())));
     }
 
     /**

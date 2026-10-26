@@ -38,6 +38,11 @@ public class BlobQueryServiceImpl implements BlobQueryService {
         if (repositoryId == null) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
+        // 建库时初始化的分支存在但还没有提交：文件树为空，而不是“分支不存在”
+        BranchPointer pointer = remoteBranchPointer.getBranchPointer(repositoryId, ref);
+        if (pointer != null && (pointer.getCommitSha() == null || pointer.getCommitSha().isBlank())) {
+            return Result.ok(new ArrayList<>());
+        }
         Commit commit = resolveCommit(reader.resolvePaths(owner, repo), ref, repositoryId);
         if (commit == null) {
             return Result.fail(ResultCode.BRANCH_NOT_FOUND_REFS, MsgConstant.THE_BRANCH_DOES_NOT_EXIST);

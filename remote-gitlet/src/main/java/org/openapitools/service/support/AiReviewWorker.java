@@ -1,6 +1,9 @@
 package org.openapitools.service.support;
 
 import bo.ChatBO;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dto.Context;
 import dto.DiffData;
 import enums.AiReviewStatusEnum;
@@ -31,6 +34,7 @@ public class AiReviewWorker {
 
     private static final Duration TIMEOUT = Duration.ofMinutes(5);
     private static final int MAX_ERROR_LENGTH = 1000;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Autowired
     private RemoteAiReviewRecordMapper remoteAiReviewRecordMapper;
@@ -72,9 +76,11 @@ public class AiReviewWorker {
                     .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
                     .timeout(TIMEOUT)
                     .doOnNext(event -> {
-                        if (event.data() != null && !event.data().isEmpty()) {
-                            conclusion.append(event.data());
+                        String data = event.data();
+                        if (data == null || data.isEmpty() || "[DONE]".equals(data.trim())) {
+                            return;
                         }
+                        conclusion.append(decodeChunk(data));
                     })
                     .blockLast();
 
@@ -103,6 +109,24 @@ public class AiReviewWorker {
         record.setDurationMs((int) (System.currentTimeMillis() - start));
         record.setUpdateTime(LocalDateTime.now());
         remoteAiReviewRecordMapper.updateById(record);
+    }
+
+    /**
+     * AI 服务的每个 token 都是单行 JSON 字符串（换行被转义成字面量 \n），
+     * 直接拼接会把引号和转义符写进结论；这里解回真实文本。
+     * 兼容旧协议：非 JSON 字符串按纯文本透传。
+     */
+    private static String decodeChunk(String data) {
+        String trimmed = data.trim();
+        if (!trimmed.startsWith("\"")) {
+            return data;
+        }
+        try {
+            JsonNode node = OBJECT_MAPPER.readTree(trimmed);
+            return node.isTextual() ? node.asText() : data;
+        } catch (JsonProcessingException e) {
+            return data;
+        }
     }
 
     private String buildQuery(Long prId, String commitSha) {

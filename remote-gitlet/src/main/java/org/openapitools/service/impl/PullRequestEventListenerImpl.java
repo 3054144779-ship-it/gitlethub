@@ -164,8 +164,11 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         // 若合并后再读 master，diff 会因两边树一致而全部变成 UNCHANGED
         BranchPointer targetBasePointer = branchPointerMapper
                 .getBranchPointer(repositoryId, pullRequest.getTargetBranch());
-        // 保护分支要求评审通过：取每人最新一条评审判定
-        if (targetBasePointer != null && Integer.valueOf(1).equals(targetBasePointer.getIsProtected())) {
+        // 保护分支要求评审通过：取每人最新一条评审判定。
+        // OWNER 自建的 PR 跳过门禁：OWNER 本就可绕过保护分支直推，再要求他人批「通过」会导致单人多仓库下无法合并。
+        boolean ownerAuthored = isOwner(repositoryId, pullRequest.getAuthorId());
+        if (targetBasePointer != null && Integer.valueOf(1).equals(targetBasePointer.getIsProtected())
+                && !ownerAuthored) {
             Result<String> gate = checkReviewGate(repositoryId, pullRequest.getId());
             if (gate != null) {
                 return gate;
@@ -415,6 +418,16 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
             return Result.fail(ResultCode.FORBIDDEN, MsgConstant.ONLY_OWNER_CAN_MERGE);
         }
         return null;
+    }
+
+    /** 用户是否为该仓库的 OWNER（用于 OWNER 自建 PR 的评审门禁豁免） */
+    private boolean isOwner(Long repositoryId, Long userId) {
+        if (repositoryId == null || userId == null) {
+            return false;
+        }
+        Collaborator self = remoteCollaboratorMapper.getCollaborator(userId, repositoryId);
+        boolean deleted = self != null && self.getIsDeleted() != null && self.getIsDeleted() == 1;
+        return self != null && !deleted && self.getLevel() != null && self.getLevel().isOwner();
     }
 
     /**
