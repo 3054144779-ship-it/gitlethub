@@ -1425,6 +1425,48 @@ gitlethub-frontend/
 
 ---
 
+## 14. 中间件部署编排（2026-10-26 新增）
+
+基础存储与中间件拆成两个 compose 文件，并分别部署在两台服务器上，不共享 Docker 网络：
+
+| 文件 | 部署位置 | 内容 |
+| --- | --- | --- |
+| `docker-compose.yml` | 基础存储服务器 | MySQL / Redis / RabbitMQ / PostgreSQL（Postgres 建 `litellm` 库） |
+| `docker-compose-middleware.yml` | 中间件服务器 | Nacos、Sentinel Dashboard、Milvus（etcd + MinIO）、LiteLLM |
+
+- **跨机访问**：中间件 compose 使用本机默认网络，Nacos/Milvus 内部仍按容器名互访；
+  LiteLLM 的 `DATABASE_URL` 通过 `.env` 的 `POSTGRES_HOST` 指向基础存储服务器，
+  `litellm_config.yaml` 的 Redis 地址也必须填那台服务器的 IP。安全组只放行中间件
+  服务器的内网 IP 到 5432 / 6379，不能对公网开放（Redis 目前无密码）。
+- **Nacos**：单机模式 + 内置 Derby，配置与日志落在命名卷；默认不鉴权，生产需开启
+  `NACOS_AUTH_ENABLE` 并给各服务补 `username/password`。除 8848 外必须放行 9848，
+  这是 2.x 客户端 gRPC 端口，只开 8848 会导致注册/配置推送失败。
+- **Sentinel Dashboard**：镜像默认监听 8858，映射到宿主机 8090，与网关
+  `application.yaml` 里的 `dashboard: http://localhost:8090` 对齐。限流规则仍从
+  Nacos 的 `gitelethub-gateway-flow-rules.json` 读取，Dashboard 只做展示与编辑，
+  所以它挂掉不影响规则生效。
+- **Milvus**：standalone + etcd + MinIO，服务端版本与 `pymilvus 2.6.x` 对齐。
+  `gitlet_ai_helper/config.yaml` 里的 `milvus.host` 填中间件服务器 IP（AI 服务不在
+  这个 compose 里，不能用容器名）；collection 与索引仍由 AI 服务启动时自建。
+- **LiteLLM**：只挂载 `litellm_config.yaml`，其中的 key 全部是 `os.environ/`
+  引用，真实值由 `.env` 注入；`DATABASE_URL` 由 `POSTGRES_HOST` 拼出，指向基础
+  存储服务器的 `litellm` 库。Redis 的 `cache_params.host` 与
+  `router_settings.redis_host` 同样要填基础存储服务器 IP。
+- **不纳入编排**：阿里云 OSS 是外部 SaaS，无法容器化；BGE-M3 的
+  embedding/reranker 是项目自建推理服务（`gitlet_ai_inference`），不算中间件；
+  Seata 只在 `shared-configs` 里被引用，后端没有任何 Seata 依赖，暂不部署。
+
+**Why:** 两台服务器职责分离，中间件重建不会影响数据库；反过来数据库重启也不拖累
+Nacos/Milvus。跨机通信用显式 IP + 安全组，虽然不如同机容器名优雅，但拓扑清晰，
+也不会因为某个 compose 文件单独启动而引用到不存在的网络。
+
+**How to apply:** 新增中间件继续放进 middleware 文件，本机组件用容器名；凡是要连
+基础存储服务器的一律从 `.env` 读 IP，不在 compose 里写死地址。所有密钥只通过
+`.env` 注入；对外暴露端口前先确认是否真的需要公网访问，Nacos 8848/9848、MinIO
+9000/9001、Milvus 19530/9091 默认只对可信网段开放。
+
+---
+
 ## 附录 A：待决策清单
 
 右边一列写你的决定；同意建议就写「同建议」，不同意的写清楚选择。每行前面的 ID 在正文里被引用。

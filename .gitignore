@@ -34,3 +34,8 @@ build/
 
 # Classes compiled by 'make check' in gitlet_test.
 gitlet_core/src/test/gitlet_test/build/
+
+# Compose secrets
+.env
+.env.*
+!.env.example
