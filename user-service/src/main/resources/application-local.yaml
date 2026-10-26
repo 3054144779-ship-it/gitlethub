@@ -1,4 +1,8 @@
 hm:
+  redis:
+    host: 100.117.188.7 # Redis服务器地址
   db:
-    host: 192.168.12.168 # 修改为你自己的虚拟机IP地址
+    host: 100.117.188.7 # MySQL服务器地址
+    database: gitlethub
+    un: root
     pw: root123456 # 修改为docker中的MySQL密码

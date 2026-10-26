@@ -216,7 +216,27 @@
       "Bash(LITELLM_MASTER_KEY=x SILICONFLOW_API_KEY_1=x SILICONFLOW_API_KEY_2=x SILICONFLOW_API_KEY_3=x SILICONFLOW_API_KEY_4=x SILICONFLOW_API_KEY_5=x SILICONFLOW_API_KEY_6=x DEEPSEEK_API_KEY_1=x DEEPSEEK_API_KEY_2=x docker compose -f deploy/docker-compose-middleware.yml config)",
       "Bash(openssl rand *)",
       "Bash(echo \"deploy/.env ignored=$?\")",
-      "Bash(docker version *)"
+      "Bash(docker version *)",
+      "Bash(ssh -o BatchMode=yes -o ConnectTimeout=6 -o StrictHostKeyChecking=accept-new root@47.110.245.203 'hostname; docker ps --format \"{{.Names}}\\\\t{{.Status}}\"')",
+      "Bash(./.venv/Scripts/python.exe -m compileall -q app)",
+      "Bash(echo \"helper_exit=$?\")",
+      "Bash(echo \"inference_exit=$?\")",
+      "Bash(./.venv/Scripts/python.exe -c \"import pymilvus, inspect; print\\('pymilvus', pymilvus.__version__\\); from pymilvus import Function, FunctionType; print\\('Function OK', list\\(FunctionType\\)\\)\")",
+      "Bash(../.venv/Scripts/python.exe -c \"import main; print\\('helper import OK'\\)\")",
+      "Bash(../.venv/Scripts/python.exe -c \"import main; print\\('inference import OK'\\)\")",
+      "WebFetch(domain:docs.litellm.ai)",
+      "Bash(echo \"diff_exit=$?\")",
+      "Bash(../gitlet_ai_helper/.venv/Scripts/python.exe -)",
+      "Bash(gh api *)",
+      "Bash(.venv/Scripts/python.exe --version)",
+      "Bash(xxd)",
+      "Bash(./.venv/Scripts/python.exe -m pip show nacos-sdk-python)",
+      "Bash(./.venv/Scripts/python.exe -)",
+      "Bash(./.venv/Scripts/python.exe -c \"t=open\\('requirements.txt','rb'\\).read\\(\\).decode\\('utf-16'\\); print\\([l for l in t.splitlines\\(\\) if 'nacos' in l]\\)\")",
+      "Bash(./.venv/Scripts/python.exe -m pip install nacos-sdk-python==3.2.0)",
+      "Bash(./.venv/Scripts/python.exe -c \"import pymilvus; print\\('pymilvus', pymilvus.__version__\\); from v2.nacos import NacosNamingService; print\\('nacos sdk OK'\\)\")",
+      "Bash(../.venv/Scripts/python.exe -c \"import main; print\\('helper main import OK'\\); print\\(main.SERVICE_NAME\\)\")",
+      "Bash(./.venv/Scripts/python.exe -m pip check)"
     ]
   }
 }

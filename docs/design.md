@@ -1465,6 +1465,62 @@ Nacos/Milvus。跨机通信用显式 IP + 安全组，虽然不如同机容器�
 `.env` 注入；对外暴露端口前先确认是否真的需要公网访问，Nacos 8848/9848、MinIO
 9000/9001、Milvus 19530/9091 默认只对可信网段开放。
 
+### 14.1 AI 推理改为云端 API（2026-10-27 新增）
+
+`gitlet_ai_inference` 不再在服务器上加载 BGE-M3 / bge-reranker-v2-m3。进程只保留
+FastAPI + Nacos 注册，`/model/embeddings` 与 `/model/rerank` 转发到 LiteLLM
+（`/v1/embeddings`、`/v1/rerank`），LiteLLM 再转给 SiliconFlow。
+`gitlet_ai_helper` 仍只认 inference 的 `:8001`，不直接持有任何供应商 key。
+
+- **embedding**：LiteLLM 模型名 `BAAI/bge-m3`，实际走 `openai/BAAI/bge-m3`，
+  key 取 `SILICONFLOW_API_KEY_7`；inference 侧用 `init_embeddings("openai:...")`
+  并关闭 `check_embedding_ctx_length`，避免把文本转 token id 后再发。
+- **rerank**：LiteLLM 实际走 `hosted_vllm/BAAI/bge-reranker-v2-m3`，key 取
+  `SILICONFLOW_API_KEY_8`。SiliconFlow 的 rerank 是 Cohere 兼容格式，但路径固定
+  `/v1/rerank`；`cohere` provider 不会按 `api_base` 补路径，`hosted_vllm` 才会拼对。
+- **稀疏向量改由 Milvus BM25 生成**：SiliconFlow 的 BGE-M3 只返回 dense 向量，
+  没有 `lexical_weights`。`text` 字段开启 `enable_analyzer` +
+  `analyzer_params.type=chinese`，collection 声明 `FunctionType.BM25`
+  （input=`text`，output=`sparse_vector`）；写入只给 dense_vector，检索时把原始
+  查询文本交给 sparse 分支，用 `RRFRanker` 与 dense（L2）融合。
+- **旧 collection 必须重建**：没有 BM25 function 的集合属于旧 dense+sparse 结构，
+  `MilvusRepo.create_collection` 会直接报错提示 drop 后重新索引，防止继续写旧结构。
+- **密钥边界**：供应商 key 只放 gitignored 的 `deploy/.env`；inference 的 `.env`
+  只保留 `LITELLM_MASTER_KEY` 和地址，不含任何供应商 key。
+
+**Why:** 云服务器只有 CPU，本地跑 BGE-M3 + reranker 既慢又占内存，还会拖垮同机的
+Milvus/LiteLLM。改成 API 调用后 inference 变成无状态轻量服务，部署和扩容都简单；
+BM25 则补回删掉稀疏模型后丢失的关键词召回能力，不需要再维护一份稀疏向量服务。
+
+**How to apply:** 换模型时同时改 `litellm_config.yaml` 的 `model_name` 和 inference
+的 `EMBED_MODEL` / `RERANK_MODEL`，并保证 helper 始终只连 inference。凡是改动
+analyzer、`max_length` 或 metric_type，都属于 collection schema 变更，必须删集合重建
+并重新索引。`.env` 不入库、不写进文档或前端。
+
+### 14.2 AI 服务接入 Nacos 与按服务名调用（2026-10-27 新增）
+
+- `gitlet_ai_helper` 启动时以 **`gitlet-ai-helper`**（默认端口 8000）注册到 Nacos，
+  命名空间与账号沿用后端（`e7aa35a9-5acb-4192-97ba-3191707726ce`），退出时摘除。
+  注册失败只记日志，不阻断服务启动；`/health` 返回服务名和 UP。
+- `remote-gitlet` 新增 `spring-cloud-starter-loadbalancer`：`WebClientConfig` 提供
+  `@LoadBalanced WebClient.Builder`，再据此构建 baseUrl 为
+  `http://${ai.service.name:gitlet-ai-helper}` 的 `WebClient`。
+  `AIServiceImpl` 与 `AiReviewWorker` 只写相对路径 `/api/ai`。
+- 原配置项 `ai.service.url` 作废；如果 Nacos 的 `remote-gitlet.yaml` 里还有它，
+  可以删除，代码不再读取。
+- helper 与 inference 注册名不同（`gitlet-ai-helper` / `gitlet-ai-inference`）、
+  端口不同（8000 / 8001），不会互相抢路由。inference 地址仍由 helper 的
+  `config.yaml` 直连，不经过 Java 侧。
+
+**Why:** 后端各服务本来就在 Nacos 里，AI 服务继续写死 IP 会让换机、改端口、加实例
+都要改配置并重启；交给 LoadBalancer 后，消费方只认服务名。两个 AI 服务职责不同，
+必须用不同 service name，否则会注册成同一个服务、被轮询到错误实例。
+
+**How to apply:** helper 的 `SERVICE_PORT` 必须与 `uvicorn --port` 一致；本机或跨网段
+部署时，`SERVICE_IP` 留空会自动探测出口网卡，若消费方不在同一网段，必须显式填写
+消费方可达的 IP（例如公网 IP 或 Tailscale 地址）。新增 AI 服务一律先注册 Nacos，
+再由 Java 侧用服务名调用，不再新增写死地址的配置。
+
 ---
 
 ## 附录 A：待决策清单

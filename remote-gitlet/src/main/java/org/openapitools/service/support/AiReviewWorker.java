@@ -10,7 +10,6 @@ import enums.AiReviewStatusEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.mapper.RemoteAiReviewRecordMapper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -42,9 +41,6 @@ public class AiReviewWorker {
     @Autowired
     private WebClient webClient;
 
-    @Value("${ai.service.url:http://localhost:8000}")
-    private String aiServiceUrl;
-
     @Async
     public void run(Long recordId, Long ownerId, Long repositoryId, Long prId, String prName,
                     String commitSha, List<DiffData> diffData) {
@@ -65,7 +61,7 @@ public class AiReviewWorker {
 
             StringBuilder conclusion = new StringBuilder();
             webClient.post()
-                    .uri(aiServiceUrl + "/api/ai")
+                    .uri("/api/ai")
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(chatBO)
                     .retrieve()

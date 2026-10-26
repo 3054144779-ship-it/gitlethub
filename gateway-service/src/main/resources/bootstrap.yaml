@@ -19,3 +19,9 @@ spring:
             - Path=/user/**,/api/oss/**
     nacos:
       server-addr: 47.110.245.203:8848
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        namespace: e7aa35a9-5acb-4192-97ba-3191707726ce
+      config:
+        namespace: e7aa35a9-5acb-4192-97ba-3191707726ce

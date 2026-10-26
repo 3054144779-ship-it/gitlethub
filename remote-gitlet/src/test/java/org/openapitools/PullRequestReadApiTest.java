@@ -125,7 +125,7 @@ class PullRequestReadApiTest {
     void closePullRequest_setsClosedStatus() {
         when(remotePullRequestMapper.selectById(100L)).thenReturn(openPr);
 
-        Result<String> result = listener.closePullRequest(OWNER, REPO, "100");
+        Result<String> result = listener.closePullRequest(OWNER, REPO, "100", null);
 
         assertEquals(ResultCode.OK, result.getCode());
         assertEquals(PRStatusEnum.CLOSED, openPr.getStatus());
@@ -138,7 +138,7 @@ class PullRequestReadApiTest {
         openPr.setStatus(PRStatusEnum.MERGED);
         when(remotePullRequestMapper.selectById(100L)).thenReturn(openPr);
 
-        Result<String> result = listener.closePullRequest(OWNER, REPO, "100");
+        Result<String> result = listener.closePullRequest(OWNER, REPO, "100", null);
 
         assertEquals(ResultCode.BAD_REQUEST, result.getCode());
         verify(remotePullRequestMapper, never()).updateById(any(PullRequest.class));

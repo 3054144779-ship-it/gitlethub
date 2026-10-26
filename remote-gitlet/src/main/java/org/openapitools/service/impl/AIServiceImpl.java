@@ -9,7 +9,6 @@ import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.service.AIService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -50,9 +49,6 @@ public class AIServiceImpl implements AIService {
 
     @Autowired
     private WebClient webClient;
-
-    @Value("${ai.service.url:http://localhost:8000}")
-    private String aiServiceUrl;
 
     // 共享心跳线程池（daemon，避免每次请求 new 一个）
     private static final ScheduledExecutorService HEARTBEAT =
@@ -102,7 +98,7 @@ public class AIServiceImpl implements AIService {
         Disposable sub = Mono.fromCallable(() -> buildChatBO(owner, repo, chatDTO))
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMapMany(chatBO -> webClient.post()
-                        .uri(aiServiceUrl + "/api/ai")
+                        .uri("/api/ai")
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(chatBO)
                         .retrieve()

@@ -8,6 +8,10 @@ spring:
   cloud:
     nacos:
       server-addr: 47.110.245.203:8848 # Nacos服务器地址
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        namespace: e7aa35a9-5acb-4192-97ba-3191707726ce
       config:
         file-extension: yaml # 配置的扩展名
         shared-configs:
@@ -16,3 +20,4 @@ spring:
           - data-id: shared-swagger.yaml
           - data-id: shared-seata.yaml
           - data-id: shared-mq.yaml
+        namespace: e7aa35a9-5acb-4192-97ba-3191707726ce
