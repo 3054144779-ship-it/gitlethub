@@ -1521,6 +1521,55 @@ analyzer、`max_length` 或 metric_type，都属于 collection schema 变更，�
 消费方可达的 IP（例如公网 IP 或 Tailscale 地址）。新增 AI 服务一律先注册 Nacos，
 再由 Java 侧用服务名调用，不再新增写死地址的配置。
 
+### 14.3 服务镜像（2026-10-27 新增）
+
+五个服务各带一个 Dockerfile，**构建上下文就是模块目录**，镜像只负责运行，不含源码编译：
+
+| 模块 | 基础镜像 | 端口 | 特殊处理 |
+| --- | --- | --- | --- |
+| `gateway-service` | `eclipse-temurin:17-jre-jammy` | 8080 | 只拷 `target/*.jar` |
+| `user-service` | 同上 | 8081 | 同上 |
+| `remote-gitlet` | 同上 | 8082 | 同上（产物名 `openapi-spring-0.1.0.jar`） |
+| `gitlet_ai_helper` | `python:3.12-slim` | 8000 | 见下 |
+| `gitlet_ai_inference` | `python:3.12-slim` | 8001 | 只装 `requirements.txt` + `app/` |
+
+- **非 root**：统一 `useradd --system --uid 1001 app`，jar / 源码 `--chown=app:app`，
+  并预建 `/app/logs` 归 app 所有（`shared-log.yaml` 用的是相对路径）；JVM 侧
+  `-XX:MaxRAMPercentage=75.0`，跟随容器内存限制。
+- **构建前置**：Java 必须先 `mvn -pl <module> -am -DskipTests package`，Dockerfile 不做
+  Maven 构建，避免把宿主机 `.m2` 和源码带进镜像，也让构建机与运行机解耦。
+- **helper 的 requirements**：Windows 下 `pip freeze` 的结果可能是 UTF-16 带 BOM 或
+  UTF-8，构建时按 BOM 判定编码（不能用 `try decode("utf-16")`，UTF-8 会被静默解成乱码），
+  过滤掉 `pywin32` 与 `torch==`，再用 pytorch CPU 源单独装 `torch==2.9.1+cpu`，防止
+  Linux 上拉入 CUDA 依赖。镜像内 `JINJA_TEMPLATE_DIR=/app/templates` 覆盖
+  `config.yaml` 里的开发机模板路径。
+- **pip 源与缓存**：两个 Python 镜像都用 `ARG PIP_INDEX_URL`（默认清华源）并写入
+  `PIP_INDEX_URL` 环境变量——必须是环境变量而不是 `-i`，否则 pip 的隔离构建子进程仍会
+  回落到 `files.pythonhosted.org`，在国内链路上会直接超时；同时设 `PIP_DEFAULT_TIMEOUT`
+  和 `PIP_RETRIES`。pip 安装层用 `--mount=type=cache,target=/root/.cache/pip`，
+  失败重试时已下载的 wheel 不会重下，也不占镜像层。
+- **不拷贝的东西**：`.dockerignore` 排除 `.venv`、`.git`、`__pycache__`、`.env`、
+  `requirements.lock.txt`（Windows/GPU 专用）；`config.yaml` 与 `.env` 通过挂载或
+  环境变量注入，不烘焙进镜像。
+- **仓库数据必须挂卷**：`remote-gitlet` 的仓库落在 `${storage.base-path}/.gitlet/<owner>/<repo>`，
+  镜像里默认 `STORAGE_BASE_PATH=/app/storage` 并预建目录，运行时把宿主机目录挂到
+  `/app/storage`（Linux 宿主机还要 `chown 1001:1001`）。不挂卷时仓库只存在容器可写层，
+  `docker rm` 即全部丢失；已有仓库要先把原目录内容拷进卷。
+- **跨容器寻址**：三个 Java 服务注册的是容器 IP；同一 Docker 网络内 `lb://` 可直连，
+  跨主机或与宿主机进程混跑时必须设置 `spring.cloud.nacos.discovery.ip`
+  （环境变量 `SPRING_CLOUD_NACOS_DISCOVERY_IP`）为对端可达地址。
+- **`remote-gitlet` 在本地服务器、网关于云端**：注册 IP 必须是云端可达的地址（Tailscale
+  或公网），且宿主机要发布 8082 并只绑定该地址；反过来它通过 Nacos 调 helper 时，
+  helper 注册的 `SERVICE_IP` 必须本地可达。`STORAGE_BASE_PATH` 的卷只放本机磁盘。
+
+**Why:** 运行镜像与构建环境分离，镜像可复现、体积可控；非 root 和内存百分比是容器
+部署的默认安全姿势。helper 的依赖转换必须在构建期解决，否则 Windows freeze 在 Linux
+上会直接装不上或拉入几个 GB 的 CUDA 包。
+
+**How to apply:** 新增 Java 服务照抄三个 Java Dockerfile 并改端口；新增 Python 服务
+沿用 `PYTHONPATH=/app/app` + `uvicorn --app-dir`。构建、运行命令和必填环境变量写在
+`deploy/README` 或部署说明里，密钥只来自 `.env`，不写进 Dockerfile。
+
 ---
 
 ## 附录 A：待决策清单

@@ -236,7 +236,17 @@
       "Bash(./.venv/Scripts/python.exe -m pip install nacos-sdk-python==3.2.0)",
       "Bash(./.venv/Scripts/python.exe -c \"import pymilvus; print\\('pymilvus', pymilvus.__version__\\); from v2.nacos import NacosNamingService; print\\('nacos sdk OK'\\)\")",
       "Bash(../.venv/Scripts/python.exe -c \"import main; print\\('helper main import OK'\\); print\\(main.SERVICE_NAME\\)\")",
-      "Bash(./.venv/Scripts/python.exe -m pip check)"
+      "Bash(./.venv/Scripts/python.exe -m pip check)",
+      "Bash(./.venv/Scripts/python.exe -c \"import pip._internal.utils.encoding as e; print\\(getattr\\(e,'BOMS',None\\)\\)\")",
+      "Bash(./.venv/Scripts/python.exe -m pip --version)",
+      "Bash(du -sh gateway-service/target user-service/target remote-gitlet/target)",
+      "Bash(du -sh D:/Job_project/gitlet_ai_helper D:/Job_project/gitlet_ai_inference)",
+      "Bash(./.venv/Scripts/python.exe -X utf8 -)",
+      "Bash(sed -n '1,20p' D:/Job_project/gitlethub/docker-compose.yml)",
+      "Bash(sed -n '105,120p' D:/Job_project/gitlethub/docker-compose.yml)",
+      "Bash(unzip -p D:/Job_project/gitlethub/gateway-service/target/gateway-service-0.0.1-SNAPSHOT.jar BOOT-INF/classes/application.yaml)",
+      "Bash(.venv/Scripts/python.exe -c \"import importlib.metadata as m; print\\(m.version\\('aiofiles'\\)\\); d=m.metadata\\('nacos-sdk-python'\\); print\\([r for r in d.get_all\\('Requires-Dist'\\)]\\)\")",
+      "Bash(.venv/Scripts/python.exe -m pip list --format=freeze)"
     ]
   }
 }
