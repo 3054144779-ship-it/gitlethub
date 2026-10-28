@@ -10,6 +10,8 @@ spring:
           port: 6379
           host: 100.117.188.7
           database: 1
+          connect-timeout: 1s
+          timeout: 1s
 
 # AI 服务：Nacos 注册的服务名，经 LoadBalancer 解析实例地址
 ai:

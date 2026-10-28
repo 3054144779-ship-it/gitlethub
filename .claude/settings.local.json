@@ -246,7 +246,13 @@
       "Bash(sed -n '105,120p' D:/Job_project/gitlethub/docker-compose.yml)",
       "Bash(unzip -p D:/Job_project/gitlethub/gateway-service/target/gateway-service-0.0.1-SNAPSHOT.jar BOOT-INF/classes/application.yaml)",
       "Bash(.venv/Scripts/python.exe -c \"import importlib.metadata as m; print\\(m.version\\('aiofiles'\\)\\); d=m.metadata\\('nacos-sdk-python'\\); print\\([r for r in d.get_all\\('Requires-Dist'\\)]\\)\")",
-      "Bash(.venv/Scripts/python.exe -m pip list --format=freeze)"
+      "Bash(.venv/Scripts/python.exe -m pip list --format=freeze)",
+      "Bash(awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/{k=$1; v=substr\\($0, index\\($0,\"=\"\\)+1\\); q=\\(substr\\(v,1,1\\)==\"\\\\\"\" && substr\\(v,length\\(v\\),1\\)==\"\\\\\"\"\\)?\"quoted\":\"plain\"; cr=\\(v ~ /\\\\r$/ || $0 ~ /\\\\r$/\\)?\"CRLF\":\"LF\"; printf \"%-22s %-7s %-5s len=%d\\\\n\", k, q, cr, length\\(v\\)}' .env)",
+      "Bash(sed -i -E 's/\\\\r$//; s/^\\([A-Za-z_][A-Za-z0-9_]*\\)=\"\\([^\"]*\\)\"$/\\\\1=\\\\2/' .env)",
+      "Bash(awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/{k=$1; v=substr\\($0, index\\($0,\"=\"\\)+1\\); q=\\(substr\\(v,1,1\\)==\"\\\\\"\" && substr\\(v,length\\(v\\),1\\)==\"\\\\\"\"\\)?\"quoted\":\"plain\"; cr=\\(v ~ /\\\\r$/\\)?\"CRLF\":\"LF\"; printf \"%-22s %-7s %-5s len=%d\\\\n\", k, q, cr, length\\(v\\)}' .env)",
+      "Bash(sed -n '1,80p' D:/Job_project/gitlethub-frontend/vite.config.js)",
+      "Bash(sed -n '1,60p' D:/Job_project/gitlethub-frontend/src/api/http.js)",
+      "Bash(mvn -q -pl gateway-service -am compile -DskipTests)"
     ]
   }
 }

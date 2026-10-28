@@ -11,8 +11,11 @@ spring:
             dataId: gitelethub-gateway-flow-rules.json
             groupId: GITLETHUB_GATEWAY
             rule-type: gw-flow
-    data:
-      redis:
-        host: ${REDIS_HOST:100.117.188.7}
-        port: ${REDIS_PORT:6379}
-        database: ${REDIS_DATABASE:1}
+  data:
+    redis:
+      host: ${REDIS_HOST:100.117.188.7}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:1}
+      # 默认命令超时是 60s：Redis 不可达时会把事件循环线程一直占住，前端只能等到 20s 超时
+      connect-timeout: 1s
+      timeout: 1s

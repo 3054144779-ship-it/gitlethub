@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.Arrays;
 import java.util.List;
@@ -43,27 +44,36 @@ public class GateWayFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
         // 获取请求头中的Authorization字段(token)
-        String token = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        token = extractToken(token);
-        // 校验通过：验签 OK 且 未被吊销（黑名单）
-        if (StrUtil.isNotEmpty(token) && keyPairManager.verifyToken(token)
-                && !keyPairManager.isBlacklisted(token)) {
-            log.info("token校验通过");
-            // 验签通过后，把已认证的 userId 透传给下游；
-            // 注意：先无条件移除客户端可能自带的 X-User-Id，防止伪造身份
-            Long userId = keyPairManager.getUserId(token);
-            ServerHttpRequest request = exchange.getRequest().mutate()
-                    .headers(httpHeaders -> {
-                        httpHeaders.remove(KeyPairManager.USER_ID_HEADER);
-                        if (userId != null) {
-                            httpHeaders.set(KeyPairManager.USER_ID_HEADER, String.valueOf(userId));
-                        }
-                    })
-                    .build();
-            return chain.filter(exchange.mutate().request(request).build());
+        String token = extractToken(exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
+        if (StrUtil.isEmpty(token)) {
+            return unauthorized(exchange);
         }
+        // 验签是纯 CPU，黑名单是阻塞 Redis 调用：后者不能跑在 Netty 事件循环上，
+        // 否则并发请求会互相卡住，前端表现为大面积 20s 超时
+        return Mono.fromCallable(() -> keyPairManager.verifyToken(token)
+                        && !keyPairManager.isBlacklisted(token))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(valid -> valid
+                        ? chain.filter(withUserId(exchange, token))
+                        : unauthorized(exchange));
+    }
 
-        // 校验失败返回未授权
+    /** 验签通过后把 userId 透传给下游；先无条件移除客户端自带的 X-User-Id，防止伪造身份 */
+    private ServerWebExchange withUserId(ServerWebExchange exchange, String token) {
+        log.info("token校验通过");
+        Long userId = keyPairManager.getUserId(token);
+        ServerHttpRequest request = exchange.getRequest().mutate()
+                .headers(httpHeaders -> {
+                    httpHeaders.remove(KeyPairManager.USER_ID_HEADER);
+                    if (userId != null) {
+                        httpHeaders.set(KeyPairManager.USER_ID_HEADER, String.valueOf(userId));
+                    }
+                })
+                .build();
+        return exchange.mutate().request(request).build();
+    }
+
+    private Mono<Void> unauthorized(ServerWebExchange exchange) {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(HttpStatus.UNAUTHORIZED);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
