@@ -2,6 +2,8 @@ package org.openapitools.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import common.Result;
 import common.ResultCode;
 import gitlet.commit.Commit;
@@ -9,20 +11,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.openapitools.mapper.RemoteBranchPointerMapper;
 import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteSubmissionRecordMapper;
-import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.RepositoryPaths;
 import org.openapitools.service.CommitQueryService;
 import org.openapitools.service.support.RepositoryObjectReader;
+import org.openapitools.utils.RedisCacheUtils;
+import org.openapitools.utils.UserNameCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import po.BranchPointer;
 import po.Repository;
 import po.SubmissionRecord;
-import po.User;
 import vo.CommitVO;
 import vo.FileChangeVO;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -39,8 +42,23 @@ public class CommitQueryServiceImpl implements CommitQueryService {
     /** 提交列表的默认每页条数 */
     private static final int DEFAULT_PAGE_SIZE = 20;
 
+    /** 只缓存中等规模的历史，避免把上千条提交的 JSON 塞进 Redis */
+    private static final int MAX_CACHED_COMMITS = 300;
+    private static final String COMMITS_KEY_PREFIX = "repo:commits:";
+    private static final Integer COMMITS_TTL_SECONDS = 300;
+
     @Autowired
     private RepositoryObjectReader reader;
+
+    @Autowired
+    private RedisCacheUtils redisCacheUtils;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private UserNameCache userNameCache;
+
 
     @Autowired
     private RemoteBranchPointerMapper remoteBranchPointer;
@@ -50,9 +68,6 @@ public class CommitQueryServiceImpl implements CommitQueryService {
 
     @Autowired
     private RemoteSubmissionRecordMapper remoteSubmissionRecordMapper;
-
-    @Autowired
-    private RemoteUserMapper remoteUserMapper;
 
     /**
      * 提交列表
@@ -84,15 +99,56 @@ public class CommitQueryServiceImpl implements CommitQueryService {
             return Result.ok(new ArrayList<>());
         }
 
-        List<CommitVO> all = walkHistory(reader.resolvePaths(owner, repo), branchPointer.getCommitSha());
-        enrichAuthors(all, repositoryId);
-
+        List<CommitVO> all = loadHistory(owner, repo, repositoryId, branchPointer.getCommitSha());
         // 内存分页：项目规模够用，且历史遍历本就一次性走完
+        return Result.ok(paginate(all, page, size));
+    }
+
+    /**
+     * 历史遍历要读最多 1000 个磁盘对象，按分支 tip 缓存：
+     * push / 合并都会推进 tip，key 自然换新，不需要显式失效。
+     */
+    private List<CommitVO> loadHistory(String owner, String repo, Long repositoryId, String tipSha) {
+        String key = COMMITS_KEY_PREFIX + repositoryId + ":" + tipSha;
+        try {
+            String cached = redisCacheUtils.get(key);
+            if (cached != null) {
+                return objectMapper.readValue(cached, new TypeReference<List<CommitVO>>() {
+                });
+            }
+        } catch (Exception e) {
+            log.warn("提交历史缓存读取失败，回源磁盘，key={}", key, e);
+            evict(key);
+        }
+
+        List<CommitVO> all = walkHistory(reader.resolvePaths(owner, repo), tipSha);
+        enrichAuthors(all, repositoryId);
+        if (all.size() <= MAX_CACHED_COMMITS) {
+            try {
+                redisCacheUtils.set(key, objectMapper.writeValueAsString(all),
+                        Duration.ofSeconds(COMMITS_TTL_SECONDS));
+            } catch (Exception e) {
+                log.warn("提交历史缓存写入失败，key={}", key, e);
+            }
+        }
+        return all;
+    }
+
+    private List<CommitVO> paginate(List<CommitVO> all, Integer page, Integer size) {
         int p = (page == null || page < 1) ? 1 : page;
         int s = (size == null || size < 1) ? DEFAULT_PAGE_SIZE : size;
         int from = Math.min((p - 1) * s, all.size());
         int to = Math.min(from + s, all.size());
-        return Result.ok(new ArrayList<>(all.subList(from, to)));
+        return new ArrayList<>(all.subList(from, to));
+    }
+
+    /** 缓存清理失败不能影响读请求 */
+    private void evict(String key) {
+        try {
+            redisCacheUtils.delete(key);
+        } catch (Exception e) {
+            log.warn("缓存清理失败，key={}", key, e);
+        }
     }
 
     @Override
@@ -246,8 +302,7 @@ public class CommitQueryServiceImpl implements CommitQueryService {
             if (record.getUserId() != null) {
                 String username = usernameCache.get(record.getUserId());
                 if (username == null) {
-                    User user = remoteUserMapper.selectById(record.getUserId());
-                    username = user == null ? null : user.getUsername();
+                    username = userNameCache.usernameOf(record.getUserId());
                     usernameCache.put(record.getUserId(), username);
                 }
                 vo.setAuthorName(username);

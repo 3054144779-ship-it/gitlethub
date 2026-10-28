@@ -31,7 +31,6 @@ hm:
     package: com.huahuo.controller
 
 
-
 # jwt 密钥配置
 com:
   hanabi:

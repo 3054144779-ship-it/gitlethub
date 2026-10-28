@@ -252,7 +252,9 @@
       "Bash(awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/{k=$1; v=substr\\($0, index\\($0,\"=\"\\)+1\\); q=\\(substr\\(v,1,1\\)==\"\\\\\"\" && substr\\(v,length\\(v\\),1\\)==\"\\\\\"\"\\)?\"quoted\":\"plain\"; cr=\\(v ~ /\\\\r$/\\)?\"CRLF\":\"LF\"; printf \"%-22s %-7s %-5s len=%d\\\\n\", k, q, cr, length\\(v\\)}' .env)",
       "Bash(sed -n '1,80p' D:/Job_project/gitlethub-frontend/vite.config.js)",
       "Bash(sed -n '1,60p' D:/Job_project/gitlethub-frontend/src/api/http.js)",
-      "Bash(mvn -q -pl gateway-service -am compile -DskipTests)"
+      "Bash(mvn -q -pl gateway-service -am compile -DskipTests)",
+      "Bash(mvn -q -pl remote-gitlet,user-service -am compile -DskipTests)",
+      "Bash(mvn -q -pl remote-gitlet -am compile -DskipTests)"
     ]
   }
 }

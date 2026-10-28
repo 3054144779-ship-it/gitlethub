@@ -8,18 +8,24 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import common.Result;
 import common.ResultCode;
 import dto.CollaboratorCreateDTO;
 import dto.PageDTO;
 import dto.RepositoryCreateDTO;
 import enums.CollaboratorLevelEnum;
+import lombok.extern.slf4j.Slf4j;
 import org.openapitools.mapper.RemoteCollaboratorMapper;
 import org.openapitools.mapper.RemoteRepositoryMapper;
 import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.service.RepositoryService;
 import org.openapitools.service.support.RepositoryObjectReader;
+import org.openapitools.utils.RedisCacheUtils;
+import org.openapitools.utils.UserNameCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,12 +35,15 @@ import po.User;
 import vo.CollaboratorVO;
 import vo.RepositoryVO;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
+@Slf4j
 @Service
 public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, Repository> implements RepositoryService{
     @Autowired
@@ -45,6 +54,18 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
     private RemoteCollaboratorMapper remoteCollaboratorMapper;
     @Autowired
     private RepositoryObjectReader repositoryObjectReader;
+    @Autowired
+    private RedisCacheUtils redisCacheUtils;
+    @Autowired
+    private ObjectMapper objectMapper;
+    @Autowired
+    private UserNameCache userNameCache;
+
+    private static final Integer CACHE_TTL_BASE_SECONDS = 60;
+    private static final Integer CACHE_TTL_JITTER_SECONDS = 30;
+
+    private static final String REPO_DETAIL_KEY_PREFIX = "repository:ownerRepo:";
+    private static final String COLLABORATORS_KEY_PREFIX = "repository:collaborators:";
 
     /**
      * 更新远程仓库配置
@@ -53,11 +74,8 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
      */
     @Override
     public Result<String> updateRemoteRepository(Long userId, RepositoryCreateDTO repositoryCreateDTO) {
-//        String owner = repositoryCreateDTO.getOwner();
         String repo = repositoryCreateDTO.getRepo();
         // 获取当前用户ID(根据用户名字查)
-//        Long ownerId = remoteUserMapper.getUserId(owner);
-//        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
         Long repositoryId = remoteRepositoryMapper.getRepositoryId(userId, repo);
 
 
@@ -73,6 +91,17 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
             return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, MsgConstant.NOT_THE_OWNER_OF_THE_WAREHOUSE);
         }
 
+        if (repositoryId != null) {
+            evict("repositoryId:" + repositoryId);
+            // 可见性可能被改过，拦截器用的仓库行缓存必须一起失效
+            repositoryObjectReader.evictRepository(repositoryId);
+            // owner/repo 这条 key 也指向同一份详情，必须一起失效
+            User owner = remoteUserMapper.selectById(userId);
+            if (owner != null) {
+                evict(repoDetailKey(owner.getUsername(), repo));
+            }
+        }
+
         return Result.ok();
     }
 
@@ -83,6 +112,17 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
      */
     @Override
     public Result<RepositoryVO> getRemoteRepository(String repositoryId) {
+        String key = "repositoryId:" + repositoryId;
+        try {
+            String cached = redisCacheUtils.get(key);
+            if (cached != null) {
+                return Result.ok(objectMapper.readValue(cached, RepositoryVO.class));
+            }
+        } catch (Exception e) {
+            // 读缓存失败（反序列化失败 / Redis 不可用）一律回源，并清掉脏 key
+            log.warn("仓库详情缓存读取失败，回源数据库，key={}", key, e);
+            redisCacheUtils.delete(key);
+        }
         Repository repository = lambdaQuery().eq(Repository::getId, repositoryId).one();
 
         if (repository == null) {
@@ -92,6 +132,13 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
         RepositoryVO repositoryVO = BeanUtil.copyProperties(repository, RepositoryVO.class);
         repositoryVO.setOwnerName(usernameOf(repository.getOwnerId()));
 
+        try {
+            Duration TTL = Duration.ofSeconds(CACHE_TTL_BASE_SECONDS + ThreadLocalRandom.current().nextInt(CACHE_TTL_JITTER_SECONDS));
+            redisCacheUtils.set(key, objectMapper.writeValueAsString(repositoryVO), TTL);
+        } catch (Exception e) {
+            // 序列化失败、Redis 连接/超时都兜住：缓存是旁路，绝不能影响主流程
+            log.warn("仓库详情缓存写入失败，key={}", key, e);
+        }
         return Result.ok(repositoryVO);
     }
 
@@ -130,12 +177,29 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
      */
     @Override
     public Result<RepositoryVO> getRepositoryByOwnerAndRepo(String owner, String repo) {
+        String key = repoDetailKey(owner, repo);
+        try {
+            String cached = redisCacheUtils.get(key);
+            if (cached != null) {
+                return Result.ok(objectMapper.readValue(cached, RepositoryVO.class));
+            }
+        } catch (Exception e) {
+            // 缓存是旁路：读取/反序列化失败一律回源，并清掉脏 key
+            log.warn("仓库详情缓存读取失败，回源数据库，key={}", key, e);
+            evict(key);
+        }
+
         Repository repository = findRepository(owner, repo);
         if (repository == null) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
         RepositoryVO vo = BeanUtil.copyProperties(repository, RepositoryVO.class);
         vo.setOwnerName(owner);
+        try {
+            redisCacheUtils.set(key, objectMapper.writeValueAsString(vo), cacheTtl());
+        } catch (Exception e) {
+            log.warn("仓库详情缓存写入失败，key={}", key, e);
+        }
         return Result.ok(vo);
     }
 
@@ -147,6 +211,18 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
      */
     @Override
     public Result<List<CollaboratorVO>> listCollaborators(String owner, String repo) {
+        String key = collaboratorsKey(owner, repo);
+        try {
+            String cached = redisCacheUtils.get(key);
+            if (cached != null) {
+                return Result.ok(objectMapper.readValue(cached, new TypeReference<List<CollaboratorVO>>() {
+                }));
+            }
+        } catch (Exception e) {
+            log.warn("协作者列表缓存读取失败，回源数据库，key={}", key, e);
+            evict(key);
+        }
+
         Repository repository = findRepository(owner, repo);
         if (repository == null) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
@@ -166,6 +242,11 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
             vo.setAutoCreatePr(collaborator.getAutoCreatePr());
             vo.setCreateTime(collaborator.getCreateTime());
             result.add(vo);
+        }
+        try {
+            redisCacheUtils.set(key, objectMapper.writeValueAsString(result), cacheTtl());
+        } catch (Exception e) {
+            log.warn("协作者列表缓存写入失败，key={}", key, e);
         }
         return Result.ok(result);
     }
@@ -205,6 +286,7 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
         if (existing != null) {
             // 已存在（可能是被逻辑删除过的行）→ 复活并更新等级
             remoteCollaboratorMapper.reactivateCollaborator(targetId, repository.getId(), level.getCode());
+            evict(collaboratorsKey(owner, repo));
             return Result.ok();
         }
         remoteCollaboratorMapper.insert(Collaborator.builder()
@@ -215,6 +297,7 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
                 .createTime(LocalDateTime.now())
                 .isDeleted(0)
                 .build());
+        evict(collaboratorsKey(owner, repo));
         return Result.ok();
     }
 
@@ -245,6 +328,7 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
             return Result.fail(ResultCode.FORBIDDEN, MsgConstant.NOT_REPOSITORY_OWNER);
         }
         remoteCollaboratorMapper.deleteById(target.getId());
+        evict(collaboratorsKey(owner, repo));
         return Result.ok();
     }
 
@@ -264,20 +348,13 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
         if (line < 1) {
             return Result.fail(ResultCode.BAD_REQUEST, MsgConstant.THE_COLLABORATOR_DOES_NOT_EXIST);
         }
+        evict(collaboratorsKey(owner, repo));
         return Result.ok();
     }
 
-    /** owner/repo -> Repository，不存在返回 null */
+    /** owner/repo -> Repository，不存在返回 null；解析结果与拦截器共用缓存 */
     private Repository findRepository(String owner, String repo) {
-        Long ownerId = remoteUserMapper.getUserId(owner);
-        if (ownerId == null) {
-            return null;
-        }
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, repo);
-        if (repositoryId == null) {
-            return null;
-        }
-        return remoteRepositoryMapper.selectById(repositoryId);
+        return repositoryObjectReader.resolveRepository(owner, repo);
     }
 
     /** 校验调用者是否为仓库 OWNER；通过返回 null，否则返回失败结果 */
@@ -315,9 +392,31 @@ public class RepositoryServiceImpl extends ServiceImpl<RemoteRepositoryMapper, R
         if (cached != null) {
             return cached;
         }
-        User user = remoteUserMapper.selectById(userId);
-        String username = user == null ? null : user.getUsername();
+        // 局部 map 去重同一页里的重复用户，跨请求命中的是 Redis
+        String username = userNameCache.usernameOf(userId);
         cache.put(userId, username);
         return username;
+    }
+
+    private String repoDetailKey(String owner, String repo) {
+        return REPO_DETAIL_KEY_PREFIX + owner + ":" + repo;
+    }
+
+    private String collaboratorsKey(String owner, String repo) {
+        return COLLABORATORS_KEY_PREFIX + owner + ":" + repo;
+    }
+
+    /** 基础 TTL + 随机抖动，避免同一秒集体过期把数据库打穿 */
+    private Duration cacheTtl() {
+        return Duration.ofSeconds(CACHE_TTL_BASE_SECONDS + ThreadLocalRandom.current().nextInt(CACHE_TTL_JITTER_SECONDS));
+    }
+
+    /** 缓存清理失败不能影响写请求 */
+    private void evict(String key) {
+        try {
+            redisCacheUtils.delete(key);
+        } catch (Exception e) {
+            log.warn("缓存清理失败，key={}", key, e);
+        }
     }
 }

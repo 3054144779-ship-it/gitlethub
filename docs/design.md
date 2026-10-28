@@ -1572,6 +1572,52 @@ analyzer、`max_length` 或 metric_type，都属于 collection schema 变更，�
 
 ---
 
+## 15. 读接口缓存（2026-10-29 新增）
+
+缓存一律走 `StringRedisTemplate` + Jackson JSON，key 带业务前缀，**所有缓存都有 TTL**；
+Redis 异常、序列化失败都只记日志并回源，缓存永远是旁路，不影响主流程。
+
+| 读接口 / 数据 | key | TTL | 失效点 |
+| --- | --- | --- | --- |
+| `GET /api/repos/{owner}/{repo}` | `repository:ownerRepo:{owner}:{repo}` | 60s + 30s 抖动 | 仓库配置更新 |
+| `GET /api/repos/{id}` | `repositoryId:{id}` | 60s + 30s 抖动 | 仓库配置更新 |
+| 协作者列表 | `repository:collaborators:{owner}:{repo}` | 60s + 30s 抖动 | 增删改协作者 |
+| owner/repo → repositoryId | `repository:id:{owner}:{repo}` | 600s | 不失效（无改名/删除入口） |
+| 仓库行（可见性拦截器） | `repository:row:{repositoryId}` | 60s + 30s 抖动 | 仓库配置更新 |
+| 提交历史（按分支 tip） | `repo:commits:{repositoryId}:{tipSha}` | 300s | 随 tip 变化自然换 key |
+| PR 列表 | `repo:prs:{repositoryId}:{version}:{status}:{page}:{size}` | 30s | 版本号 `repo:prs:version:{id}` 在 PR 建/合并/关闭时 `INCR` |
+| 用户名（id → name） | `user:name:{userId}` | 600s | 不失效（无改名入口） |
+| 用户资料 | `user:profile:{userId}` | 60s | 修改资料 |
+
+关键取舍：
+
+- **提交历史按 tip Sha 做 key**，而不是按分支名 + 显式失效：push 和合并都会推进 tip，
+  key 自然换新，省掉在 push / merge 三条写路径上各加一次删除，也不会出现
+  「刚 push 完却看不到自己的提交」。
+- **PR 列表用版本号代替按 pattern 批量删 key**：分页/状态组合多，`KEYS`/`SCAN` 删除成本高；
+  版本号变化后旧 key 最多 30s 自己过期。版本号必须用 `INCR` 自增——读后写（含
+  `System.currentTimeMillis()`）在并发/同毫秒写入时会拿到相同值，导致旧列表继续命中。
+  只有建 PR、合并、关闭会改可见结果，评论/评审不影响列表，不更新版本号。
+- **可见性拦截器的仓库行缓存必须随仓库配置更新失效**，否则把仓库从公开改私有时，
+  旧缓存仍会放行最多 60s。协作者判断不做缓存，移除协作者立即生效。
+- **只缓存命中结果，不做负缓存**：否则刚创建的仓库/用户会在 TTL 内一直解析不到。
+- **不缓存 `GET /api/repos` 列表**：结果依赖调用者身份（私有仓库按协作者过滤），
+  按 userId 拆分 key 会造成 key 数量膨胀，且列表查询本身有索引与下推的可见性条件。
+- **不缓存 PR 评论 / AI 审查记录**：评论是高频写场景，审查记录在 RUNNING 期间被轮询，
+  缓存会让状态更新延迟；两者本身都是单表分页查询。
+- **不缓存 blob 内容**：内容按 Sha 不可变、很适合缓存，但单个文件体积不可控，
+  放进 Redis 会挤占内存；当前直接读磁盘。
+
+**Why:** 服务与 MySQL/Redis 在同一台机器（或同一内网）时，缓存收益主要不是省网络往返，
+而是省 SQL 解析/执行、Hikari 连接占用和磁盘对象反序列化；列表类接口的 N+1（每行查一次
+用户表）也会抹平成一次 Redis 读取。
+
+**How to apply:** 新增读接口先判断数据变更频率和失效点：能由 key 自身表达版本（如提交
+tip）就不要再加删除逻辑；必须显式失效的，写路径与缓存 key 放在同一处维护。所有缓存读写
+都要 try/catch 兜底，禁止让缓存异常冒泡到接口。
+
+---
+
 ## 附录 A：待决策清单
 
 右边一列写你的决定；同意建议就写「同建议」，不同意的写清楚选择。每行前面的 ID 在正文里被引用。

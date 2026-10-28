@@ -3,6 +3,8 @@ package org.openapitools.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import common.Result;
 import common.ResultCode;
 import dto.PullRequestDTO;
@@ -16,6 +18,8 @@ import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
 import org.openapitools.service.PullRequestEventListener;
 import org.openapitools.service.support.RepositoryObjectReader;
+import org.openapitools.utils.RedisCacheUtils;
+import org.openapitools.utils.UserNameCache;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -30,6 +34,7 @@ import po.User;
 import vo.PullRequestVO;
 
 import java.io.File;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -59,6 +64,16 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
     private RepositoryObjectReader reader;
     @Autowired
     private RabbitTemplate rabbitTemplate;
+    @Autowired
+    private RedisCacheUtils redisCacheUtils;
+    @Autowired
+    private ObjectMapper objectMapper;
+    @Autowired
+    private UserNameCache userNameCache;
+
+    private static final String PR_LIST_KEY_PREFIX = "repo:prs:";
+    private static final String PR_LIST_VERSION_PREFIX = "repo:prs:version:";
+    private static final Integer PR_LIST_TTL_SECONDS = 30;
 
 
     // 创建PR
@@ -129,6 +144,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                 .isDeleted(0)
                 .build();
         remotePullRequestMapper.insert(pullRequest);
+        bumpPrListVersion(pullRequest.getRepositoryId());
         log.info("创建 Pull Request 成功 {}", pullRequest.getId());
         return Result.ok();
     }
@@ -185,6 +201,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
             // 合并成功：清理暂存区，更新 PR 状态
             cleanupStaging(pullRequest.getId());
             updatePRStatus(pullRequest, PRStatusEnum.MERGED);
+            bumpPrListVersion(repositoryId);
             // 构建消息并发送MQ
             sendMessage(owner, repo, pullRequest, targetBaseSha);
         } else if (merge.getCode() == ResultCode.MERGE_CONFLICT) {
@@ -268,17 +285,68 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         }
         int p = (page == null || page < 1) ? 1 : page;
         int s = (size == null || size < 1) ? 20 : size;
+        // 版本号随任何 PR 写入变化：旧 list key 自然不再被读到，不必按 pattern 批量删 key
+        String key = PR_LIST_KEY_PREFIX + repositoryId + ":" + prListVersion(repositoryId)
+                + ":" + (statusEnum == null ? "all" : statusEnum.name()) + ":" + p + ":" + s;
+        try {
+            String cached = redisCacheUtils.get(key);
+            if (cached != null) {
+                return Result.ok(objectMapper.readValue(cached, new TypeReference<List<PullRequestVO>>() {
+                }));
+            }
+        } catch (Exception e) {
+            log.warn("PR列表缓存读取失败，回源数据库，key={}", key, e);
+            evict(key);
+        }
+
         Page<PullRequest> result = remotePullRequestMapper.selectPage(
                 new Page<>(p, s),
                 Wrappers.<PullRequest>lambdaQuery()
                         .eq(PullRequest::getRepositoryId, repositoryId)
                         .eq(statusEnum != null, PullRequest::getStatus, statusEnum)
                         .orderByDesc(PullRequest::getCreateTime));
+        Map<Long, String> usernameCache = new HashMap<>();
         List<PullRequestVO> list = new ArrayList<>();
         for (PullRequest pr : result.getRecords()) {
-            list.add(toVO(pr));
+            list.add(toVO(pr, usernameCache));
+        }
+        try {
+            redisCacheUtils.set(key, objectMapper.writeValueAsString(list),
+                    Duration.ofSeconds(PR_LIST_TTL_SECONDS));
+        } catch (Exception e) {
+            log.warn("PR列表缓存写入失败，key={}", key, e);
         }
         return Result.ok(list);
+    }
+
+    private long prListVersion(Long repositoryId) {
+        try {
+            String version = redisCacheUtils.get(PR_LIST_VERSION_PREFIX + repositoryId);
+            return version == null ? 0L : Long.parseLong(version);
+        } catch (Exception e) {
+            log.warn("PR列表版本号读取失败，按 0 处理，repositoryId={}", repositoryId, e);
+            return 0L;
+        }
+    }
+
+    /** 用 INCR 而不是读后写：并发写入时必须每次都拿到不同的版本号 */
+    private void bumpPrListVersion(Long repositoryId) {
+        if (repositoryId == null) {
+            return;
+        }
+        try {
+            redisCacheUtils.increment(PR_LIST_VERSION_PREFIX + repositoryId, Duration.ofDays(1));
+        } catch (Exception e) {
+            log.warn("PR列表版本号更新失败，repositoryId={}", repositoryId, e);
+        }
+    }
+
+    private void evict(String key) {
+        try {
+            redisCacheUtils.delete(key);
+        } catch (Exception e) {
+            log.warn("缓存清理失败，key={}", key, e);
+        }
     }
 
     /**
@@ -311,6 +379,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         }
         cleanupStaging(pullRequest.getId());
         updatePRStatus(pullRequest, PRStatusEnum.CLOSED);
+        bumpPrListVersion(repositoryId);
         return Result.ok();
     }
 
@@ -395,13 +464,9 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
         return state;
     }
 
-    /** owner/repo -> repositoryId；任一环节缺失返回 null */
+    /** owner/repo -> repositoryId；解析结果与其他读接口共用缓存 */
     private Long resolveRepositoryId(String owner, String repo) {
-        Long userId = remoteUserMapper.getUserId(owner);
-        if (userId == null) {
-            return null;
-        }
-        return remoteRepositoryMapper.getRepositoryId(userId, repo);
+        return reader.resolveRepositoryId(owner, repo);
     }
 
     /**
@@ -495,13 +560,21 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
 
     /** PO -> VO，补齐作者名（PO 只有 authorId） */
     private PullRequestVO toVO(PullRequest pullRequest) {
+        return toVO(pullRequest, new HashMap<>());
+    }
+
+    private PullRequestVO toVO(PullRequest pullRequest, Map<Long, String> usernameCache) {
         if (pullRequest == null) {
             return null;
         }
         PullRequestVO vo = BeanUtil.copyProperties(pullRequest, PullRequestVO.class);
         if (pullRequest.getAuthorId() != null) {
-            User author = remoteUserMapper.selectById(pullRequest.getAuthorId());
-            vo.setAuthorName(author == null ? null : author.getUsername());
+            String username = usernameCache.get(pullRequest.getAuthorId());
+            if (username == null) {
+                username = userNameCache.usernameOf(pullRequest.getAuthorId());
+                usernameCache.put(pullRequest.getAuthorId(), username);
+            }
+            vo.setAuthorName(username);
         }
         return vo;
     }
@@ -608,6 +681,7 @@ public class PullRequestEventListenerImpl implements PullRequestEventListener {
                 .isDeleted(0)
                 .build();
         remotePullRequestMapper.insert(pr);
+        bumpPrListVersion(pr.getRepositoryId());
     }
 
     /**

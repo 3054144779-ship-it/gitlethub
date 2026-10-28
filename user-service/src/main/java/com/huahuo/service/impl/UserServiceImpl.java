@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huahuo.mapper.UserMapper;
 import com.huahuo.message.MsgConstant;
 import com.huahuo.service.UserService;
@@ -32,6 +33,7 @@ import po.User;
 import vo.UserLoginVO;
 import vo.UserProfileVO;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Date;
@@ -42,9 +44,15 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
+    private static final String PROFILE_KEY_PREFIX = "user:profile:";
+    private static final Integer PROFILE_TTL_SECONDS = 60;
+
     // 用户Mapper
     @Autowired
     private UserMapper userMapper;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     // 密码加密
     @Autowired
@@ -139,7 +147,32 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      */
     @Override
     public UserProfileVO searchUser(Long userId) {
-        return toProfileVO(userId == null ? null : userMapper.selectById(userId));
+        if (userId == null) {
+            return null;
+        }
+        String key = PROFILE_KEY_PREFIX + userId;
+        try {
+            String cached = stringRedisTemplate.opsForValue().get(key);
+            if (cached != null) {
+                return objectMapper.readValue(cached, UserProfileVO.class);
+            }
+        } catch (Exception e) {
+            // 缓存是旁路：读取/反序列化失败一律回源
+            log.warn("用户资料缓存读取失败，回源数据库，key={}", key, e);
+            evict(key);
+        }
+
+        UserProfileVO profile = toProfileVO(userMapper.selectById(userId));
+        if (profile == null) {
+            return null;
+        }
+        try {
+            stringRedisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(profile),
+                    Duration.ofSeconds(PROFILE_TTL_SECONDS));
+        } catch (Exception e) {
+            log.warn("用户资料缓存写入失败，key={}", key, e);
+        }
+        return profile;
     }
 
     /**
@@ -217,7 +250,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             update.set(User::getPassword, user.getPassword());
         }
         userMapper.update(null, update);
+        evict(PROFILE_KEY_PREFIX + userId);
         return Result.ok(toProfileVO(user));
+    }
+
+    /** 缓存清理失败不能影响写请求 */
+    private void evict(String key) {
+        try {
+            stringRedisTemplate.delete(key);
+        } catch (Exception e) {
+            log.warn("缓存清理失败，key={}", key, e);
+        }
     }
 
     private UserProfileVO toProfileVO(User user) {

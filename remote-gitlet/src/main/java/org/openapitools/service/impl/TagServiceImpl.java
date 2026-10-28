@@ -7,16 +7,15 @@ import common.ResultCode;
 import dto.TagCreateDTO;
 import org.openapitools.mapper.RemoteCollaboratorMapper;
 import org.openapitools.mapper.RemoteTagMapper;
-import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.service.TagService;
 import org.openapitools.service.support.RepositoryObjectReader;
+import org.openapitools.utils.UserNameCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import po.Collaborator;
 import po.Tag;
-import po.User;
 import vo.TagVO;
 
 import java.time.LocalDateTime;
@@ -31,7 +30,7 @@ public class TagServiceImpl implements TagService {
     @Autowired
     private RemoteTagMapper remoteTagMapper;
     @Autowired
-    private RemoteUserMapper remoteUserMapper;
+    private UserNameCache userNameCache;
     @Autowired
     private RemoteCollaboratorMapper remoteCollaboratorMapper;
     @Autowired
@@ -196,8 +195,7 @@ public class TagServiceImpl implements TagService {
         if (cached != null) {
             return cached;
         }
-        User user = remoteUserMapper.selectById(userId);
-        String username = user == null ? null : user.getUsername();
+        String username = userNameCache.usernameOf(userId);
         cache.put(userId, username);
         return username;
     }

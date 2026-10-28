@@ -15,6 +15,7 @@ import org.openapitools.mapper.*;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.service.SocialService;
 import org.openapitools.service.support.RepositoryObjectReader;
+import org.openapitools.utils.UserNameCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +23,6 @@ import po.Collaborator;
 import po.PrComment;
 import po.PrReview;
 import po.PullRequest;
-import po.User;
 import vo.PrCommentVO;
 import vo.PrReviewVO;
 
@@ -41,7 +41,7 @@ public class SocialServiceImpl implements SocialService {
     @Autowired
     private RemotePrCommentMapper remotePrCommentMapper;
     @Autowired
-    private RemoteUserMapper remoteUserMapper;
+    private UserNameCache userNameCache;
     @Autowired
     private RepositoryObjectReader repositoryObjectReader;
     @Autowired
@@ -422,8 +422,7 @@ public class SocialServiceImpl implements SocialService {
         if (cached != null) {
             return cached;
         }
-        User user = remoteUserMapper.selectById(userId);
-        String username = user == null ? null : user.getUsername();
+        String username = userNameCache.usernameOf(userId);
         cache.put(userId, username);
         return username;
     }

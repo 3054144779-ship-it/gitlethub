@@ -9,9 +9,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.openapitools.filter.JwtAuthFilter;
 import org.openapitools.mapper.RemoteCollaboratorMapper;
-import org.openapitools.mapper.RemoteRepositoryMapper;
-import org.openapitools.mapper.RemoteUserMapper;
 import org.openapitools.message.MsgConstant;
+import org.openapitools.service.support.RepositoryObjectReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -36,11 +35,9 @@ import java.nio.charset.StandardCharsets;
 public class RepoVisibilityInterceptor implements HandlerInterceptor {
 
     @Autowired
-    private RemoteUserMapper remoteUserMapper;
-    @Autowired
-    private RemoteRepositoryMapper remoteRepositoryMapper;
-    @Autowired
     private RemoteCollaboratorMapper remoteCollaboratorMapper;
+    @Autowired
+    private RepositoryObjectReader repositoryObjectReader;
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -56,15 +53,9 @@ public class RepoVisibilityInterceptor implements HandlerInterceptor {
         if (seg.length < 4 || !"api".equals(seg[0]) || !"repos".equals(seg[1])) {
             return true;
         }
-        Long ownerId = remoteUserMapper.getUserId(seg[2]);
-        if (ownerId == null) {
-            return true; // 用户不存在 / 仓库不存在 → 由 service 返回「仓库不存在」
-        }
-        Long repositoryId = remoteRepositoryMapper.getRepositoryId(ownerId, seg[3]);
-        if (repositoryId == null) {
-            return true;
-        }
-        Repository repository = remoteRepositoryMapper.selectById(repositoryId);
+        // 用户不存在 / 仓库不存在 → 由 service 返回「仓库不存在」；
+        // 解析结果已缓存，正常请求这里不再打用户表与仓库表
+        Repository repository = repositoryObjectReader.resolveRepository(seg[2], seg[3]);
         if (repository == null) {
             return true;
         }
