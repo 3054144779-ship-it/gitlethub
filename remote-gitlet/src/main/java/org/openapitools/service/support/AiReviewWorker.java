@@ -41,7 +41,7 @@ public class AiReviewWorker {
     @Autowired
     private WebClient webClient;
 
-    @Async
+    @Async("taskExecutorForAi")
     public void run(Long recordId, Long ownerId, Long repositoryId, Long prId, String prName,
                     String commitSha, List<DiffData> diffData) {
         long start = System.currentTimeMillis();

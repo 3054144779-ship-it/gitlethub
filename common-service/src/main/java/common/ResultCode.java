@@ -75,6 +75,9 @@ public final class ResultCode {
     /** 服务端错误 */
     public static final int INTERNAL_ERROR = 90001;
 
+    /** 队列已满，被拒绝 */
+    public static final int TASK_REJECTED = 90002;
+
     /** 用户不存在 */
     public static final int USER_NOT_FOUND = 1006;
 

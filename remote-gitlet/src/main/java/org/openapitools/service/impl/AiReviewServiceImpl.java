@@ -22,6 +22,7 @@ import org.openapitools.service.support.AiReviewWorker;
 import org.openapitools.service.support.RepositoryObjectReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import po.AiReviewRecord;
@@ -162,8 +163,12 @@ public class AiReviewServiceImpl implements AiReviewService {
                 .build();
         remoteAiReviewRecordMapper.insert(record);
 
-        aiReviewWorker.run(record.getId(), remoteUserMapper.getUserId(owner), repositoryId,
-                prId, prName, commitSha, diffData);
+        try {
+            aiReviewWorker.run(record.getId(), remoteUserMapper.getUserId(owner), repositoryId,
+                    prId, prName, commitSha, diffData);
+        } catch (TaskRejectedException e) {
+            return Result.fail(ResultCode.TASK_REJECTED, MsgConstant.TASK_REJECTED);
+        }
         return Result.ok(toVO(record));
     }
 

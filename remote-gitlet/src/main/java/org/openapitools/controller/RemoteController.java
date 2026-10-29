@@ -18,6 +18,7 @@ import org.openapitools.service.PullRequestEventListener;
 import org.openapitools.service.RemoteService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,9 +33,10 @@ import vo.PullRequestVO;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-09-21T20:19:28.153831200+08:00[Asia/Shanghai]", comments = "Generator version: 7.25.0")
-@Controller
+@RestController
 @RequestMapping("/api/repos/{owner}/{repo}")
 public class RemoteController {
 
@@ -58,11 +60,11 @@ public class RemoteController {
      * @param since 客户端已有的最新 commit sha1；空表示全新 clone (optional)
      * @return 拉取到的对象列表
      */
+    @Async("taskExecutorForPull")
     @GetMapping("/objects")
-    public ResponseEntity<Result<ObjectBundle>> pull(
+    public CompletableFuture<Result<ObjectBundle>> pull(
             @PathVariable String owner, @PathVariable String repo, @Nullable @RequestParam("since") String since) {
-        Result<ObjectBundle> response = remoteService.pull(owner, repo, since);
-        return ResponseEntity.ok(response);
+        return CompletableFuture.completedFuture(remoteService.pull(owner, repo, since));
     }
 
     /**
@@ -74,15 +76,14 @@ public class RemoteController {
      * @param refUpdateRequest  (required)  分支更新请求
      * @return 上传结果
      */
+    @Async("taskExecutorForPush")
     @PostMapping("/refs/{branch}/force")
-    public ResponseEntity<Result<RefView>> pushForceUpdateBranch(
+    public CompletableFuture<Result<RefView>> pushForceUpdateBranch(
             @PathVariable String owner, @PathVariable String repo,
             @PathVariable String branch,
             @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId,
             @RequestBody RefUpdateRequest refUpdateRequest) {
-        Result<RefView> response =
-                remoteService.pushForceUpdateBranch(owner, repo, branch, refUpdateRequest, actorId);
-        return ResponseEntity.ok(response);
+        return CompletableFuture.completedFuture(remoteService.pushForceUpdateBranch(owner, repo, branch, refUpdateRequest, actorId));
     }
 
     /**
@@ -94,15 +95,14 @@ public class RemoteController {
      * @param refUpdateRequest  (required)
      * @return 更新后的分支指向
      */
+    @Async("taskExecutorForPush")
     @PostMapping("/refs/{branch}")
-    public ResponseEntity<Result<RefView>> pushUpdateBranch(
+    public CompletableFuture<Result<RefView>> pushUpdateBranch(
             @PathVariable String owner, @PathVariable String repo,
             @PathVariable String branch,
             @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId,
             @RequestBody RefUpdateRequest refUpdateRequest) {
-        Result<RefView> response =
-                remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest, actorId);
-        return ResponseEntity.ok(response);
+        return CompletableFuture.completedFuture(remoteService.pushUpdateBranch(owner, repo, branch, refUpdateRequest, actorId));
     }
 
     /**
@@ -113,14 +113,13 @@ public class RemoteController {
      * @param objectUploadRequest  (required) push 的内容
      * @return 上传结果
      */
+    @Async("taskExecutorForPush")
     @PostMapping("/objects")
-    public ResponseEntity<Result<ObjectUploadResult>> pushObject(
+    public CompletableFuture<Result<ObjectUploadResult>> pushObject(
             @PathVariable String owner, @PathVariable String repo,
             @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId,
             @RequestBody ObjectUploadRequest objectUploadRequest) {
-        Result<ObjectUploadResult> response =
-                remoteService.pushObject(owner, repo, objectUploadRequest, actorId);
-        return ResponseEntity.ok(response);
+        return CompletableFuture.completedFuture(remoteService.pushObject(owner, repo, objectUploadRequest, actorId));
     }
 
     /**
@@ -147,12 +146,11 @@ public class RemoteController {
      * @param repo  (required) 当前仓库的名称
      * @return 仓库的全部对象
      */
+    @Async("taskExecutorForPull")
     @GetMapping("/clone")
-    public ResponseEntity<Result<ObjectBundle>> cloneRepository(
+    public CompletableFuture<Result<ObjectBundle>> cloneRepository(
             @PathVariable String owner, @PathVariable String repo) {
-
-        Result<ObjectBundle> response = remoteService.cloneRepository(owner, repo);
-        return ResponseEntity.ok(response);
+        return CompletableFuture.completedFuture(remoteService.cloneRepository(owner, repo));
     }
 
     /**

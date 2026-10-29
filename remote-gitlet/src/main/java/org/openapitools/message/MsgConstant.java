@@ -30,4 +30,5 @@ public class MsgConstant {
     public static final String PR_APPROVAL_REQUIRED = "保护分支至少需要一条通过评审才能合并";
     public static final String SYSTEM_ERROR = "系统错误";
     public static final String REJECT_MERGING_IRRELEVANT_HISTORY = "拒绝合并无关历史";
+    public static final String TASK_REJECTED = "队列已满，任务被拒绝，请稍后再试";
 }
