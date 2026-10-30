@@ -170,5 +170,22 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
+        <!-- 二级缓存：Caffeine(L1) + Redis(L2) -->
+        <dependency>
+            <groupId>io.github.ck-jesse</groupId>
+            <artifactId>l2cache-spring-boot-starter</artifactId>
+            <version>2.0.1</version>   <!-- JDK 17 必须用 2.x -->
+            <exclusions>
+                <!-- 这个 starter 历史上最出名的问题：自带 spring 版本冲掉项目的，一定要排 -->
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.springframework.cloud</groupId>
+                    <artifactId>spring-cloud-context</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
 </project>

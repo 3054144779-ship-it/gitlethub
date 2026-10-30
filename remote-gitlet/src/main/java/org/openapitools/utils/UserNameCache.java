@@ -3,6 +3,7 @@ package org.openapitools.utils;
 import lombok.extern.slf4j.Slf4j;
 import org.openapitools.mapper.RemoteUserMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Component;
 import po.User;
 
@@ -16,37 +17,20 @@ import java.time.Duration;
 @Component
 public class UserNameCache {
 
-    private static final String KEY_PREFIX = "user:name:";
     private static final Integer TTL_SECONDS = 600;
 
-    @Autowired
-    private RedisCacheUtils redisCacheUtils;
     @Autowired
     private RemoteUserMapper remoteUserMapper;
 
     /** 用户名没有改名入口，缓存不会出现显示不一致；查不到不缓存，避免用户新建后长时间解析失败 */
+    @Cacheable(
+            value = "usernameCache",
+            key = "#userId.toString",
+            condition = "#userId != null", // 条件为空时，不缓存。
+            unless = "#result == null"     // 方法返回 null 时，不要把 null 写进缓存。
+    )
     public String usernameOf(Long userId) {
-        if (userId == null) {
-            return null;
-        }
-        String key = KEY_PREFIX + userId;
-        try {
-            String cached = redisCacheUtils.get(key);
-            if (cached != null) {
-                return cached;
-            }
-        } catch (Exception e) {
-            log.warn("用户名缓存读取失败，回源数据库，key={}", key, e);
-        }
         User user = remoteUserMapper.selectById(userId);
-        String username = user == null ? null : user.getUsername();
-        if (username != null) {
-            try {
-                redisCacheUtils.set(key, username, Duration.ofSeconds(TTL_SECONDS));
-            } catch (Exception e) {
-                log.warn("用户名缓存写入失败，key={}", key, e);
-            }
-        }
-        return username;
+        return user == null ? null : user.getUsername();
     }
 }

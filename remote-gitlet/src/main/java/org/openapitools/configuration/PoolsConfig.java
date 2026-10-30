@@ -1,12 +1,12 @@
 package org.openapitools.configuration;
 
 import lombok.Data;
-import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 @Data
 @Validated
-@ConfigurationPropertiesScan("git.executor")
+@ConfigurationProperties(prefix = "git.executor")
 public class PoolsConfig {
 
     @Data
@@ -28,5 +28,4 @@ public class PoolsConfig {
     public Pool push = new Pool(4, 4, 50);
     public Pool ai = new Pool(2, 4, 100);
     public Pool event = new Pool(2, 4, 10);
-
 }

@@ -9,8 +9,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import jwt.KeyPairManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -35,6 +35,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
+    /**
+     * 是否信任网关透传的 X-User-Id。
+     *
+     * <p>网关已在上游完成「验签 + 黑名单校验」，并在写入前无条件移除客户端自带的同名头，
+     * 因此下游复用该结论可以把每请求的 Redis 查询从 2 次降到 1 次。
+     *
+     * <p>安全前提：本服务只能经由网关访问（8082 不对公网开放）。
+     * 若无法保证，请置为 false —— 否则客户端自己带一个 {@code X-User-Id: 1}
+     * 就能冒充任意用户，且不会有任何校验失败。
+     */
+    @Value("${security.gateway.trust-user-id-header:true}")
+    private boolean trustGatewayHeader;
+
     // @Lazy：KeyPairManager 的 @PostConstruct 要连 Redis 加载密钥对，延迟到首次请求才实例化，
     // 避免应用启动 / @SpringBootTest 上下文加载在 Redis 不可用时直接失败
     @Lazy
@@ -56,8 +69,39 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /** 从 Bearer token 解析 userId；无 token / 非法 / 过期 / 已登出均返回 null */
+    /** 解析调用者 userId：优先复用网关结论，直连请求退回完整本地校验 */
     private Long resolveUserId(HttpServletRequest request) {
+        Long gatewayUserId = resolveFromGatewayHeader(request);
+        if (gatewayUserId != null) {
+            return gatewayUserId;
+        }
+        return resolveFromToken(request);
+    }
+
+    /**
+     * 读取网关下发的 X-User-Id。
+     * 存在的充要条件是上游验签通过且未被拉黑（见 GateWayFilter#withUserId），
+     * 所以这里不再重复验签和查黑名单。
+     */
+    private Long resolveFromGatewayHeader(HttpServletRequest request) {
+        if (!trustGatewayHeader) {
+            return null;
+        }
+        String header = request.getHeader(KeyPairManager.USER_ID_HEADER);
+        if (header == null || header.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(header.trim());
+        } catch (NumberFormatException e) {
+            // 格式非法说明不是网关写入的，退回 token 校验，而不是当成匿名
+            log.debug("X-User-Id 非法，改走 token 校验: {}", header);
+            return null;
+        }
+    }
+
+    /** 从 Bearer token 解析 userId；无 token / 非法 / 过期 / 已登出均返回 null */
+    private Long resolveFromToken(HttpServletRequest request) {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
         if (header == null || !header.startsWith(BEARER_PREFIX)) {
             return null;

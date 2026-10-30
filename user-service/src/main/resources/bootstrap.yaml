@@ -7,11 +7,11 @@ spring:
     active: local
   cloud:
     nacos:
-      server-addr: 47.110.245.203:8848
+      server-addr: 100.103.241.43:8848
       discovery:
         username: ${NACOS_USERNAME}
         password: ${NACOS_PASSWORD}
-        namespace: e7aa35a9-5acb-4192-97ba-3191707726ce
+        namespace: ${NACOS_NAMESPACE:e7aa35a9-5acb-4192-97ba-3191707726ce}
       config:
         file-extension: yaml # 配置的扩展名
         shared-configs:
@@ -22,4 +22,4 @@ spring:
 #          - data-id: shared-mq.yaml
         username: ${NACOS_USERNAME}
         password: ${NACOS_PASSWORD}
-        namespace: e7aa35a9-5acb-4192-97ba-3191707726ce # 命名空间 ID（不是名称 gitlethub-prod）
+        namespace: ${NACOS_NAMESPACE:e7aa35a9-5acb-4192-97ba-3191707726ce} # 命名空间 ID（不是名称 gitlethub-prod）

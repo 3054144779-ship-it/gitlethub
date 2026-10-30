@@ -2,12 +2,15 @@ spring:
   cloud:
     sentinel:
       transport:
-        dashboard: ${SENTINEL_DASHBOARD:http://47.110.245.203:8090}
+        dashboard: ${SENTINEL_DASHBOARD:http://100.103.241.43:8090}
       http-method-specify: true # 开启请求前缀
       datasource:
         gateway-flow:
           nacos:
-            server-addr: ${NACOS_SERVER_ADDR:47.110.245.203:8848}
+            server-addr: ${NACOS_SERVER_ADDR:100.103.241.43:8848}
+            username: ${NACOS_USERNAME}
+            password: ${NACOS_PASSWORD}
+            namespace: ${NACOS_NAMESPACE:e7aa35a9-5acb-4192-97ba-3191707726ce}
             dataId: gitelethub-gateway-flow-rules.json
             groupId: GITLETHUB_GATEWAY
             rule-type: gw-flow
