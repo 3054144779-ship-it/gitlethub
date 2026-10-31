@@ -45,9 +45,7 @@ class ArchaeologyServiceImpl(ArchaeologyService):
             content_type=commit："修复并发场景 NPE 的提交记录"
         """
         # 向量化，获取向量结果
-        vector = await asyncio.to_thread(
-            embedding_model.to_vector, [Document(page_content=query)]
-        )
+        vector = await embedding_model.to_vector([Document(page_content=query)])
         dense_vecs = vector[0]
         result = await asyncio.to_thread(
             milvus_repo.retrieval,
@@ -111,9 +109,7 @@ class ArchaeologyServiceImpl(ArchaeologyService):
             }
 
         # 重排序结果
-        rerank_result = await asyncio.to_thread(
-            reranker.rerank, query, all_docs, text_field="text", top_k=min(total_count, top_k)
-        )
+        rerank_result = await reranker.rerank(query, all_docs, text_field="text", top_k=min(total_count, top_k))
         # 按照分数递减排序
         rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)
 

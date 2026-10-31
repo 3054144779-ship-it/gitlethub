@@ -32,9 +32,9 @@ class Reranker:
 
     def __init__(self, base_url: str):  # 不再本地加载模型
         self.base_url = base_url.rstrip("/")
-        self._client = httpx.Client(timeout=120)
+        self._client = httpx.AsyncClient(timeout=120)
 
-    def rerank(
+    async def rerank(
             self,
             query: str,
             documents: List[dict],
@@ -77,7 +77,7 @@ class Reranker:
             "normalize": normalize,
         }
 
-        data = self._client.post(
+        data = await self._client.post(
             url=f"{self.base_url}/model/rerank",
             json=json_incoming,
             headers={"Content-Type": "application/json"},

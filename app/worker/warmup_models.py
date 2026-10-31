@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 _DUMMY_TEXT = "模型预热 warmup: public void blacklist(String authorization) { return; }"
 
 
-def warmup_models(container: Container) -> None:
+async def warmup_models(container: Container) -> None:
     """依次探测远端模型服务；任一路失败都不应阻断应用启动。"""
 
     # 1) Embedding：验证 inference -> LiteLLM -> 云端 embedding 链路
-    _run(
+    await _run(
         "EmbeddingModel",
         lambda: container.embedding_model().to_vector(
             [Document(page_content=_DUMMY_TEXT)]
@@ -30,7 +30,7 @@ def warmup_models(container: Container) -> None:
     )
 
     # 2) Reranker：documents 必须非空，否则不会真正发起请求
-    _run(
+    await _run(
         "Reranker",
         lambda: container.reranker().rerank(
             query=_DUMMY_TEXT,
@@ -40,10 +40,10 @@ def warmup_models(container: Container) -> None:
     )
 
 
-def _run(name: str, fn) -> None:
+async def _run(name: str, fn) -> None:
     start = time.perf_counter()
     try:
-        fn()
+        await fn()
         logger.info(f"[warmup] {name} 连通性检查通过，耗时 {time.perf_counter() - start:.2f}s")
     except Exception as e:
         logger.error(f"[warmup] {name} 连通性检查失败: {e}")

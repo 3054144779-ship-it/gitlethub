@@ -227,8 +227,7 @@ class MemoryManager:
                 return
 
             # 批量向量化每条事实
-            vector = await asyncio.to_thread(
-                self.embedding_client.to_vector,
+            vector = await self.embedding_client.to_vector(
                 [Document(page_content=fact) for fact in facts]
             )
 
@@ -340,8 +339,7 @@ class MemoryManager:
     async def _get_milvus_messages(self, session_id: str, query: str, meta: dict) -> List[str]:
         # 检索当前仓库的语义记忆信息
         meta = await self._get_session_meta(session_id)
-        vector = await asyncio.to_thread(
-            self.embedding_client.to_vector,
+        vector = await self.embedding_client.to_vector(
             [Document(page_content=query)]
         )
         dense_docs = vector[0]
@@ -385,10 +383,7 @@ class MemoryManager:
             [Document(page_content=fact) for fact in facts]
         )
 
-        vector = await asyncio.to_thread(
-            self.embedding_client.to_vector,
-            split_documents
-        )
+        vector = await self.embedding_client.to_vector(split_documents)
 
         inserted = False
         dedup_key = f"semantic:fp:{meta['user_id']}:{meta['repository_id']}"

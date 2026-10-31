@@ -75,8 +75,7 @@ class ReviewServiceImpl(ReviewService):
         # 获取diff信息
         diff_content = str(context.get("diff_data", query)) if context else query
         # 向量化，获取向量结果
-        vector = await asyncio.to_thread(
-            embedding_model.to_vector,
+        vector = await embedding_model.to_vector(
             [Document(page_content=diff_content)]
         )
 
@@ -197,8 +196,7 @@ class ReviewServiceImpl(ReviewService):
             [d.get("new_content", "")[:300] for d in diff_datas if d.get("new_content")]
         ) or query
 
-        vector = await asyncio.to_thread(
-            embedding_model.to_vector,
+        vector = await embedding_model.to_vector(
             [Document(page_content=diff_summary)]
         )
         dense_vecs = vector[0]
@@ -297,8 +295,7 @@ class ReviewServiceImpl(ReviewService):
         file_filers = " or ".join([file_filter for file_filter in file_path])
 
         # 变更描述做向量检索
-        vector = await asyncio.to_thread(
-            embedding_model.to_vector,
+        vector = await embedding_model.to_vector(
             [Document(page_content=query)]
         )
         dense_vecs = vector[0]
@@ -393,8 +390,7 @@ class ReviewServiceImpl(ReviewService):
         file_filers = " or ".join([file_filter for file_filter in file_path if file_filter is not None])
         three_queries = [reverse_query, call_query, file_filers]
         # 统一向量化
-        vector = await asyncio.to_thread(
-            embedding_model.to_vector,
+        vector = await embedding_model.to_vector(
             [Document(page_content=q) for q in three_queries]
         )
 
@@ -509,8 +505,8 @@ class ReviewServiceImpl(ReviewService):
             }
 
         # 重排序结果
-        rerank_result = await asyncio.to_thread(
-            reranker.rerank, query, all_docs, text_field="text", top_k=min(total_count, top_k)
+        rerank_result = await reranker.rerank(
+            query, all_docs, text_field="text", top_k=min(total_count, top_k)
         )
         # 按照分数递减排序
         rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)

@@ -15,9 +15,9 @@ class EmbeddingModel:
 
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
-        self._client = httpx.Client(timeout=120)
+        self._client = httpx.AsyncClient(timeout=120) # 创建异步的客户端
 
-    def to_vector(self, documents: List[Document]) -> List[np.ndarray]:
+    async def to_vector(self, documents: List[Document]) -> List[np.ndarray]:
         """
         将文档列表转换为稠密向量
         :param documents: 文档列表
@@ -26,7 +26,7 @@ class EmbeddingModel:
         if not documents:
             return []
 
-        data = self._client.post(
+        data = await self._client.post(
             url=f"{self.base_url}/model/embeddings",
             json={"texts": [doc.page_content for doc in documents]},
             headers={"Content-Type": "application/json"},

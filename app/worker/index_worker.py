@@ -66,10 +66,7 @@ async def handle_message_code(
         # AST切分
         code_chunks = parser.ast_split(nodes=nodes)
         # 只取稠密向量；稀疏向量由 Milvus BM25 Function 在写入时生成
-        vector = await asyncio.to_thread(
-            embedding_model.to_vector,
-            [Document(page_content=chunk) for chunk in code_chunks]
-        )
+        vector = await embedding_model.to_vector([Document(page_content=chunk) for chunk in code_chunks])
 
         datas = []
         chunk_index = 0 # 当前块索引
@@ -114,10 +111,7 @@ async def handle_message_code(
 
         # 提交信息创建向量
         commit_message = commit_message_template.render(to_template)
-        vector = await asyncio.to_thread(
-            embedding_model.to_vector,
-            [Document(page_content=commit_message)]
-        )
+        vector = await embedding_model.to_vector([Document(page_content=commit_message)])
 
         for dense_vecs in vector:
             milvus_po = MilvusPO(
@@ -158,10 +152,7 @@ async def handle_message_markdown_pdf_word(
             logging.warning(f"文件 {request.file_path} 切分后为空，跳过向量化")
             return
 
-        vector = await asyncio.to_thread(
-            embedding_model.to_vector,
-            documents
-        )
+        vector = await embedding_model.to_vector(documents)
 
         chunk_index = 0
 
@@ -189,6 +180,7 @@ async def handle_message_markdown_pdf_word(
     else:
         raise FileNotFoundError("文件不存在")
 
+@inject
 async def handle_message(body: str, redis_client: Redis = Provide[Container.redis_client]):
     # 解析请求
     request = _message_parser(body)

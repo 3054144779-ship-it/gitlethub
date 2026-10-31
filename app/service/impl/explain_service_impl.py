@@ -51,9 +51,7 @@ class ExplainServiceImpl(ExplainService):
             同类检索：用文件路径过滤搜索同模块代码
         """
         # ========== 第一阶段：定位目标代码 ==========
-        initial_vector = await asyncio.to_thread(
-            embedding_model.to_vector, [Document(page_content=query)]
-        )
+        initial_vector = await embedding_model.to_vector([Document(page_content=query)])
         dense_vecs = initial_vector[0]
         initial_result = await asyncio.to_thread(
             milvus_repo.retrieval,
@@ -115,8 +113,7 @@ class ExplainServiceImpl(ExplainService):
         three_queries = [reverse_text, forward_text]
 
         # 一次性向量化三路查询（线程池执行，避免阻塞事件循环）
-        three_vectors = await asyncio.to_thread(
-            embedding_model.to_vector,
+        three_vectors = await embedding_model.to_vector(
             [Document(page_content=q) for q in three_queries]
         )
 
@@ -215,8 +212,8 @@ class ExplainServiceImpl(ExplainService):
             }
 
         # 重排序结果
-        rerank_result = await asyncio.to_thread(
-            reranker.rerank, query, all_docs, text_field="text", top_k=min(total_count, top_k)
+        rerank_result = await reranker.rerank(
+            query, all_docs, text_field="text", top_k=min(total_count, top_k)
         )
         # 按照分数递减排序
         rerank_result.sort(key=lambda x: x["rerank_score"], reverse=True)

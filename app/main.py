@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
         ])
 
         # 预热模型
-        await asyncio.to_thread(warmup_models, container)
+        await warmup_models(container)
 
         # 把容器挂到 app.state，供路由层访问
         app.state.container = container
