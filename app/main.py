@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 import yaml
@@ -8,7 +9,6 @@ from config.Container import Container
 from config.nacos_registry import NacosRegistrar, SERVICE_NAME
 from router.chat_router import router as chat_router
 from worker.warmup_models import warmup_models
-
 
 import os
 
@@ -21,6 +21,7 @@ async def lifespan(app: FastAPI):
     await registrar.start()
 
     mq_task = None
+    container = None
     try:
         container = Container()
         with open(os.path.join(PROJECT_ROOT, "config.yaml"), encoding="utf-8") as f:
@@ -54,6 +55,17 @@ async def lifespan(app: FastAPI):
     finally:
         if mq_task is not None:
             mq_task.cancel()
+            # 等消费协程真正退出，避免它在下面的客户端关闭之后还在用它们
+            await asyncio.gather(mq_task, return_exceptions=True)
+        if container is not None:
+            for name, provider in (
+                ("EmbeddingModel", container.embedding_model),
+                ("Reranker", container.reranker),
+            ):
+                try:
+                    await provider().close_client()
+                except Exception as e:
+                    logging.warning("关闭 %s 客户端失败: %s", name, e)
         await registrar.stop()
 
 app = FastAPI(lifespan=lifespan)

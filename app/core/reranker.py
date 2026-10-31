@@ -104,3 +104,5 @@ class Reranker:
 
         return documents[:top_k]
 
+    async def close_client(self):
+        await self._client.aclose()

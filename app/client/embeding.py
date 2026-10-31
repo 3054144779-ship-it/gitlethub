@@ -41,3 +41,6 @@ class EmbeddingModel:
             )
 
         return [np.array(dense, dtype=np.float32) for dense in dense_vecs]
+
+    async def close_client(self):
+        await self._client.aclose()
