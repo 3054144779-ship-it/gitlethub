@@ -1,0 +1,9 @@
+services:
+  api:
+    image: gitlet-ai-helper:latest
+    command: ["python","-m","uvicorn","main:app","--app-dir","/app/app","--host","0.0.0.0","--port","8000","--workers","1"]
+    volumes: ["./config.yaml:/app/config.yaml:ro"]
+  index-worker:
+    image: gitlet-ai-helper:latest
+    command: ["python","-m","worker.main"]
+    volumes: ["./config.yaml:/app/config.yaml:ro"]

@@ -20,7 +20,6 @@ async def lifespan(app: FastAPI):
     registrar = NacosRegistrar(metadata={"protocol": "http"})
     await registrar.start()
 
-    mq_task = None
     container = None
     try:
         container = Container()
@@ -31,11 +30,11 @@ async def lifespan(app: FastAPI):
         if template_dir:
             config_data["config"]["jinja"]["template_dir"] = template_dir
         container.config.from_dict(config_data["config"])
+        # 索引链路已拆到 worker/main.py，这里不再需要 worker.index_worker
         container.wire(modules=[
             "router.chat_router",
             "core.intent_clarifier",
             "schema.nodes.node",
-            "worker.index_worker",
             "service.impl.ai_service_impl",
             "service.impl.explain_service_impl",
             "service.impl.archaeology_service_impl",
@@ -48,15 +47,8 @@ async def lifespan(app: FastAPI):
 
         # 把容器挂到 app.state，供路由层访问
         app.state.container = container
-        # 启动 MQ 消费者, 后台任务
-        from worker.index_worker import code_parser_mq_consumer
-        mq_task = asyncio.create_task(code_parser_mq_consumer())
         yield
     finally:
-        if mq_task is not None:
-            mq_task.cancel()
-            # 等消费协程真正退出，避免它在下面的客户端关闭之后还在用它们
-            await asyncio.gather(mq_task, return_exceptions=True)
         if container is not None:
             for name, provider in (
                 ("EmbeddingModel", container.embedding_model),
@@ -66,6 +58,14 @@ async def lifespan(app: FastAPI):
                     await provider().close_client()
                 except Exception as e:
                     logging.warning("关闭 %s 客户端失败: %s", name, e)
+            try:
+                await container.redis_client().aclose()
+            except Exception as e:
+                logging.warning("关闭 Redis 客户端失败: %s", e)
+            try:
+                container.milvus_client().close()
+            except Exception as e:
+                logging.warning("关闭 Milvus 客户端失败: %s", e)
         await registrar.stop()
 
 app = FastAPI(lifespan=lifespan)

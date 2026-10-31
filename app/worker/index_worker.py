@@ -174,7 +174,7 @@ async def handle_message_markdown_pdf_word(
 
             chunk_index += 1
             datas.append(milvus_po.to_milvus_dict())
-        milvus_repo.insert(datas)
+        await asyncio.to_thread(milvus_repo.insert, datas)
         print(f"文件 {request.file_path} 向量化完成")
 
     else:
@@ -281,11 +281,3 @@ def _generate_metadata(request: RequestDTO, node: Node, chunk_index: int) -> Met
         commit_time=request.commit_time,
     )
 
-
-if __name__ == '__main__':
-    container = Container()
-    with open(r"D:\Job_project\gitlet_ai_helper\config.yaml", encoding="utf-8") as f:
-        config_data = yaml.safe_load(f)
-    container.config.from_dict(config_data["config"])
-    container.wire(modules=[__name__])
-    asyncio.run(code_parser_mq_consumer())
