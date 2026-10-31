@@ -1,3 +1,4 @@
+import httpx
 import redis.asyncio as aioredis
 
 from pymilvus import MilvusClient
@@ -15,6 +16,34 @@ from repository.milvus_repo import MilvusRepo
 from client.embeding import EmbeddingModel
 from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
 from langchain.chat_models import init_chat_model
+
+
+def _create_llm_http_client(
+        max_connections: int,
+        pool_timeout: float,
+        connect_timeout: float,
+        read_timeout: float,
+) -> httpx.AsyncClient:
+    """
+    全局共享的 LLM HTTP 客户端：
+    - max_connections 就是并发闸门，超出的请求在连接池外排队
+    - pool 超时就是排队上限，超时抛 PoolTimeout -> 上游转 429/503
+    注意 keepalive_expiry 要比默认 5s 长，避免频繁重建到 LiteLLM 的 TCP 连接
+    """
+    return httpx.AsyncClient(
+        limits=httpx.Limits(
+            max_connections=max_connections,
+            max_keepalive_connections=max_connections,
+            keepalive_expiry=30.0,
+        ),
+        timeout=httpx.Timeout(
+            connect=connect_timeout,
+            read=read_timeout,
+            write=30.0,
+            pool=pool_timeout,
+        ),
+    )
+
 
 def _create_milvus_client(host: str, port: int) -> MilvusClient:
     return MilvusClient(uri=f"http://{host}:{port}")
@@ -35,7 +64,8 @@ def _init_agent(
         model_provider: str,
         api_key: str,
         base_url: str,
-        middleware_instance: MemoryManager
+        middleware_instance: MemoryManager,
+        http_async_client=None,
 ):
     # 初始化中间件
     memory_manager_middleware = MemoryManagerMiddleware(memory_manager=middleware_instance)
@@ -46,6 +76,7 @@ def _init_agent(
         config={
             "api_key": api_key,
             "base_url": base_url,
+            "http_async_client": http_async_client,
         },
         tools=[read_file]
     ).create_agent(
@@ -109,6 +140,15 @@ class Container(containers.DeclarativeContainer):
         template_name="intent_clarifier_prompt_template.jinja2"
     )
 
+    # LLM 调用共享客户端（限流闸门）
+    llm_http_client = providers.Singleton(
+        _create_llm_http_client,
+        max_connections=config.admission.max_concurrent_llm,
+        pool_timeout=config.admission.queue_timeout,
+        connect_timeout=config.admission.connect_timeout,
+        read_timeout=config.admission.read_timeout,
+    )
+
     # 创建意图识别器ai
     intent_clarifier_llm_client = providers.Singleton(
         init_chat_model,
@@ -116,6 +156,8 @@ class Container(containers.DeclarativeContainer):
         model_provider=config.intent_clarifier.model_provider,
         api_key=config.intent_clarifier.api_key,
         base_url=config.intent_clarifier.base_url,
+        http_async_client=llm_http_client,
+        max_retries=0,   # 重试统一交给 LiteLLM，避免 3x3 放大
     )
 
     # 创建reranker实例
@@ -141,6 +183,7 @@ class Container(containers.DeclarativeContainer):
         model_provider=config.rewrite.model_provider,
         api_key=config.rewrite.api_key,
         base_url=config.rewrite.base_url,
+        http_async_client=llm_http_client,
     )
 
 
@@ -186,6 +229,7 @@ class Container(containers.DeclarativeContainer):
         model_provider=config.compressor.model_provider,
         api_key=config.compressor.api_key,
         base_url=config.compressor.base_url,
+        http_async_client=llm_http_client,
     )
 
     # 记忆分层管理器
