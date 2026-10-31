@@ -23,7 +23,7 @@ async def start_consume_mq_message(callback: callable):
         # 获取通道，需要加 await，因为 channel 是异步的
         channel = await connection.channel()
         # 设置 prefetch_count，每次处理一条消息
-        await channel.set_qos(prefetch_count=1)
+        await channel.set_qos(prefetch_count=10)
 
         print("连接成功！正在监听队列：pr_merged_queue")
 
@@ -36,20 +36,27 @@ async def start_consume_mq_message(callback: callable):
                 "x-dead-letter-routing-key": "pr_merged_dlq"
             })
 
-        messages = []
+        _PENDING = set()
         # 处理消息队列的信息
         async with queue.iterator() as iterator:
             async for message in iterator:
-                body = message.body.decode()
-                print("获取 MQ 消息:", body)
-                messages.append(body)
-                try:
-                    await callback(body)
-                    await message.ack() # 确认消息
-                except Exception as e:
-                    print(f"处理消息失败: {e}")
-                    await message.reject(requeue=False)  # 进入死信队列，不重新投递
-        return messages
+                task = asyncio.create_task(_process(message, callback))
+                _PENDING.add(task)
+                task.add_done_callback(_PENDING.discard) # 当task任务执行完自动，执行回调，把 task 从 _PENDING 集合中移除
+
+        if _PENDING:
+            # 如果还有任务没有执行完，等待它们完成
+            await asyncio.gather(*_PENDING, return_exceptions=True)
+
+async def _process(message, callback):
+    body = message.body.decode()
+    print("获取 MQ 消息:", body)
+    try:
+        await callback(body)
+        await message.ack() # 确认消息
+    except Exception as e:
+        print(f"处理消息失败: {e}")
+        await message.reject(requeue=False)  # 进入死信队列，不重新投递
 
 if __name__ == '__main__':
     print(asyncio.run(start_consume_mq_message()))

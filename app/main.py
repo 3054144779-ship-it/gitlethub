@@ -25,6 +25,10 @@ async def lifespan(app: FastAPI):
         container = Container()
         with open(os.path.join(PROJECT_ROOT, "config.yaml"), encoding="utf-8") as f:
             config_data = yaml.safe_load(f)
+        # 容器内模板路径与开发机不同，用环境变量覆盖 config.yaml 里的 template_dir
+        template_dir = os.getenv("JINJA_TEMPLATE_DIR")
+        if template_dir:
+            config_data["config"]["jinja"]["template_dir"] = template_dir
         container.config.from_dict(config_data["config"])
         container.wire(modules=[
             "router.chat_router",

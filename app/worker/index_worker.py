@@ -66,7 +66,10 @@ async def handle_message_code(
         # AST切分
         code_chunks = parser.ast_split(nodes=nodes)
         # 只取稠密向量；稀疏向量由 Milvus BM25 Function 在写入时生成
-        vector = embedding_model.to_vector([Document(page_content=chunk) for chunk in code_chunks])
+        vector = await asyncio.to_thread(
+            embedding_model.to_vector,
+            [Document(page_content=chunk) for chunk in code_chunks]
+        )
 
         datas = []
         chunk_index = 0 # 当前块索引
@@ -111,7 +114,10 @@ async def handle_message_code(
 
         # 提交信息创建向量
         commit_message = commit_message_template.render(to_template)
-        vector = embedding_model.to_vector([Document(page_content=commit_message)])
+        vector = await asyncio.to_thread(
+            embedding_model.to_vector,
+            [Document(page_content=commit_message)]
+        )
 
         for dense_vecs in vector:
             milvus_po = MilvusPO(
@@ -132,7 +138,10 @@ async def handle_message_code(
         print(f"提交信息 {commit_message} 向量化完成")
 
         # 向量入库
-        milvus_repo.insert(datas)
+        await asyncio.to_thread(
+            milvus_repo.insert,
+            datas
+        )
     else:
         raise FileNotFoundError("文件不存在")
 
@@ -148,7 +157,11 @@ async def handle_message_markdown_pdf_word(
         if not documents:
             logging.warning(f"文件 {request.file_path} 切分后为空，跳过向量化")
             return
-        vector = embedding_model.to_vector(documents)
+
+        vector = await asyncio.to_thread(
+            embedding_model.to_vector,
+            documents
+        )
 
         chunk_index = 0
 
@@ -203,7 +216,8 @@ async def handle_message(body: str, redis_client: Redis = Provide[Container.redi
     async def bounded_file_handler(req: RequestDTO, semaphore: Semaphore):
         async with semaphore:
             return await file_handler(req)
-
+    # 创建信号量，限制并发数为10(值创建一次)
+    sem = asyncio.Semaphore(10)
     tasks = []
     # 遍历提交记录，处理文件
     for commit in request.pr_info.commits:
@@ -233,7 +247,7 @@ async def handle_message(body: str, redis_client: Redis = Provide[Container.redi
                 "pr_name": request.pr_info.pr_name,
                 "language": file.language
             })
-            tasks.append(bounded_file_handler(req, asyncio.Semaphore(10)))
+            tasks.append(bounded_file_handler(req, sem))
 
     res = await asyncio.gather(*tasks, return_exceptions=True)
 
