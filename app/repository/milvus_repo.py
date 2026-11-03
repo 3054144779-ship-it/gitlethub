@@ -132,7 +132,7 @@ class MilvusRepo:
             index_param.add_index(
                 field_name=field_name, # 字段名字
                 index_type=config.get("index_type"), # 索引类型
-                metric_type=config.get("metric_type", "COSINE"), # 度量类型
+                metric_type=config.get("metric_type", ""), # 度量类型
                 params=config.get("params", {}) # 参数
             )
         return index_param
