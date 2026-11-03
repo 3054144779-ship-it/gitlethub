@@ -1,5 +1,6 @@
 package org.openapitools.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -9,6 +10,7 @@ import common.ResultCode;
 import dto.PrCommentCreateDTO;
 import dto.PrCommentUpdateDTO;
 import dto.PrReviewCreateDTO;
+import enums.PRStatusEnum;
 import enums.PrCommentTypeEnum;
 import enums.PrReviewStateEnum;
 import org.openapitools.mapper.*;
@@ -19,12 +21,10 @@ import org.openapitools.utils.UserNameCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import po.Collaborator;
-import po.PrComment;
-import po.PrReview;
-import po.PullRequest;
+import po.*;
 import vo.PrCommentVO;
 import vo.PrReviewVO;
+import vo.PullRequestVO;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -50,7 +50,10 @@ public class SocialServiceImpl implements SocialService {
     private RemotePullRequestMapper remotePullRequestMapper;
     @Autowired
     private RemoteCollaboratorMapper remoteCollaboratorMapper;
-
+    @Autowired
+    private RemoteRepositoryMapper remoteRepositoryMapper;
+    @Autowired
+    private RemoteUserMapper remoteUserMapper;
 
     @Override
     public Result<IPage<PrCommentVO>> getComments(
@@ -301,6 +304,33 @@ public class SocialServiceImpl implements SocialService {
                 .build();
         remotePrReviewMapper.insert(review);
         return Result.ok(toVO(review, new HashMap<>()));
+    }
+
+    /**
+     * 获取所有待处理 PR
+     */
+    @Override
+    public Result<List<PullRequestVO>> getAllPrs(String owner, Integer limit) {
+//        List<PrReview> allPrs = remotePullRequestMapper.getAllPrs(owner, repos);
+        Long ownerId = remoteUserMapper.getUserId(owner);
+        List<Repository> repositoryList = remoteRepositoryMapper.selectList(
+                Wrappers.<Repository>lambdaQuery()
+                        .eq(Repository::getOwnerId, ownerId)
+        );
+
+        List<PullRequest> prList = remotePullRequestMapper.selectList(
+                Wrappers.<PullRequest>lambdaQuery()
+                        .eq(PullRequest::getStatus, PRStatusEnum.OPEN)
+                        .in(PullRequest::getRepositoryId, repositoryList.stream()
+                                .map(Repository::getId)
+                                .collect(Collectors.toList()))
+                        .last("limit " + limit)
+                        .orderByDesc(PullRequest::getCreateTime)
+                        .orderByDesc(PullRequest::getId)
+        );
+
+        List<PullRequestVO> pullRequestVOS = BeanUtil.copyToList(prList, PullRequestVO.class);
+        return Result.ok(pullRequestVOS);
     }
 
     /** 查询 PR，并限定必须属于该仓库；不存在或跨仓库返回 null */

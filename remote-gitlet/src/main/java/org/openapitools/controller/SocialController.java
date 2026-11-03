@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import vo.PrCommentVO;
 import vo.PrReviewVO;
+import vo.PullRequestVO;
 
 import java.util.List;
 
@@ -115,6 +116,14 @@ public class SocialController {
             @RequestAttribute(value = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long userId
     ) {
         return socialService.createReview(owner, repo, id, prReviewCreateDTO, userId);
+    }
+
+    /**
+     * 获取当前用户全部待处理pr信息
+     */
+    @GetMapping("/api/{owner}/pull-requests")
+    public Result<List<PullRequestVO>> getAllPrs(@PathVariable String owner, @RequestParam Integer limit) {
+        return socialService.getAllPrs(owner, limit);
     }
 
 }

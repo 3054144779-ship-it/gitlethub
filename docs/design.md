@@ -302,6 +302,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | GET | `/api/repos/{owner}/{repo}/collaborators` | `List<CollaboratorVO>` | join 用户名 |
 | POST | `/api/repos/{owner}/{repo}/collaborators` | `String` | body `CollaboratorCreateDTO{username,level}`，仅 owner |
 | DELETE | `/api/repos/{owner}/{repo}/collaborators/{userId}` | `String` | 逻辑删除 |
+| GET | `/api/pull-requests/open?owner=&limit=` | `List<PullRequestVO>` | 获取当前用户全部仓库的pr信息 |
 
 约定（前端依赖，改动前请同步前端）：
 
@@ -997,6 +998,9 @@ PR 合并成功
 | Milvus 与 MySQL 分库存储 | 向量检索与事务型元数据查询的索引结构完全不同；Milvus 只存「可检索副本」，权威数据仍在 MySQL/对象库，允许重建 |
 | commit_message 也入 Milvus | 代码考古需要「按变更描述找相似历史」，只有代码块无法回答；用 `content_type` 区分，检索时按场景过滤 |
 | 用 RabbitMQ 解耦索引 | 合并请求不应等待 AST 切分 + 向量化（可能数十秒）；异步失败可进死信重放。代价是索引有延迟、需要幂等与去重 |
+| 每个 chunk 单条调 embedding 接口 | 一个文件几十到几百个 chunk 会产生同等数量的 HTTP 往返。统一走 `to_vector(List[Document])` 批量接口，服务端再按 `EMBED_BATCH_SIZE`（默认 32）切批，文件内只有约 `chunk 数 / 32` 次请求 |
+| 给 embedding / rerank 加 Redis 缓存 | 写入侧文本唯一且长，精确匹配命中率≈0；查询侧只有一次短文本调用，相比 2~10s 的整条 RAG 链路收益 1~5%，用户不可感知。内存成本不低（1024 维 float32 约 4KB/条，10 万条≈400MB），且多一套 key 设计与「换模型后缓存里还是旧维度向量」的一致性风险。此外 LiteLLM 的 Redis cache 默认已覆盖 embedding（不含 rerank），再叠加一层自建缓存更无必要 |
+| embedding 做动态 batching（跨请求合并） | 动态 batching 的主场是本地模型推理（省 kernel launch 等固定开销）；这里是远程 HTTP，并发下 RTT 已经重叠，合并的收益主要出现在「上游按 RPM 限流」的场景。查询侧做 micro-batching 会给每次提问增加等待，与首字延迟冲突；写入侧已按文件批量，跨文件合并的收益低于「攒批窗口 + Future 映射 + 错误传播」约百行的复杂度。先调大 `EMBED_BATCH_SIZE`（32→64/128，受上游单请求上限约束）拿到主要收益 |
 
 ---
 

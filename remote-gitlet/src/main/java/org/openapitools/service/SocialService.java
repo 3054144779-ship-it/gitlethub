@@ -7,6 +7,7 @@ import dto.PrCommentUpdateDTO;
 import dto.PrReviewCreateDTO;
 import vo.PrCommentVO;
 import vo.PrReviewVO;
+import vo.PullRequestVO;
 
 import java.util.List;
 
@@ -59,4 +60,9 @@ public interface SocialService {
      */
     Result<PrReviewVO> createReview(String owner, String repo, Long prId,
                                     PrReviewCreateDTO prReviewCreateDTO, Long userId);
+
+    /**
+     * 获取所有PR
+     */
+    Result<List<PullRequestVO>> getAllPrs(String owner, Integer limit);
 }

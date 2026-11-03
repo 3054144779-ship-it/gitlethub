@@ -256,7 +256,8 @@
       "Bash(mvn -q -pl remote-gitlet,user-service -am compile -DskipTests)",
       "Bash(mvn -q -pl remote-gitlet -am compile -DskipTests)",
       "Bash(sed -n '1,40p' com/github/jesse/l2cache/CacheSyncPolicy.java)",
-      "Bash(sed -n '1,30p' com/github/jesse/l2cache/spi/SPI.java)"
+      "Bash(sed -n '1,30p' com/github/jesse/l2cache/spi/SPI.java)",
+      "Bash(awk '{print $6, $7}')"
     ]
   }
 }
