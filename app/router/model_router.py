@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException
 
 from schema.Request import EmbedRequest, RerankRequest
 from service.models import embed_documents, rerank_group
+from redis.asyncio import Redis
+
 
 logger = logging.getLogger("model")
 
