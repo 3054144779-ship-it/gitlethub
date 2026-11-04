@@ -15,6 +15,10 @@ from client.embeding import EmbeddingModel
 from jinja2 import Environment, Template
 
 
+# 检索 query 不需要全文：整段 diff 会超出 BGE-M3 的 8192 token 上限（SiliconFlow 20015）
+MAX_QUERY_CHARS = 2000
+
+
 def _normalize_path(path: str) -> str:
     """
     将 Windows 反斜杠路径归一化为 POSIX 正斜杠路径。
@@ -73,7 +77,14 @@ class ReviewServiceImpl(ReviewService):
 
         # 用diff信息进行检索
         # 获取diff信息
-        diff_content = str(context.get("diff_data", query)) if context else query
+        if context:
+            # 按文件拼 diff 片段：整段 diff_data（含每个文件的 old/new 全文）会超出模型输入上限
+            diff_content = " ".join(
+                (d.get("diff") or d.get("new_content") or "")[:300]
+                for d in (context.get("diff_data") or [])
+            )[:MAX_QUERY_CHARS] or query[:MAX_QUERY_CHARS]
+        else:
+            diff_content = query[:MAX_QUERY_CHARS]
         # 向量化，获取向量结果
         vector = await embedding_model.to_vector(
             [Document(page_content=diff_content)]
@@ -194,7 +205,7 @@ class ReviewServiceImpl(ReviewService):
         # ========== 2. 构造查询向量（用 diff 摘要，语义更贴近变更内容）==========
         diff_summary = " ".join(
             [d.get("new_content", "")[:300] for d in diff_datas if d.get("new_content")]
-        ) or query
+        )[:MAX_QUERY_CHARS] or query
 
         vector = await embedding_model.to_vector(
             [Document(page_content=diff_summary)]

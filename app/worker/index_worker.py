@@ -216,8 +216,9 @@ async def handle_message(body: str, redis_client: Redis = Provide[Container.redi
         for file in commit.tracked_files:
             # 只处理新增和修改的文件，跳过未变化的
             if file.status == "UNCHANGED":
+                logging.warning(f"文件 {file.file_path} 未变化，跳过")
                 continue
-
+            logging.warning(f"文件 {file.file_path} 变化，不跳过")
             # Redis判断文件是否已处理
             key = path_to_redis_key(file.file_path)
             if await redis_client.exists(key):
