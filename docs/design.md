@@ -301,7 +301,7 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | GET | `/api/repos/{owner}/{repo}/pull-request/{id}/diff` | `List<PrDiffFileVO>` | PR 源分支 vs 目标分支的结构化差异；每行含 `type`(context/add/del)、`oldLine`、`newLine`，二进制与超长截断有标记（2026-10-25 新增，供前端行级评论定位） |
 | POST | `/api/repos/{owner}/{repo}/pull-request/{id}/close` | `String` | 关闭 PR（status=CLOSED） |
 | GET | `/api/repos/{owner}/{repo}/stage?pullRequestId=` | `List<BlobVO>` | 合并冲突暂存区；`path` 为**相对仓库的路径**，二进制文件 `isBinary=true` 且不返回 `content`（§13.14） |
-| PUT | `/api/repos/{owner}/{repo}/modify/stage?pullRequestId=` | `String` | body `List<BlobVO>{path,content}`；**仅仓库 OWNER**，只能改暂存区内已存在的冲突文件（§13.14） |
+| PUT | `/api/repos/{owner}/{repo}/modify/stage?pullRequestId=` | `String` | body `List<BlobVO>{path,content,isDeleted}`；**仅仓库 OWNER**，只能改暂存区内已存在的冲突文件；`isDeleted=true` 表示合并时删除该文件（§13.14） |
 | GET | `/api/repos/{owner}/{repo}/collaborators` | `List<CollaboratorVO>` | join 用户名 |
 | POST | `/api/repos/{owner}/{repo}/collaborators` | `String` | body `CollaboratorCreateDTO{username,level}`，仅 owner |
 | DELETE | `/api/repos/{owner}/{repo}/collaborators/{userId}` | `String` | 逻辑删除 |
@@ -1469,11 +1469,22 @@ gitlethub-frontend/
 - `GET /stage?pullRequestId=`：只读。PR 不存在/不属于该仓库 → `PULL_REQUEST_NOT_FOUND`；
   `stagingPath` 为空（无冲突）→ 空列表。每个 `BlobVO` 的 `sha1` 由文件字节计算；
   前 8KB 含 `\0` 判定为二进制，此时 `isBinary=true`、`content` 为空。
-- `PUT /modify/stage?pullRequestId=`：body 是 `List<BlobVO>{path, content}`。校验顺序为
+- `PUT /modify/stage?pullRequestId=`：body 是 `List<BlobVO>{path, content, isDeleted}`。校验顺序为
   仓库 → PR → `actorId` 非空 → `collaborator.isOwner()` → `stagingPath` 非空 → 列表非空。
   每项路径 `resolve` 后 `normalize`，必须严格位于暂存区根目录内（`target.startsWith(root)`
   且 `target != root`，非法则 `BAD_REQUEST`），且目标必须是**已存在的普通文件**——
-  因此该接口只能改冲突文件，无法新建或写到仓库其他位置。
+  因此该接口只能改冲突文件，无法新建或写到仓库其他位置。`content` 为 `null` 表示不改内容
+  （给二进制文件撤销删除时用）。
+
+**删除语义（2026-11-05 追加）**
+
+- 删除用**显式墓碑**表达，不靠「暂存区目录里缺文件」推断：暂存区根目录下维护明文清单
+  `.gitlet-deletions`（一行一个相对路径）。用户标记删除时**不物理删除文件**，只写清单——
+  撤销删除就是删掉一行，也不需要回读对象库。
+- `getStage` 跳过清单文件本身，并给命中路径回填 `isDeleted=true`；`modifyStage` 按标记增删清单；
+  `mergeFromStaging` 在 `putAll(resolvedFileShas)` 之后执行 `keySet().removeAll(deletedPaths)`，
+  并让 `collectResolvedFiles` 跳过墓碑路径（否则「删掉一个还带冲突标记的文件」会被卡住）。
+- 清单在暂存区目录内，合并成功后的 `cleanupStaging` 递归删除暂存区时会一并清理，无额外回收逻辑。
 
 **前端**：`PRDetailView` 打开且仅当 `OPEN + OWNER` 时拉暂存区；合并失败后自动刷新暂存区并切到
 「冲突解决 (n)」页签。编辑器检测 `<<<<<<<` / `=======` / `>>>>>>>` 标记，未清空时禁止再次合并。
@@ -1482,11 +1493,10 @@ gitlethub-frontend/
 
 **已知限制**（不在这版范围内）
 
-- **删除型解决不生效**：接口只接受 `{path, content}`，没有「删除该文件」的语义；
-  若用户想通过删空/删除文件来表达「删除」，`mergeFromStaging` 仍会按内容建 blob。
 - **暂存区生成后 source 的新提交不参与重算**：重新合并走 `mergeFromStaging`，基准是生成冲突时的
   `staging_path_tracked`，source 分支此后的改动会被忽略（需先关闭再重建 PR）。
 - 冲突文件较大的仓库可能超出 Web 编辑器舒适区，仍建议 CLI。
+- 删除不回收磁盘：被删文件的旧 blob 仍被历史提交引用，且仓库目前没有 GC。
 
 **Why:** 复用现有合并接口 + 冲突标记校验，天然幂等（类似 `git merge` 重试），不需要新增状态机；
 把「写哪里」收敛到「暂存区内已存在的文件」后，即使前端传任意路径也写不到仓库其他位置。

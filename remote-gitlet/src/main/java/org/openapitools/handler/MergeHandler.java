@@ -11,6 +11,7 @@ import org.openapitools.mapper.RemoteUserMapper;
 import gitlet.commit.Commit;
 import org.openapitools.message.MsgConstant;
 import org.openapitools.model.RepositoryPaths;
+import org.openapitools.utils.StagingTombstone;
 import org.openapitools.utils.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -248,12 +249,15 @@ public class MergeHandler {
             return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, "无法读取 commit 对象。");
         }
         
+        // 标记删除的路径：暂存区里文件仍在（便于撤销），合并时需要从 trackedFiles 中移除
+        Set<String> deletedPaths = StagingTombstone.read(stagingDir.toPath());
+
         // 收集暂存区中的所有文件
         Map<String, String> resolvedFileShas = new HashMap<>();
         List<String> filesWithConflictMarkers = new ArrayList<>();
-        
+
         // 遍历暂存区目录
-        collectResolvedFiles(stagingDir, "", resolvedFileShas, filesWithConflictMarkers, paths);
+        collectResolvedFiles(stagingDir, "", resolvedFileShas, filesWithConflictMarkers, paths, deletedPaths);
         
         // 检查是否有文件仍包含冲突标记
         if (!filesWithConflictMarkers.isEmpty()) {
@@ -262,9 +266,10 @@ public class MergeHandler {
                     "以下文件仍包含冲突标记，请继续解决：" + String.join(", ", filesWithConflictMarkers));
         }
         
-        // 构建合并后的 trackedFiles
+        // 构建合并后的 trackedFiles：先叠加解决后的文件，再删掉标记删除的路径
         Map<String, String> mergedTrackedFiles = Utils.readObject(stagingPathFile,  HashMap.class);
         mergedTrackedFiles.putAll(resolvedFileShas);
+        mergedTrackedFiles.keySet().removeAll(deletedPaths);
         
         // 创建合并提交
         return createMergeCommitFromStaging(repositoryId, paths, mergedTrackedFiles,
@@ -277,19 +282,26 @@ public class MergeHandler {
     private void collectResolvedFiles(File dir, String relativePath,
                                        Map<String, String> resolvedFileShas,
                                        List<String> filesWithConflictMarkers,
-                                       RepositoryPaths paths) {
+                                       RepositoryPaths paths,
+                                       Set<String> deletedPaths) {
         File[] files = dir.listFiles();
         if (files == null) {
             return;
         }
-        
+
         for (File file : files) {
-            String currentRelativePath = relativePath.isEmpty() ? 
+            String currentRelativePath = relativePath.isEmpty() ?
                     file.getName() : relativePath + "/" + file.getName();
-            
+
+            // 删除清单不是仓库文件；标记删除的文件不参与冲突标记检查和 blob 写入
+            if (file.isFile()
+                    && (StagingTombstone.FILE_NAME.equals(file.getName()) || deletedPaths.contains(currentRelativePath))) {
+                continue;
+            }
+
             if (file.isDirectory()) {
-                collectResolvedFiles(file, currentRelativePath, resolvedFileShas, 
-                        filesWithConflictMarkers, paths);
+                collectResolvedFiles(file, currentRelativePath, resolvedFileShas,
+                        filesWithConflictMarkers, paths, deletedPaths);
             } else {
                 String content = Utils.readContentsAsString(file);
 

@@ -292,7 +292,10 @@
       "Bash(sed -n 340,395p remote-gitlet/src/main/java/org/openapitools/controller/RemoteController.java)",
       "Bash(sed -n 290,420p remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
       "Bash(sed -n '270,310p' docs/design.md)",
-      "Bash(sed -n '1426,1470p' docs/design.md)"
+      "Bash(sed -n '1426,1470p' docs/design.md)",
+      "Bash(xargs -I{} sh -c 'echo \"=== {}\"; cat \"{}\"')",
+      "Bash(sed -n '400,432p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
+      "Bash(sed -n '1,60p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)"
     ]
   }
 }

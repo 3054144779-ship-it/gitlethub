@@ -15,4 +15,6 @@ public class BlobVO {
     private String content;
 
     private Boolean isBinary;
+
+    private Boolean isDeleted = false;
 }

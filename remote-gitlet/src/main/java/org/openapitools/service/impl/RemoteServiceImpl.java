@@ -19,6 +19,7 @@ import org.openapitools.message.MsgConstant;
 import org.openapitools.model.*;
 import org.openapitools.service.RemoteService;
 import org.openapitools.service.support.RepositoryObjectReader;
+import org.openapitools.utils.StagingTombstone;
 import org.openapitools.utils.Utils;
 import org.openapitools.verification.BranchVerification;
 import org.openapitools.verification.PermissionValidation;
@@ -338,6 +339,7 @@ public class RemoteServiceImpl implements RemoteService {
         if (repositoryId == null) {
             return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
         }
+
         PullRequest pullRequest = findStagePullRequest(repositoryId, pullRequestId);
         if (pullRequest == null) {
             return Result.fail(ResultCode.PULL_REQUEST_NOT_FOUND, MsgConstant.THE_PULL_REQUEST_DOES_NOT_EXIST);
@@ -370,13 +372,20 @@ public class RemoteServiceImpl implements RemoteService {
             return Result.fail(ResultCode.BAD_REQUEST, "暂存区不存在，请重新触发合并");
         }
 
+        Set<String> deletedPaths = StagingTombstone.read(root);
+
         int saved = 0;
+        int deleted = 0;
         try {
             for (BlobVO blob : blobVOList) {
-                if (blob == null || StrUtil.isBlank(blob.getPath()) || blob.getContent() == null) {
+                if (blob == null || StrUtil.isBlank(blob.getPath())) {
                     continue;
                 }
-                Path target = root.resolve(blob.getPath().replace('\\', '/')).normalize();
+                String relativePath = blob.getPath().replace('\\', '/');
+                if (StagingTombstone.FILE_NAME.equals(relativePath)) {
+                    return Result.fail(ResultCode.BAD_REQUEST, "非法文件路径: " + blob.getPath());
+                }
+                Path target = root.resolve(relativePath).normalize();
                 if (target.equals(root) || !target.startsWith(root)) {
                     return Result.fail(ResultCode.BAD_REQUEST, "非法文件路径: " + blob.getPath());
                 }
@@ -384,16 +393,33 @@ public class RemoteServiceImpl implements RemoteService {
                 if (!Files.isRegularFile(target)) {
                     return Result.fail(ResultCode.BAD_REQUEST, "冲突文件中不存在该路径: " + blob.getPath());
                 }
-                Files.write(target, blob.getContent().getBytes(StandardCharsets.UTF_8));
-                saved++;
+                // 用规范化后的相对路径记账，避免 a/../b 这类写法与读取端算出的路径对不上
+                String stagedPath = root.relativize(target).toString().replace('\\', '/');
+
+                if (Boolean.TRUE.equals(blob.getIsDeleted())) {
+                    // 只记录删除意图，文件本身保留在暂存区：撤销删除不需要回读对象库
+                    if (deletedPaths.add(stagedPath)) {
+                        deleted++;
+                    }
+                } else {
+                    // content 为 null 表示不改内容（例如给二进制文件撤销删除），只清删除标记
+                    if (blob.getContent() != null) {
+                        Files.write(target, blob.getContent().getBytes(StandardCharsets.UTF_8));
+                        saved++;
+                    }
+                    if (deletedPaths.remove(stagedPath)) {
+                        deleted++;
+                    }
+                }
             }
+            StagingTombstone.write(root, deletedPaths);
         } catch (IOException e) {
             log.error("写入暂存区失败 PR={}", pullRequestId, e);
             return Result.fail(ResultCode.INTERNAL_SERVER_ERROR, MsgConstant.INTERNAL_SERVER_ERROR);
         }
 
-        log.info("暂存区保存完成 PR={} 文件数={}", pullRequestId, saved);
-        return Result.ok("已保存 " + saved + " 个文件");
+        log.info("暂存区保存完成 PR={} 文件数={} 删除标记数={}", pullRequestId, saved, deleted);
+        return Result.ok("已保存 " + saved + " 个文件，标记删除 " + deleted + " 个文件");
     }
 
     /** 按仓库 + PR id 查 PR；id 非法时返回 null，避免 Long.valueOf 抛异常变成 500 */
@@ -433,17 +459,21 @@ public class RemoteServiceImpl implements RemoteService {
             return result;
         }
 
+        Set<String> deletedPaths = StagingTombstone.read(root);
         try (Stream<Path> stream = Files.walk(root)) {
             stream.filter(Files::isRegularFile)
+                    .filter(path -> !StagingTombstone.FILE_NAME.equals(path.getFileName().toString()))
                     .sorted()
                     .forEach(path -> {
                         try {
                             byte[] bytes = Files.readAllBytes(path);
                             boolean binary = isBinary(bytes);
+                            String relativePath = root.relativize(path).toString().replace('\\', '/');
                             BlobVO vo = new BlobVO();
-                            vo.setPath(root.relativize(path).toString().replace('\\', '/'));
+                            vo.setPath(relativePath);
                             vo.setBlobSha(Utils.sha1(bytes));
                             vo.setIsBinary(binary);
+                            vo.setIsDeleted(deletedPaths.contains(relativePath));
                             // 二进制文件前端只展示路径、不允许在线编辑
                             if (!binary) {
                                 vo.setContent(new String(bytes, StandardCharsets.UTF_8));
