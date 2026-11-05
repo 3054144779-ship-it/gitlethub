@@ -295,7 +295,9 @@
       "Bash(sed -n '1426,1470p' docs/design.md)",
       "Bash(xargs -I{} sh -c 'echo \"=== {}\"; cat \"{}\"')",
       "Bash(sed -n '400,432p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
-      "Bash(sed -n '1,60p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)"
+      "Bash(sed -n '1,60p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
+      "Bash(sed -n '160,200p' /d/Job_project/gitlethub-frontend/src/views/PRDetailView.vue)",
+      "Bash(sed -n '1,80p' /d/Job_project/gitlethub-frontend/src/api/http.js)"
     ]
   }
 }

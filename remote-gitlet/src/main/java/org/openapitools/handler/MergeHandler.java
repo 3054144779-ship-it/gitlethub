@@ -437,7 +437,12 @@ public class MergeHandler {
         BranchPointer target = branchPointerMapper.getBranchPointer(repositoryId, targetBranch);
         target.setCommitSha(mergeSha);
         target.setUpdateTime(LocalDateTime.now());
-        branchPointerMapper.updateBranchPointer(repositoryId, mergeSha, target.getVersion());
+        // 必须按分支指针的主键更新；这里曾经误传 repositoryId，导致合并提交建了但分支指针没动
+        int line = branchPointerMapper.updateBranchPointer(target.getId(), mergeSha, target.getVersion());
+        if (line < 1) {
+            log.warn("更新分支指针失败: {} (id={}, version={})", targetBranch, target.getId(), target.getVersion());
+            return Result.fail(ResultCode.REMOTE_REPOSITORY_UPDATE_FAILED, MsgConstant.REMOTE_REPOSITORY_UPDATE_FAILED);
+        }
 
         commitPointerMapper.insertCommitParent(repositoryId, mergeSha, targetSha);
         commitPointerMapper.insertCommitParent(repositoryId, mergeSha, sourceSha);
