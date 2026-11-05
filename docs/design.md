@@ -86,13 +86,14 @@ CommandHandler commands = new CommandHandler(repo);   // 四个 Handler 均只�
 
 - 不实现 Git 线协议（smart HTTP / packfile），不追求与真 git 互通。
 - ~~不做 Web UI，交互一律走 CLI。~~ **2026-09-29 取消**：改为「Web 只读浏览 + PR/协作者管理」，
-  写操作（push/pull/clone/冲突解决）仍走 CLI（见 §13.4）。
+  写操作（push/pull/clone）仍走 CLI；PR 合并冲突已支持 Web 端在线编辑（见 §13.14）。
 - 不做分布式部署，先单机单盘。
 - 不做细粒度权限模型，先只区分 owner / 非 owner。
 - 不做断点续传、增量打包等传输优化。
 - ~~不做仓库可视化、issue、PR、CI 等，只做托管 + AI。~~ **2026-09-29 部分取消**：
   仓库可视化（文件/提交/分支）与 PR 已实现；issue、CI 仍不做。
-- **Web 端不做冲突解决可视化编辑器**（合并冲突仅在 UI 提示，解决走 CLI）。
+- ~~Web 端不做冲突解决可视化编辑器~~ **2026-11-05 取消**：合并产生冲突后，仓库 OWNER 可在 PR 详情页
+  在线编辑暂存区文件并重新合并（见 §13.14）；二进制文件仍需 CLI。
 
 > 非目标比目标重要：它是防止范围蔓延的唯一手段。
 
@@ -299,6 +300,8 @@ openapi-generator generate -i docs/openapi.yaml -g spring -o remote-gitlet
 | GET | `/api/repos/{owner}/{repo}/pull-request/{id}` | `PullRequestVO` | 单个 PR 详情 |
 | GET | `/api/repos/{owner}/{repo}/pull-request/{id}/diff` | `List<PrDiffFileVO>` | PR 源分支 vs 目标分支的结构化差异；每行含 `type`(context/add/del)、`oldLine`、`newLine`，二进制与超长截断有标记（2026-10-25 新增，供前端行级评论定位） |
 | POST | `/api/repos/{owner}/{repo}/pull-request/{id}/close` | `String` | 关闭 PR（status=CLOSED） |
+| GET | `/api/repos/{owner}/{repo}/stage?pullRequestId=` | `List<BlobVO>` | 合并冲突暂存区；`path` 为**相对仓库的路径**，二进制文件 `isBinary=true` 且不返回 `content`（§13.14） |
+| PUT | `/api/repos/{owner}/{repo}/modify/stage?pullRequestId=` | `String` | body `List<BlobVO>{path,content}`；**仅仓库 OWNER**，只能改暂存区内已存在的冲突文件（§13.14） |
 | GET | `/api/repos/{owner}/{repo}/collaborators` | `List<CollaboratorVO>` | join 用户名 |
 | POST | `/api/repos/{owner}/{repo}/collaborators` | `String` | body `CollaboratorCreateDTO{username,level}`，仅 owner |
 | DELETE | `/api/repos/{owner}/{repo}/collaborators/{userId}` | `String` | 逻辑删除 |
@@ -1213,7 +1216,7 @@ gitlethub-frontend/
 
 - **不依赖、不修改 `gitlet_core`**：为保持本地 CLI 轻量，本次所有兼容性 / 只读接口工作
   **自包含在 `remote-gitlet`**（见 §7 的序列化兼容说明）。
-- **不做冲突解决可视化编辑器**：合并冲突仅在 UI 提示，解决走 CLI。
+- ~~不做冲突解决可视化编辑器~~ **2026-11-05 取消**：见 §13.14（仅文本文件，二进制仍走 CLI）。
 - 不做标签、网关改造。
 - AI 只做**对话式助手**：不做全局悬浮入口；对话已改为 SSE 流式输出（见 §13.6）。
 - 回答按 **Markdown 渲染**（`marked` + `DOMPurify` 清洗，防 XSS），但不做代码语法高亮；
@@ -1453,6 +1456,44 @@ gitlethub-frontend/
 （如图片遮罩、diff 底色）时，在注释里说明它为何不随主题变化。验证时两种主题都要过一遍
 卡片、抽屉、弹窗、表格、空状态和表单控件。
 
+### 13.14 PR 合并冲突在线解决（2026-11-05 新增）
+
+合并冲突不再只能走 CLI：仓库 OWNER 在 PR 详情页直接编辑暂存区里的冲突文件，保存后重新合并。
+
+**数据来源**：冲突文件在 `pull_request.staging_path` 指向的**目录**里（`staging_path_tracked` 是
+序列化的追踪表文件，不是目录，**不能**当暂存区读）。`getStage` 递归遍历该目录，`path` 由
+`root.relativize(file)` 得到并统一成正斜杠，绝不返回服务器绝对路径。
+
+**接口契约**
+
+- `GET /stage?pullRequestId=`：只读。PR 不存在/不属于该仓库 → `PULL_REQUEST_NOT_FOUND`；
+  `stagingPath` 为空（无冲突）→ 空列表。每个 `BlobVO` 的 `sha1` 由文件字节计算；
+  前 8KB 含 `\0` 判定为二进制，此时 `isBinary=true`、`content` 为空。
+- `PUT /modify/stage?pullRequestId=`：body 是 `List<BlobVO>{path, content}`。校验顺序为
+  仓库 → PR → `actorId` 非空 → `collaborator.isOwner()` → `stagingPath` 非空 → 列表非空。
+  每项路径 `resolve` 后 `normalize`，必须严格位于暂存区根目录内（`target.startsWith(root)`
+  且 `target != root`，非法则 `BAD_REQUEST`），且目标必须是**已存在的普通文件**——
+  因此该接口只能改冲突文件，无法新建或写到仓库其他位置。
+
+**前端**：`PRDetailView` 打开且仅当 `OPEN + OWNER` 时拉暂存区；合并失败后自动刷新暂存区并切到
+「冲突解决 (n)」页签。编辑器检测 `<<<<<<<` / `=======` / `>>>>>>>` 标记，未清空时禁止再次合并。
+「保存并重新合并」= `PUT /modify/stage` 成功后调用 `POST /pull-request/{id}`。
+二进制文件只展示提示，仍需用 CLI 解决。
+
+**已知限制**（不在这版范围内）
+
+- **删除型解决不生效**：接口只接受 `{path, content}`，没有「删除该文件」的语义；
+  若用户想通过删空/删除文件来表达「删除」，`mergeFromStaging` 仍会按内容建 blob。
+- **暂存区生成后 source 的新提交不参与重算**：重新合并走 `mergeFromStaging`，基准是生成冲突时的
+  `staging_path_tracked`，source 分支此后的改动会被忽略（需先关闭再重建 PR）。
+- 冲突文件较大的仓库可能超出 Web 编辑器舒适区，仍建议 CLI。
+
+**Why:** 复用现有合并接口 + 冲突标记校验，天然幂等（类似 `git merge` 重试），不需要新增状态机；
+把「写哪里」收敛到「暂存区内已存在的文件」后，即使前端传任意路径也写不到仓库其他位置。
+
+**How to apply:** 新增暂存区能力时继续走 `staging_path` 目录，保持相对路径与二进制跳过约定；
+不要暴露绝对路径，也不要放松 OWNER 校验。
+
 ---
 
 ## 14. 中间件部署编排（2026-10-26 新增）
@@ -1591,12 +1632,21 @@ analyzer、`max_length` 或 metric_type，都属于 collection schema 变更，�
   镜像里默认 `STORAGE_BASE_PATH=/app/storage` 并预建目录，运行时把宿主机目录挂到
   `/app/storage`（Linux 宿主机还要 `chown 1001:1001`）。不挂卷时仓库只存在容器可写层，
   `docker rm` 即全部丢失；已有仓库要先把原目录内容拷进卷。
+- **ai-helper 必须挂同一份仓库目录（2026-11-05 新增）**：索引 worker 消费的 MQ 消息里，
+  `tracked_files[].file_path` 是 `remote-gitlet` 容器内的绝对路径（`/app/storage/...`），
+  它按这个路径直接读 blob。worker 容器没有这份挂载时会报
+  `[Errno 2] No such file or directory`，且只有 `MODIFIED` 的文件会被读取，`UNCHANGED`
+  的文件在访问前就跳过了，表现像"部分文件正常"。因此 `ai-helper` 的 `api` 与
+  `index-worker` 都要把同一宿主目录挂到 `/app/storage`（`:ro` 即可），源目录由
+  `GITLET_STORAGE_DIR` 指定，必须与 `remote-gitlet` 的 `-v` 源一致。
+  卷可以落在 NAS 上，只要两个容器挂的是宿主机上同一个路径。
 - **跨容器寻址**：三个 Java 服务注册的是容器 IP；同一 Docker 网络内 `lb://` 可直连，
   跨主机或与宿主机进程混跑时必须设置 `spring.cloud.nacos.discovery.ip`
   （环境变量 `SPRING_CLOUD_NACOS_DISCOVERY_IP`）为对端可达地址。
 - **`remote-gitlet` 在本地服务器、网关于云端**：注册 IP 必须是云端可达的地址（Tailscale
   或公网），且宿主机要发布 8082 并只绑定该地址；反过来它通过 Nacos 调 helper 时，
-  helper 注册的 `SERVICE_IP` 必须本地可达。`STORAGE_BASE_PATH` 的卷只放本机磁盘。
+  helper 注册的 `SERVICE_IP` 必须本地可达。`STORAGE_BASE_PATH` 的卷放在
+  `remote-gitlet` 所在机器（本机磁盘或该机挂载的 NAS），不要放到云端网关机上。
 
 **Why:** 运行镜像与构建环境分离，镜像可复现、体积可控；非 root 和内存百分比是容器
 部署的默认安全姿势。helper 的依赖转换必须在构建期解决，否则 Windows freeze 在 Linux
@@ -1690,7 +1740,7 @@ tip）就不要再加删除逻辑；必须显式失效的，写路径与缓存 k
 | D28 | gitlet pull应该拉取哪个仓库？多个绑定呢？ |  | 一个本地分支同一时间只能选其中一个作为上游。 |
 | D29 | 循环生成合并冲突文件问题：如果说生成了暂存区的合并冲突文件的话，修改改这个文件，假设把远程仓库的文件内容删了，这个时候文件内容和未生成合并冲突时候提交的文件内容一样，再提交的时候依然生成冲突文件 | | 加一个校验，如果当前文件在暂存区中有优先采用暂存区中的文件，并对暂存区中的文件进行冲突检查即 |
 | D30 | 是否做 Web 前端（推翻 §2「不做 Web UI」的非目标） | 做 | 做：Vue3 + Vite 独立工程 `gitlethub-frontend`，前后端分离，前端不放进 `gitlethub` 仓库 |
-| D31 | Web 端做什么、不做什么 | 只读浏览 + PR/协作者管理 | 登录/注册/个人中心、仓库详情（文件/提交/分支）、PR 全流程、协作者/仓库设置；**不做**冲突解决可视化编辑器 |
+| D31 | Web 端做什么、不做什么 | 只读浏览 + PR/协作者管理 | 登录/注册/个人中心、仓库详情（文件/提交/分支）、PR 全流程、协作者/仓库设置；**2026-11-05 补**：增加冲突解决编辑器（仅文本文件，见 §13.14） |
 | D32 | 为解决序列化兼容，是否允许改 `gitlet_core` | 不改 | **不允许**：为保持本地 CLI 轻量，兼容性工作全部自包含在 `remote-gitlet`（把重复类移到 `gitlet.commit` 包） |
 | D33 | `remote-gitlet` 端口 | 修正为 8080（`user-service` 保持 8081） | 同建议，已在 `bootstrap.yaml` 修正 |
 | D34 | 前端在 gateway 不可用时怎么连后端 | Vite dev proxy 直连两个服务 | 同建议（`/api`→8080，`/user`→8081），后端零改动 |

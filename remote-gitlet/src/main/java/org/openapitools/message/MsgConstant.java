@@ -31,4 +31,6 @@ public class MsgConstant {
     public static final String SYSTEM_ERROR = "系统错误";
     public static final String REJECT_MERGING_IRRELEVANT_HISTORY = "拒绝合并无关历史";
     public static final String TASK_REJECTED = "队列已满，任务被拒绝，请稍后再试";
+    public static final String THE_PULL_REQUEST_DOES_NOT_EXIST = "Pull Request 不存在";
+    public static final String INTERNAL_SERVER_ERROR = "更新暂存区失败";
 }

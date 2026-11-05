@@ -358,4 +358,32 @@ public class RemoteController {
         return ResponseEntity.ok(blobQueryService.getBlob(owner, repo, ref, path));
     }
 
+
+    /**
+     * 获取暂存区信息
+     */
+    @GetMapping("/stage")
+    public ResponseEntity<Result<List<BlobVO>>> getStage(
+            @PathVariable String owner,
+            @PathVariable String repo,
+            @RequestParam String pullRequestId
+    ) {
+        return ResponseEntity.ok(remoteService.getStage(owner, repo, pullRequestId));
+    }
+
+    /**
+     * 修改暂存区
+     */
+    @PutMapping("/modify/stage")
+    public ResponseEntity<Result<String>> modifyStage(
+            @PathVariable String owner,
+            @PathVariable String repo,
+            @RequestParam String pullRequestId,
+            @RequestBody List<BlobVO> blobVO,
+            @RequestAttribute(name = JwtAuthFilter.USER_ID_ATTRIBUTE, required = false) Long actorId
+    ) {
+        return ResponseEntity.ok(remoteService.modifyStage(owner, repo, pullRequestId, blobVO, actorId));
+    }
+
+
 }

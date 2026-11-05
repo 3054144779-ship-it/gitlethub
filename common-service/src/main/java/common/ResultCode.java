@@ -81,7 +81,11 @@ public final class ResultCode {
     /** 用户不存在 */
     public static final int USER_NOT_FOUND = 1006;
 
+    /** Pull Request 不存在 */
+    public static final int PULL_REQUEST_NOT_FOUND = 30010;
 
+    /** 更新暂存区失败 */
+    public static final int INTERNAL_SERVER_ERROR = 90003;
     private ResultCode() {
     }
 }

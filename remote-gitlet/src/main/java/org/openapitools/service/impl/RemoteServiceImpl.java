@@ -34,10 +34,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import bo.ObjectBundle;
 import bo.GitletObject;
+import vo.BlobVO;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Stream;
 
 
 @Slf4j
@@ -305,6 +311,164 @@ public class RemoteServiceImpl implements RemoteService {
         return Result.ok();
     }
 
+    @Override
+    public Result<List<BlobVO>> getStage(String owner, String repo, String pullRequestId) {
+        log.info("获取暂存区 {} {} PR={}", owner, repo, pullRequestId);
+
+        Long repositoryId = repositoryObjectReader.resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        PullRequest pullRequest = findStagePullRequest(repositoryId, pullRequestId);
+        if (pullRequest == null) {
+            return Result.fail(ResultCode.PULL_REQUEST_NOT_FOUND, MsgConstant.THE_PULL_REQUEST_DOES_NOT_EXIST);
+        }
+
+        // 冲突文件在 stagingPath 目录里；stagingPathTracked 是已自动合并文件映射的序列化文件，
+        // 不是目录，拿它 listFiles 永远为空。
+        return Result.ok(readStageFiles(pullRequest.getStagingPath()));
+    }
+
+    @Override
+    public Result<String> modifyStage(String owner, String repo, String pullRequestId,
+                                      List<BlobVO> blobVOList, Long actorId) {
+        log.info("修改暂存区 {} {} PR={} by {}", owner, repo, pullRequestId, actorId);
+
+        Long repositoryId = repositoryObjectReader.resolveRepositoryId(owner, repo);
+        if (repositoryId == null) {
+            return Result.fail(ResultCode.REPOSITORY_NOT_FOUND, MsgConstant.THE_WAREHOUSE_DOES_NOT_EXIST);
+        }
+        PullRequest pullRequest = findStagePullRequest(repositoryId, pullRequestId);
+        if (pullRequest == null) {
+            return Result.fail(ResultCode.PULL_REQUEST_NOT_FOUND, MsgConstant.THE_PULL_REQUEST_DOES_NOT_EXIST);
+        }
+        // 冲突解决结果最终会被合并进目标分支，权限与合并保持一致：仅 OWNER
+        if (actorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+        Collaborator collaborator = remoteCollaborator.getCollaborator(actorId, repositoryId);
+        if (collaborator == null || collaborator.getLevel() == null || !collaborator.getLevel().isOwner()) {
+            log.warn("调用者(id={}) 不是仓库 {} 的 OWNER，拒绝修改暂存区", actorId, owner);
+            return Result.fail(ResultCode.UNAUTHORIZED, MsgConstant.UNAUTHORIZED);
+        }
+        if (StrUtil.isBlank(pullRequest.getStagingPath())) {
+            return Result.fail(ResultCode.BAD_REQUEST, "该 PR 没有待解决的冲突");
+        }
+        if (CollUtil.isEmpty(blobVOList)) {
+            return Result.ok("没有需要保存的文件");
+        }
+
+        // 所有写入都必须落在暂存目录内，禁止客户端用绝对路径或 .. 写到服务器任意位置
+        Path root;
+        try {
+            root = new File(pullRequest.getStagingPath()).getCanonicalFile().toPath();
+        } catch (IOException e) {
+            log.error("暂存区路径非法: {}", pullRequest.getStagingPath(), e);
+            return Result.fail(ResultCode.INTERNAL_SERVER_ERROR, MsgConstant.INTERNAL_SERVER_ERROR);
+        }
+        if (!Files.isDirectory(root)) {
+            return Result.fail(ResultCode.BAD_REQUEST, "暂存区不存在，请重新触发合并");
+        }
+
+        int saved = 0;
+        try {
+            for (BlobVO blob : blobVOList) {
+                if (blob == null || StrUtil.isBlank(blob.getPath()) || blob.getContent() == null) {
+                    continue;
+                }
+                Path target = root.resolve(blob.getPath().replace('\\', '/')).normalize();
+                if (target.equals(root) || !target.startsWith(root)) {
+                    return Result.fail(ResultCode.BAD_REQUEST, "非法文件路径: " + blob.getPath());
+                }
+                // 只允许改暂存区里已有的冲突文件，不允许借这个接口新增/覆盖仓库其他文件
+                if (!Files.isRegularFile(target)) {
+                    return Result.fail(ResultCode.BAD_REQUEST, "冲突文件中不存在该路径: " + blob.getPath());
+                }
+                Files.write(target, blob.getContent().getBytes(StandardCharsets.UTF_8));
+                saved++;
+            }
+        } catch (IOException e) {
+            log.error("写入暂存区失败 PR={}", pullRequestId, e);
+            return Result.fail(ResultCode.INTERNAL_SERVER_ERROR, MsgConstant.INTERNAL_SERVER_ERROR);
+        }
+
+        log.info("暂存区保存完成 PR={} 文件数={}", pullRequestId, saved);
+        return Result.ok("已保存 " + saved + " 个文件");
+    }
+
+    /** 按仓库 + PR id 查 PR；id 非法时返回 null，避免 Long.valueOf 抛异常变成 500 */
+    private PullRequest findStagePullRequest(Long repositoryId, String pullRequestId) {
+        if (StrUtil.isBlank(pullRequestId)) {
+            return null;
+        }
+        long id;
+        try {
+            id = Long.parseLong(pullRequestId.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        return remotePullRequestMapper.selectOne(
+                new QueryWrapper<PullRequest>().lambda()
+                        .eq(PullRequest::getId, id)
+                        .eq(PullRequest::getRepositoryId, repositoryId));
+    }
+
+    /**
+     * 递归读取暂存区目录。返回的 path 是相对路径（与仓库内文件路径一致），
+     * 不把服务器绝对路径暴露给前端。
+     */
+    private List<BlobVO> readStageFiles(String stagingPath) {
+        List<BlobVO> result = new ArrayList<>();
+        if (StrUtil.isBlank(stagingPath)) {
+            return result;
+        }
+        Path root;
+        try {
+            root = new File(stagingPath).getCanonicalFile().toPath();
+        } catch (IOException e) {
+            log.warn("暂存区路径非法: {}", stagingPath, e);
+            return result;
+        }
+        if (!Files.isDirectory(root)) {
+            return result;
+        }
+
+        try (Stream<Path> stream = Files.walk(root)) {
+            stream.filter(Files::isRegularFile)
+                    .sorted()
+                    .forEach(path -> {
+                        try {
+                            byte[] bytes = Files.readAllBytes(path);
+                            boolean binary = isBinary(bytes);
+                            BlobVO vo = new BlobVO();
+                            vo.setPath(root.relativize(path).toString().replace('\\', '/'));
+                            vo.setBlobSha(Utils.sha1(bytes));
+                            vo.setIsBinary(binary);
+                            // 二进制文件前端只展示路径、不允许在线编辑
+                            if (!binary) {
+                                vo.setContent(new String(bytes, StandardCharsets.UTF_8));
+                            }
+                            result.add(vo);
+                        } catch (IOException e) {
+                            log.warn("读取暂存区文件失败: {}", path, e);
+                        }
+                    });
+        } catch (IOException e) {
+            log.warn("遍历暂存区失败: {}", stagingPath, e);
+        }
+        return result;
+    }
+
+    /** 简单的二进制判定：前 8KB 出现 NUL 字节即视为二进制 */
+    private boolean isBinary(byte[] bytes) {
+        int limit = Math.min(bytes.length, 8192);
+        for (int i = 0; i < limit; i++) {
+            if (bytes[i] == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
 
 
     /**

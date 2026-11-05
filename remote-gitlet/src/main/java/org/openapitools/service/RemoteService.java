@@ -7,6 +7,9 @@ import org.openapitools.model.ObjectUploadRequest;
 import org.openapitools.model.ObjectUploadResult;
 import org.openapitools.model.RefUpdateRequest;
 import org.openapitools.model.RefView;
+import vo.BlobVO;
+
+import java.util.List;
 
 /**
  * 仓库的写操作与对象传输（push / pull / clone / 建仓）。
@@ -81,4 +84,23 @@ public interface RemoteService {
     Result<RefView> pushForceUpdateBranch(String owner, String repo,
                                                  String branch, RefUpdateRequest refUpdateRequest, Long actorId);
 
+    /**
+     * 获取暂存区对象
+      * @param owner  (required) 当前仓库的所有者
+      * @param repo  (required) 当前仓库的名称
+     * @return
+     */
+    Result<List<BlobVO>> getStage(String owner, String repo, String pullRequestId);
+
+    /**
+     * 修改暂存区对象
+      * @param owner  (required) 当前仓库的所有者
+      * @param repo  (required) 当前仓库的名称
+      * @param pullRequestId  (required) 拉取请求ID
+      * @param blobVO  (required) 要保存的冲突文件，path 为暂存区内的相对路径
+      * @param actorId  (optional) 调用者用户 ID；仅仓库 OWNER 可修改
+      * @return 操作结果
+     */
+    Result<String> modifyStage(String owner, String repo, String pullRequestId,
+                               List<BlobVO> blobVO, Long actorId);
 }

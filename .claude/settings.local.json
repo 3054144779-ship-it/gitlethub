@@ -282,7 +282,17 @@
       "Bash(xargs -I{} sh -c 'echo \"===== {}\"; cat \"{}\"')",
       "Bash(mvn -q -pl gitlet_core -am compile -DskipTests)",
       "Bash(mvn -q -pl gitlet_core -am dependency:build-classpath -Dmdep.outputFile=D:/Job_project/gitlethub/gitlet_core/cp.txt)",
-      "Bash(java -cp \"D:/Job_project/gitlethub/gitlet_core/target/classes;$\\(cat D:/Job_project/gitlethub/gitlet_core/cp.txt\\)\" gitlet.Main pull origin master)"
+      "Bash(java -cp \"D:/Job_project/gitlethub/gitlet_core/target/classes;$\\(cat D:/Job_project/gitlethub/gitlet_core/cp.txt\\)\" gitlet.Main pull origin master)",
+      "Bash(sed -n 150,215p remote-gitlet/src/main/java/org/openapitools/handler/MergeHandler.java)",
+      "Bash(sed -n 340,410p remote-gitlet/src/main/java/org/openapitools/handler/MergeHandler.java)",
+      "Bash(sed -n 1,200p /d/Job_project/gitlet_ai_helper/app/worker/main.py)",
+      "Bash(sed -n 1,200p /d/Job_project/gitlet_ai_helper/app/client/mq_consumer.py)",
+      "Bash(command -v docker)",
+      "Bash(GITLET_STORAGE_DIR=/mnt/nas/gitlethub/remote-gitlet docker compose config -q)",
+      "Bash(sed -n 340,395p remote-gitlet/src/main/java/org/openapitools/controller/RemoteController.java)",
+      "Bash(sed -n 290,420p remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
+      "Bash(sed -n '270,310p' docs/design.md)",
+      "Bash(sed -n '1426,1470p' docs/design.md)"
     ]
   }
 }
