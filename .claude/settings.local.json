@@ -297,7 +297,8 @@
       "Bash(sed -n '400,432p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
       "Bash(sed -n '1,60p' remote-gitlet/src/main/java/org/openapitools/service/impl/RemoteServiceImpl.java)",
       "Bash(sed -n '160,200p' /d/Job_project/gitlethub-frontend/src/views/PRDetailView.vue)",
-      "Bash(sed -n '1,80p' /d/Job_project/gitlethub-frontend/src/api/http.js)"
+      "Bash(sed -n '1,80p' /d/Job_project/gitlethub-frontend/src/api/http.js)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot\" mvn -q -pl gitlet_core -am compile -DskipTests -Duser.language=en -Duser.country=US)"
     ]
   }
 }

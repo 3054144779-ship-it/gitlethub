@@ -81,24 +81,41 @@ public class CommandHandler {
         // .gitlet / .git 是版本库元数据，不能当普通文件/目录添加
         if (target.startsWith(paths.getGitletDir().toPath().toAbsolutePath().normalize())
                 || target.startsWith(cwd.resolve(".git"))) {
-            Utils.message("Cannot add version-control metadata (.gitlet / .git).");
+            Utils.message("无法添加版本控制元数据（.gitlet / .git）。");
             return;
         }
-        // 只允许添加工作目录内的文件；不存在直接报错
-        if (!target.startsWith(cwd) || !Files.exists(target)) {
-            Utils.message("File does not exist.");
+        Set<String> trackedFiles = new BranchManager(repo).getHeadCommitTrackedFilesMap().keySet();
+
+        // 只允许添加工作目录内的文件；不存在时若是已追踪文件，等价 git add 已删除文件：暂存删除
+        if (!target.startsWith(cwd)) {
+            Utils.message("文件不存在。");
+            return;
+        }
+        if (!Files.exists(target)) {
+            String rel = Utils.relativeName(cwd, target);
+            if (trackedFiles.contains(rel)) {
+                rmFile(rel, trackedFiles);
+                repo.saveStaging();
+                return;
+            }
+            Utils.message("文件不存在。");
             return;
         }
 
         if (Files.isDirectory(target)) {
             List<String> relFiles = Utils.recursiveFilenamesIn(target.toFile());
-            if (relFiles == null) {
-                return;
-            }
             String prefix = Utils.relativeName(cwd, target);
-            for (String rel : relFiles) {
-                String repoPath = prefix.isEmpty() ? rel : prefix + "/" + rel;
-                stageFile(repoPath, target.resolve(rel).toFile());
+            if (relFiles != null) {
+                for (String rel : relFiles) {
+                    String repoPath = prefix.isEmpty() ? rel : prefix + "/" + rel;
+                    stageFile(repoPath, target.resolve(rel).toFile());
+                }
+            }
+            // 目录下已被 HEAD 追踪、但工作区已手动删除的文件同样要暂存删除（git add -A 语义）
+            for (String file : new TreeSet<>(trackedFiles)) {
+                if (isUnder(file, prefix) && !Files.exists(cwd.resolve(file))) {
+                    rmFile(file, trackedFiles);
+                }
             }
         } else {
             stageFile(Utils.relativeName(cwd, target), target.toFile());
