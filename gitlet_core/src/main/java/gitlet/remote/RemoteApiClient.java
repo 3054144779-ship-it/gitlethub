@@ -168,7 +168,8 @@ public class RemoteApiClient {
 
             return null;
         } catch (Exception e) {
-//            throw new RuntimeException("读取远程分支 SHA 值失败: " + e.getMessage());
+            // 不抛异常，但必须留痕：否则网络问题会被上层误报成「远程分支不存在/仓库为空」
+            log.warn("读取远程分支 {}/{}@{} 失败", owner, repo, branch, e);
             return null;
         }
     }
@@ -277,6 +278,13 @@ public class RemoteApiClient {
         }
 
         String body = response.body();
+
+        // 错误响应统一是 {"code":xxx,"message":"...","data":null}，没有 objects 字段。
+        // 不先判 code 的话会被下面的逻辑当成「远程仓库为空」而误报成功。
+        String code = extractJsonString(body, "code");
+        if (code != null && !"0".equals(code)) {
+            return new PullResult(false, extractJsonString(body, "message"), null);
+        }
 
         // 提取 objects 数组内容
         String objectsArrayContent = extractJsonArray(body, "objects");

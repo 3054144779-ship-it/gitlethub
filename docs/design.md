@@ -736,6 +736,8 @@ docker run -d --name litellm -p 4000:4000 \
   -e SILICONFLOW_API_KEY_4=***REMOVED*** \
   -e SILICONFLOW_API_KEY_5=***REMOVED*** \
   -e SILICONFLOW_API_KEY_6=***REMOVED*** \
+  -e SILICONFLOW_API_KEY_7=***REMOVED*** \
+  -e SILICONFLOW_API_KEY_8=***REMOVED*** \
   -e DEEPSEEK_API_KEY_1=***REMOVED*** \
   -e DEEPSEEK_API_KEY_2=***REMOVED*** \
   ghcr.io/berriai/litellm:main-latest \
@@ -941,6 +943,23 @@ PR 合并成功
 2. GET /objects?since=<本地最新 sha>   → 拉缺失的 object，落盘
 3. 更新本地 remote 记录，checkout
 ```
+
+**`pull origin <branch>` 的语义（2026-11-05 补充，均为踩坑所得）**
+
+- **`since` 取「被拉取分支」的本地位置，不能取当前 HEAD 分支**。服务端 `/objects?since=` 没有 branch 参数，
+  它靠 `submission_record.commit_sha = since` 反查分支名，再从该分支 tip 回溯到 since。客户端若在 `newBranch`
+  上 `pull origin master` 却把 `newBranch` 的 tip 当 since，服务端反查到的就是 `newBranch`，回溯立刻停在 since 上，
+  返回 0 个对象并报 `30005`。取值优先级：远程跟踪指针 `refs/remotes/{remote}/{branch}` > 本地 `refs/heads/{branch}`。
+  - 长期修法应在 `/objects` 增加 `branch` 参数，届时可去掉对 `submission_record` 的反查（仍未实现）。
+- **`pull` 在非当前分支上只做 fetch**：更新 `refs/remotes/{remote}/{branch}`，不动本地分支指针、不 checkout；
+  只有 `currentBranch == pullBranch` 才交给 `mergeBySha`（快进走 reset，分叉生成合并提交）。
+- **增量失败自动退回全量**：本地 since 不在服务端历史里（典型是 `init` 产生的空提交）时，服务端会拒绝增量
+  （`3009` 拒绝合并无关历史）。客户端在拿不到远程 tip 对象时改用 `since=null` 全量重试一次。
+- **本地只有 init 空提交时按 clone 语义接管**：`pull` 当前分支且本地 tip 是无父、无追踪文件的首个提交，
+  说明它和远程历史无关，直接 `reset` 到远程 tip，而不是走 `mergeBySha`（否则 LCA 为 null 会拒绝合并）。
+  判定条件：无 parent 且 `trackedFiles` 为空。
+- **判定拉取成功必须读业务 `code`**：错误响应是 `{code,message,data:null}`，没有 `objects` 字段；
+  只看 `objects` 是否存在会把它当成「远程仓库为空」并误报成功。
 
 ### 并发
 
@@ -1225,6 +1244,13 @@ gitlethub-frontend/
 - 请求体键是 `id`（不是 `pr_id`）；`session_id` 在整个会话内复用，切换仓库 / PR 时组件会重置。
 - 响应是 SSE：`event: chunk` 的 `data` 是 JSON 字符串（保留换行），前端累积后交给 `marked`；
   旧版无 event 的纯文本帧仍兼容。停止生成通过 `AbortController` 中断 fetch。
+- **停止生成（2026-11-04）**：生成中发送键替换为「停止」键，点击后 `AbortController.abort()`，
+  前端立即把已收到的内容显示完并追加「（已停止生成）」，同时清掉 `streaming` 状态。
+  后端 `AIServiceImpl` 在 `onCompletion` / `onError` 里 dispose 上游订阅，断开后不会继续生成。
+- **匀速打字机（2026-11-04）**：SSE 每帧长度不一（2～10 字都可能），直接按帧刷新会整块跳字。
+  收到的增量先进缓冲，前端每 ~30ms 取一拍（基础 2 字/拍，缓冲每多 60 字每拍多取 1 字，单拍上限 24 字）。
+  这样短帧看起来匀速，长代码块等大块内容也能在 1～2 秒内追平，不会滞后几十秒。
+  **代价**：显示进度落后于网络接收（稳态约 0.5～1 秒），换取视觉连续；停止 / 结束时会把剩余缓冲一次写完。
 - 新增依赖：`marked`（Markdown → HTML）+ `dompurify`（白名单清洗）。**模型输出按不可信内容处理**，
   不要绕过 `DOMPurify.sanitize` 直接 `v-html`。
 - 后端仍有开放风险（§10-22～26、28、29）；其中 28（`file_path` 未填）会直接阻断索引链路。
@@ -1491,6 +1517,12 @@ FastAPI + Nacos 注册，`/model/embeddings` 与 `/model/rerank` 转发到 LiteL
   `MilvusRepo.create_collection` 会直接报错提示 drop 后重新索引，防止继续写旧结构。
 - **密钥边界**：供应商 key 只放 gitignored 的 `deploy/.env`；inference 的 `.env`
   只保留 `LITELLM_MASTER_KEY` 和地址，不含任何供应商 key。
+- **单条输入上限 8192 token**：SiliconFlow 对超长输入返回
+  `20015 The parameter is invalid`。inference 的 `embed_documents` 把超过
+  `MAX_EMBED_CHARS`（默认 2000 字符）的文本切片、分别向量化后均值池化并重新
+  L2 归一化，单条最多 `MAX_EMBED_PIECES`（默认 32）片；review 的检索 query
+  截到 2000 字符。原因是有 PR context 时参与向量化的是整段 `diff_data`
+  （每个文件的 old/new 全文 + diff），而不是用户那句 query。
 
 **Why:** 云服务器只有 CPU，本地跑 BGE-M3 + reranker 既慢又占内存，还会拖垮同机的
 Milvus/LiteLLM。改成 API 调用后 inference 变成无状态轻量服务，部署和扩容都简单；

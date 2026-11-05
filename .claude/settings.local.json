@@ -257,7 +257,32 @@
       "Bash(mvn -q -pl remote-gitlet -am compile -DskipTests)",
       "Bash(sed -n '1,40p' com/github/jesse/l2cache/CacheSyncPolicy.java)",
       "Bash(sed -n '1,30p' com/github/jesse/l2cache/spi/SPI.java)",
-      "Bash(awk '{print $6, $7}')"
+      "Bash(awk '{print $6, $7}')",
+      "Bash(ipconfig)",
+      "Bash(./.venv-test/Scripts/python.exe -)",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\\\"ProcessId=50496\\\\\" | Select-Object -ExpandProperty CommandLine\")",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='python.exe'\\\\\" | Select-Object ProcessId,CommandLine | Format-List\")",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\\\"ProcessId=45160 or ProcessId=26068\\\\\" | Select-Object ProcessId,ParentProcessId,CreationDate,CommandLine | Format-List\")",
+      "Bash(PYTHONPATH=app ./.venv/Scripts/python.exe -)",
+      "Bash(powershell *)",
+      "Bash(./.venv/Scripts/python.exe -c ' *)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(sed -n '352,385p' src/components/AIAssistant.vue)",
+      "Bash(sed -n '1,120p' views/PRDetailView.vue)",
+      "Bash(sed -n '1,80p' components/RepoOverview.vue)",
+      "Bash(sed -n '1,120p' api/repo.js)",
+      "Bash(sed -n '1,80p' api/pr.js)",
+      "Bash(k6 version *)",
+      "Bash(k6 run *)",
+      "Bash(netsh int *)",
+      "Bash(export LITELLM_MASTER_KEY=dummy SILICONFLOW_API_KEY_1=a SILICONFLOW_API_KEY_2=a SILICONFLOW_API_KEY_3=a SILICONFLOW_API_KEY_4=a SILICONFLOW_API_KEY_5=a SILICONFLOW_API_KEY_6=a SILICONFLOW_API_KEY_7=a SILICONFLOW_API_KEY_8=a DEEPSEEK_API_KEY_1=a DEEPSEEK_API_KEY_2=a)",
+      "Bash(tar -tzf gitlet-ai-helper.tar.gz)",
+      "Read(//c/Users/ASUS/**)",
+      "Bash(ls -d /d/*/.gitlet /d/*/*/.gitlet)",
+      "Bash(xargs -I{} sh -c 'echo \"===== {}\"; cat \"{}\"')",
+      "Bash(mvn -q -pl gitlet_core -am compile -DskipTests)",
+      "Bash(mvn -q -pl gitlet_core -am dependency:build-classpath -Dmdep.outputFile=D:/Job_project/gitlethub/gitlet_core/cp.txt)",
+      "Bash(java -cp \"D:/Job_project/gitlethub/gitlet_core/target/classes;$\\(cat D:/Job_project/gitlethub/gitlet_core/cp.txt\\)\" gitlet.Main pull origin master)"
     ]
   }
 }

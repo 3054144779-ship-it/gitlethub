@@ -273,8 +273,8 @@ public class Main {
                          * */
                         String content = String.format("url=%s\nowner=%s\nrepo=%s\ndefaultBranch=master\n",
                                 remoteBaseUrl, ownerName, repoName);
-                        // 写入远程仓库配置文件
-                        Utils.writeContents(repoPaths.getRemoteFile(), remoteName, content);
+                        // 写入远程仓库配置文件：按远程名落到 remotes/<name>，不能直接写 remotes 文件
+                        Utils.writeContents(Utils.join(repoPaths.getRemoteFile(), remoteName), content);
 
                     } catch (URISyntaxException e) {
                         Utils.message("Invalid URL.");
@@ -309,52 +309,50 @@ public class Main {
                     throw new RuntimeException("未找到远程分支，或者仓库为空。");
                 }
 
-                // 3. 对比本地，决定是否拉取
-                File branchFileToCommit = Utils.join(repo.getPaths().getBranchDir(),
-                        Utils.readContentsAsString(repo.getPaths().getHeadFile()));
-                String currentBranchSha1 = Utils.readContentsAsString(branchFileToCommit);
-                if (remoteBranchSha.equals(currentBranchSha1)) {
-                    // 已经是最新的
+                // 3. 确定“本地已有到哪”：必须取被拉取分支的本地位置，而不是当前 HEAD 分支。
+                //    否则在 newBranch 上 pull master 会把 newBranch 的 tip 当成 since，
+                //    服务端按该提交反查到的分支是 newBranch，回溯会立刻停在 since 上，返回空仓库。
+                String currentBranch = Utils.readContentsAsString(repo.getPaths().getHeadFile());
+                File localBranchFile = Utils.join(repo.getPaths().getBranchDir(), pullBranch);
+                File tracking = Utils.join(repo.getPaths().getRemotePushBranchDir(), pullRemote, pullBranch);
+                String localBranchSha = localBranchFile.exists()
+                        ? Utils.readContentsAsString(localBranchFile).trim() : null;
+                String trackingSha = tracking.exists()
+                        ? Utils.readContentsAsString(tracking).trim() : null;
+
+                if (remoteBranchSha.equals(localBranchSha)) {
+                    // 本地分支已经指向远程 tip
                     Utils.message("已经更新完毕。");
                     break;
                 }
 
-                // 4. 拉对象并写入本地
-                PullResult pullResult = remoteClient.pullObjects(pullOwner, pullRepo, currentBranchSha1, getToken(repo));
-                if (!pullResult.isSuccess()) {
-                    // 拉取失败
-                    Utils.message("拉取失败。");
-                    throw new RuntimeException("拉取失败。");
+                // 4. 拉对象并写入本地。远程 tip 已在对象库里（之前 fetch 过）时不必再请求。
+                File remoteHeadCommit = Utils.join(repo.getPaths().getCommits(), remoteBranchSha);
+                if (!remoteHeadCommit.exists()) {
+                    // since 优先用远程跟踪指针：它是服务端认识的提交，且不会把本地未推送提交发给服务端
+                    String sinceSha = trackingSha != null ? trackingSha : localBranchSha;
+                    PullResult pullResult = remoteClient.pullObjects(pullOwner, pullRepo, sinceSha, getToken(repo));
+                    if (pullResult.isSuccess()) {
+                        storeObjects(repo, pullResult);
+                    }
+                    // 本地提交不在服务端历史里（如 init 产生的空提交）时服务端会拒绝增量，
+                    // 退回全量拉取，一次性把仓库对象拿齐
+                    if (!remoteHeadCommit.exists() && sinceSha != null) {
+                        log.info("增量拉取未拿到远程提交 {}（{}），改为全量拉取",
+                                remoteBranchSha, pullResult.getMessage());
+                        pullResult = remoteClient.pullObjects(pullOwner, pullRepo, null, getToken(repo));
+                        if (pullResult.isSuccess()) {
+                            storeObjects(repo, pullResult);
+                        }
+                    }
+                    if (!pullResult.isSuccess()) {
+                        // 拉取失败
+                        Utils.message("拉取失败。" + (pullResult.getMessage() == null ? "" : pullResult.getMessage()));
+                        throw new RuntimeException("拉取失败。");
+                    }
                 }
 
-                // 拉取成功
-                List<ObjectBundle> commits = pullResult.getCommits();
-                int pulledObjects = commits.stream()
-                        .mapToInt(b -> b.getObjects() == null ? 0 : b.getObjects().size()).sum();
-                log.info("拉取到 {} 个对象", pulledObjects);
-                commits.forEach(object -> {
-                    List<@Valid GitletObject> objects = object.getObjects();
-                    objects.forEach(gitletObject -> {
-                        if (gitletObject.getType().equals(GitletObject.TypeEnum.COMMIT)) {
-                            // 如果是提交的话则写入
-                            File commit = Utils.join(repo.getPaths().getCommits(), gitletObject.getSha1());
-                            // 只有文件不存在的时候才写入
-                            if (!commit.exists()) {
-                                Utils.writeContents(commit, (Object) gitletObject.getContent());
-                            }
-                        } else {
-                            // 如果是Blob的话则写入
-                            File blob = Utils.join(repo.getPaths().getObject(), gitletObject.getSha1());
-                            // 只有文件不存在的时候才写入
-                            if (!blob.exists()) {
-                                Utils.writeContents(blob, (Object) gitletObject.getContent());
-                            }
-                        }
-                    });
-                });
-
                 // 拉取后校验：远程最新提交的对象必须已落盘，否则不能进入 merge
-                File remoteHeadCommit = Utils.join(repo.getPaths().getCommits(), remoteBranchSha);
                 if (!remoteHeadCommit.exists()) {
                     Utils.message("未拉取到远程最新提交 " + remoteBranchSha
                             + " 的对象（服务端返回 0 个对象？），合并已中止。");
@@ -362,18 +360,22 @@ public class Main {
                 }
 
                 // 5. 只更新远程跟踪分支指针（fetch 语义：记录“远程在哪”，绝不动本地分支指针）
-                //    不要在这里 writeContents(branchFileToCommit, remoteBranchSha)：
+                //    不要在这里 writeContents(localBranchFile, remoteBranchSha)：
                 //    那会让本地指针先于 merge 被硬覆盖，导致 mergeBySha 里 nowHead==remote、
                 //    LCA==remote，在 L200 提前 return 变成空操作，同时丢失本地未推送提交。
-                File tracking = Utils.join(repo.getPaths().getRemotePushBranchDir(), pullRemote, pullBranch);
                 log.info("path:{}", tracking.getPath());
                 Utils.writeContents(tracking, remoteBranchSha);
 
                 // 6. 如果拉取的是当前分支，交给 mergeBySha 合并：
                 //    它自己负责移动本地分支指针 + 更新工作目录（快进走 reset，分叉生成合并提交）
-                String currentBranch = Utils.readContentsAsString(repo.getPaths().getHeadFile());
                 if (currentBranch.equals(pullBranch)) {
-                    merger.mergeBySha(remoteBranchSha);
+                    if (localBranchSha == null || isFreshInitCommit(repo, localBranchSha)) {
+                        // 本地只有一个 init 产生的空提交，和远程历史无关：按 clone 语义直接采用远程分支
+                        log.info("本地分支 {} 是初始空提交，直接重置到远程 {}", pullBranch, remoteBranchSha);
+                        commands.reset(remoteBranchSha);
+                    } else {
+                        merger.mergeBySha(remoteBranchSha);
+                    }
                 }
 
                 break;
@@ -391,6 +393,54 @@ public class Main {
                 System.out.println(Utils.error("不存在该名称的命令。").getMessage());
                 break;
         }
+    }
+
+    /** 把拉取到的对象写入本地对象库，已存在的不重复写 */
+    private static void storeObjects(Repository repo, PullResult pullResult) {
+        List<ObjectBundle> bundles = pullResult.getCommits();
+        if (bundles == null) {
+            return;
+        }
+        int pulledObjects = bundles.stream()
+                .mapToInt(b -> b.getObjects() == null ? 0 : b.getObjects().size()).sum();
+        log.info("拉取到 {} 个对象", pulledObjects);
+        bundles.forEach(bundle -> {
+            List<@Valid GitletObject> objects = bundle.getObjects();
+            if (objects == null) {
+                return;
+            }
+            objects.forEach(gitletObject -> {
+                if (gitletObject.getType().equals(GitletObject.TypeEnum.COMMIT)) {
+                    // 如果是提交的话则写入
+                    File commit = Utils.join(repo.getPaths().getCommits(), gitletObject.getSha1());
+                    // 只有文件不存在的时候才写入
+                    if (!commit.exists()) {
+                        Utils.writeContents(commit, (Object) gitletObject.getContent());
+                    }
+                } else {
+                    // 如果是Blob的话则写入
+                    File blob = Utils.join(repo.getPaths().getObject(), gitletObject.getSha1());
+                    // 只有文件不存在的时候才写入
+                    if (!blob.exists()) {
+                        Utils.writeContents(blob, (Object) gitletObject.getContent());
+                    }
+                }
+            });
+        });
+    }
+
+    /**
+     * 本地分支 tip 是否只是 init 生成的空提交（无父提交、无追踪文件）。
+     * 这类提交与远程历史无关，pull 时应按 clone 语义直接采用远程分支。
+     */
+    private static boolean isFreshInitCommit(Repository repo, String sha1) {
+        if (StrUtil.isEmpty(sha1) || !repo.getObjects().sha1Check(sha1)) {
+            return false;
+        }
+        Commit commit = repo.getObjects().getCommit(sha1);
+        return commit != null
+                && commit.getParent() == null
+                && (commit.getTrackedFiles() == null || commit.getTrackedFiles().isEmpty());
     }
 
     private static void doLogout(Repository repo) {
