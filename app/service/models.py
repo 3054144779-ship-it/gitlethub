@@ -17,6 +17,11 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-m3")
 RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
 API_TIMEOUT = float(os.getenv("API_TIMEOUT", "120"))
 
+# BGE-M3 单条输入上限 8192 token，超了 SiliconFlow 返回 20015。
+# 按字符切到 2000（全中文最坏约 2000 token）留足余量；分片过多时截断，避免放大请求数。
+MAX_EMBED_CHARS = int(os.getenv("MAX_EMBED_CHARS", "2000"))
+MAX_EMBED_PIECES = int(os.getenv("MAX_EMBED_PIECES", "32"))
+
 embedding_model = init_embeddings(
     model=f"openai:{EMBED_MODEL}",
     api_key=LITELLM_KEY,
@@ -27,10 +32,60 @@ embedding_model = init_embeddings(
 )
 
 
+def _split_text(text: str) -> list[str]:
+    if len(text) <= MAX_EMBED_CHARS:
+        return [text]
+    return [
+        text[i:i + MAX_EMBED_CHARS]
+        for i in range(0, len(text), MAX_EMBED_CHARS)
+    ][:MAX_EMBED_PIECES]
+
+
+def _normalize(vector: list[float]) -> list[float]:
+    norm = sum(value * value for value in vector) ** 0.5
+    return [value / norm for value in vector] if norm else vector
+
+
 def embed_documents(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    return embedding_model.embed_documents(texts)
+
+    overlong = [len(text) for text in texts if len(text) > MAX_EMBED_CHARS]
+    if overlong:
+        logger.warning(
+            "检测到 %d 条超长文本（最长 %d 字符），按 %d 字符切片后均值池化",
+            len(overlong), max(overlong), MAX_EMBED_CHARS,
+        )
+        if max(overlong) > MAX_EMBED_CHARS * MAX_EMBED_PIECES:
+            logger.warning(
+                "超过 %d 字符的部分已丢弃（MAX_EMBED_PIECES=%d）",
+                MAX_EMBED_CHARS * MAX_EMBED_PIECES, MAX_EMBED_PIECES,
+            )
+
+    pieces: list[str] = []
+    owners: list[int] = []
+    for index, text in enumerate(texts):
+        for piece in _split_text(text):
+            pieces.append(piece)
+            owners.append(index)
+
+    vectors = embedding_model.embed_documents(pieces)
+    if len(pieces) == len(texts):
+        return vectors
+
+    # 分片向量按原始输入分组求均值，再归一化：BGE-M3 输出是归一化的，平均后必须补回单位长度
+    sums = [[0.0] * len(vectors[0]) for _ in texts]
+    counts = [0] * len(texts)
+    for owner, vector in zip(owners, vectors):
+        accumulator = sums[owner]
+        for dimension, value in enumerate(vector):
+            accumulator[dimension] += value
+        counts[owner] += 1
+
+    return [
+        _normalize([value / counts[index] for value in sums[index]])
+        for index in range(len(texts))
+    ]
 
 
 class RemoteModelError(RuntimeError):
