@@ -1,23 +1,35 @@
+### Java / Maven ###
 HELP.md
 target/
-.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
 
-### STS ###
+# Maven Wrapper 本机下载的 jar
+.mvn/wrapper/maven-wrapper.jar
+
+### IntelliJ IDEA ###
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+# IDE 生成的 classpath 文件
+cp.txt
+
+### Eclipse / STS ###
 .apt_generated
 .classpath
 .factorypath
 .project
-.settings
+.settings/
 .springBeans
 .sts4-cache
-
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
 
 ### NetBeans ###
 /nbproject/private/
@@ -32,10 +44,35 @@ build/
 ### VS Code ###
 .vscode/
 
-# Classes compiled by 'make check' in gitlet_test.
+### 运行期产物 ###
+logs/
+*.log
+*.pid
+*.hprof
+
+### gitlet 客户端本地仓库（含对象库，不要提交）###
+.gitlet/
+
+### gitlet_test 编译产物 ###
 gitlet_core/src/test/gitlet_test/build/
 
-# Compose secrets
+### 密钥 / 本地配置 ###
 .env
 .env.*
 !.env.example
+
+### 部署产物（体积大，不入库）###
+deploy/*.tar
+deploy/*.tar.gz
+deploy/*.zip
+deploy/sentinel/*.jar
+# 误把 AccessKey 粘进命令时生成的文件
+deploy/*ACCESS_KEY*
+
+### Claude Code 本地配置 ###
+.claude/settings.local.json
+
+### 系统文件 ###
+.DS_Store
+Thumbs.db
+desktop.ini
