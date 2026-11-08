@@ -81,6 +81,10 @@ const navItems = computed(() => [
   { key: 'settings', label: '设置', icon: 'Setting', disabled: true }
 ])
 
+/** Windows 客户端安装包，存放在阿里云 OSS；该对象需设置为公共读 */
+const CLIENT_DOWNLOAD_URL =
+  'https://huahuo-tlias.oss-cn-beijing.aliyuncs.com/gitlet-service/gitlet-1.0.msi'
+
 const globalSearch = ref('')
 
 function goItem(item) {
@@ -134,6 +138,15 @@ function logout() {
       <div class="header-right">
         <AIFloatingChat />
         <ThemeToggle class="nav-theme" :dark="isDark" @toggle="toggleTheme" />
+        <a
+          class="client-download"
+          :href="CLIENT_DOWNLOAD_URL"
+          title="下载 gitlet 客户端（Windows）"
+          aria-label="下载 gitlet 客户端"
+        >
+          <el-icon><Download /></el-icon>
+          <span class="client-download-text">客户端</span>
+        </a>
         <!-- 窄屏没有侧栏，用户与退出入口留在顶栏 -->
         <div class="header-user">
           <el-button class="user-btn" text @click="router.push({ name: 'profile' })">
@@ -303,6 +316,31 @@ function logout() {
   align-items: center;
   gap: 4px;
   margin-left: auto;
+}
+
+/* 客户端下载：与顶栏其他文字按钮同高同色，只多一个图标 */
+.client-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--text-2);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 120ms var(--ease), background-color 120ms var(--ease);
+}
+
+.client-download:hover {
+  color: var(--text-0);
+  background: var(--hover-1);
+  text-decoration: none;
+}
+
+.client-download .el-icon {
+  font-size: 15px;
 }
 
 /* 宽屏的用户入口在侧栏底部，这里只留给窄屏 */
@@ -630,6 +668,16 @@ function logout() {
 
   .user-btn.el-button {
     padding: 0 4px;
+  }
+
+  .client-download {
+    justify-content: center;
+    width: 32px;
+    padding: 0;
+  }
+
+  .client-download-text {
+    display: none;
   }
 }
 </style>
