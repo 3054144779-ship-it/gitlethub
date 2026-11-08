@@ -147,7 +147,6 @@ public class MergeHandler {
     }
 
     /**
-     *  TODO(后续更新，PR 逻辑打通后一起做)：
      *   当前 merge/getLCA 均以「本地具名分支名」为入参，只能合并 branchDir 里已存在的分支。
      *   而 pull(fetch+merge) 与 PR 需要合并的是一个「游离的 commit SHA」
      *   （远程 tracking ref / PR 源分支），它在本地并非具名分支。
@@ -206,7 +205,6 @@ public class MergeHandler {
             return;
         }
 
-        // TODO：后续检测改为最长公共子序列
         // 文件处理，返回结果查看是否存在合并冲突
         boolean hasConflict = fileProcessing(remoteBranchSha, nowHeadBranchSha1, lcaSha1);
 
