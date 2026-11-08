@@ -1,0 +1,13 @@
+{%- set file_count = merge_files | default([], true) | length -%}
+{%- set repo_id = repository_id | default('', true) -%}
+{%- set user = user_id | default('', true) -%}
+{%- set branch = branch_name | default('未知分支', true) | trim -%}
+{%- set sha = commit_sha | default('', true) | trim -%}
+{%- set msg = message | default('无提交信息', true) | replace('\n', ' ') | replace('\r', ' ') | trim -%}
+{%- set time = commit_time | default('未知时间', true) | trim -%}
+{%- set author_name = author | default('未知提交人', true) | trim -%}
+{%- set file = file_path | default('未知文件', true) | trim -%}
+{%- set st = status | default('merged', true) | trim -%}
+{%- set pr = pr_name | default('未知PR', true) | trim -%}
+
+代码合并记录：用户 {{ user }}（{{ author_name }}）在 {{ time }} 向仓库 {{ repo_id }} 的 {{ branch }} 分支合并代码。{% if file_count %}本次共合并 {{ file_count }} 个文件，{% endif %}其中文件 {{ file }} 的状态为 {{ st }}。提交 SHA1 为 {{ sha }}。提交信息：{{ msg }}。合并请求的名字为：{{ pr }}

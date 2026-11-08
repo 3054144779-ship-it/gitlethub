@@ -1,0 +1,259 @@
+import httpx
+import redis.asyncio as aioredis
+
+from pymilvus import MilvusClient
+from dependency_injector import containers, providers
+from redis.asyncio import Redis
+
+from client.memory_manager_middleware import MemoryManagerMiddleware
+from config.Settings import Settings
+from core.memory_manager import MemoryManager
+from core.procedure_store import ProcedureStore
+from core.tools import read_file
+from client.llm_client import LLMClient
+from core.reranker import Reranker
+from repository.milvus_repo import MilvusRepo
+from client.embeding import EmbeddingModel
+from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
+from langchain.chat_models import init_chat_model
+
+
+def _create_llm_http_client(
+        max_connections: int,
+        pool_timeout: float,
+        connect_timeout: float,
+        read_timeout: float,
+) -> httpx.AsyncClient:
+    """
+    全局共享的 LLM HTTP 客户端：
+    - max_connections 就是并发闸门，超出的请求在连接池外排队
+    - pool 超时就是排队上限，超时抛 PoolTimeout -> 上游转 429/503
+    注意 keepalive_expiry 要比默认 5s 长，避免频繁重建到 LiteLLM 的 TCP 连接
+    """
+    return httpx.AsyncClient(
+        limits=httpx.Limits(
+            max_connections=max_connections,
+            max_keepalive_connections=max_connections,
+            keepalive_expiry=30.0,
+        ),
+        timeout=httpx.Timeout(
+            connect=connect_timeout,
+            read=read_timeout,
+            write=30.0,
+            pool=pool_timeout,
+        ),
+    )
+
+
+def _create_milvus_client(host: str, port: int) -> MilvusClient:
+    return MilvusClient(uri=f"http://{host}:{port}")
+
+def _init_jinja_env(template_dir: str) -> Environment:
+    return Environment(
+        loader=FileSystemLoader(template_dir),
+        autoescape=select_autoescape(["html", "xml"]),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+
+def _load_template(jinja_env: Environment, template_name: str) -> Template:
+    return jinja_env.get_template(template_name)
+
+def _init_agent(
+        model: str,
+        model_provider: str,
+        api_key: str,
+        base_url: str,
+        middleware_instance: MemoryManager,
+        http_async_client=None,
+):
+    # 初始化中间件
+    memory_manager_middleware = MemoryManagerMiddleware(memory_manager=middleware_instance)
+    middleware = [memory_manager_middleware]
+    return LLMClient(
+        model=model,
+        model_provider=model_provider,
+        config={
+            "api_key": api_key,
+            "base_url": base_url,
+            "http_async_client": http_async_client,
+        },
+        tools=[read_file]
+    ).create_agent(
+        middleware=middleware
+    )
+
+def _build_graph():
+    # 执行的时候导入GitletGraph类，防止循环导入
+    from core.graph import GitletGraph
+    graph = GitletGraph()
+    return graph.build_graph()
+
+class Container(containers.DeclarativeContainer):
+    """
+    容器类，用于依赖注入
+    """
+    # 配置提供，从环境变量中读取配置
+    config = providers.Configuration()
+    # MilvusRepo提供，使用Singleton模式，配置从config中读取
+    # 创建MilvusClient实例
+    milvus_client = providers.Singleton(
+        _create_milvus_client,
+        host=config.milvus.host,
+        port=config.milvus.port,
+    )
+
+    # 创建MilvusRepo实例
+    milvus_repo = providers.Singleton(
+        MilvusRepo,
+        milvus_client=milvus_client,
+        collection_name=config.milvus.collection_name,
+        fields=config.milvus.fields,
+        index_params=config.milvus.index_params
+    )
+
+    # 创建EmbeddingModel实例
+    embedding_model = providers.Singleton(
+        EmbeddingModel,
+        # model_name_or_path=config.embedding.model_name_or_path,
+        # device=config.embedding.device
+        base_url=config.embedding.base_url
+    )
+
+    # 创建jinja2环境
+    jinja_env = providers.Singleton(
+        _init_jinja_env,
+        template_dir=config.jinja.template_dir
+    )
+
+    # 创建提交信息单例模板
+    commit_message_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="commit_message_template.jinja2"
+    )
+
+    # 创建意图澄清单例模板
+    intent_clarifier_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="intent_clarifier_prompt_template.jinja2"
+    )
+
+    # LLM 调用共享客户端（限流闸门）
+    llm_http_client = providers.Singleton(
+        _create_llm_http_client,
+        max_connections=config.admission.max_concurrent_llm,
+        pool_timeout=config.admission.queue_timeout,
+        connect_timeout=config.admission.connect_timeout,
+        read_timeout=config.admission.read_timeout,
+    )
+
+    # 创建意图识别器ai
+    intent_clarifier_llm_client = providers.Singleton(
+        init_chat_model,
+        model=config.intent_clarifier.model,
+        model_provider=config.intent_clarifier.model_provider,
+        api_key=config.intent_clarifier.api_key,
+        base_url=config.intent_clarifier.base_url,
+        http_async_client=llm_http_client,
+        max_retries=0,   # 重试统一交给 LiteLLM，避免 3x3 放大
+    )
+
+    # 创建reranker实例
+    reranker = providers.Singleton(
+        Reranker,
+        # model_name_or_path=config.reranker.model_name_or_path,
+        # use_fp16=config.reranker.use_fp16,
+        # device=config.reranker.device
+        base_url = config.reranker.base_url
+    )
+
+    # 创建代码考古功能单例模板
+    code_archaeology_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="archaeology_prompt_template.jinja2"
+    )
+
+    # 用户消息重写ai
+    rewrite_llm = providers.Singleton(
+        init_chat_model,
+        model=config.rewrite.model,
+        model_provider=config.rewrite.model_provider,
+        api_key=config.rewrite.api_key,
+        base_url=config.rewrite.base_url,
+        http_async_client=llm_http_client,
+    )
+
+
+    # 创建流程图
+    flow_chart = providers.Singleton(
+        _build_graph
+    )
+
+    # 创建redis实例
+    redis_client = providers.Singleton(
+        aioredis.Redis,
+        host=config.redis.host,
+        port=config.redis.port,
+        db=config.redis.db,
+        password=config.redis.password
+    )
+
+    # 创建代码审查功能单例模板
+    code_review_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="review_prompt_template.jinja2"
+    )
+
+    # 创建代码解释功能单例模板
+    code_explain_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="explain_prompt_template.jinja2"
+    )
+
+    # 创建代码搜索功能单例模板
+    code_search_template = providers.Singleton(
+        _load_template,
+        jinja_env=jinja_env,
+        template_name="semantic_search_prompt_template.jinja2",
+    )
+
+    # 用于文本压缩的模型
+    compressor_llm = providers.Singleton(
+        init_chat_model,
+        model=config.compressor.model,
+        model_provider=config.compressor.model_provider,
+        api_key=config.compressor.api_key,
+        base_url=config.compressor.base_url,
+        http_async_client=llm_http_client,
+    )
+
+    # 记忆分层管理器
+    memory_manager = providers.Singleton(
+        MemoryManager,
+        redis_client=redis_client,
+        milvus_client=milvus_repo,
+        compress_client=compressor_llm,
+        embedding_client=embedding_model,
+    )
+
+    # 回复agent
+    agent = providers.Singleton(
+        _init_agent,
+        model=config.agent.model,
+        model_provider=config.agent.model_provider,
+        api_key=config.agent.api_key,
+        base_url=config.agent.base_url,
+        middleware_instance=memory_manager
+    )
+
+    # 创建程序性记忆管理器
+    procedure_store = providers.Singleton(
+        ProcedureStore,
+        redis_client=redis_client
+    )
+
