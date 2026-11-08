@@ -1,0 +1,24 @@
+spring:
+  cloud:
+    sentinel:
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:http://100.103.241.43:8090}
+      http-method-specify: true # 开启请求前缀
+      datasource:
+        gateway-flow:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:100.103.241.43:8848}
+            username: ${NACOS_USERNAME}
+            password: ${NACOS_PASSWORD}
+            namespace: ${NACOS_NAMESPACE:e7aa35a9-5acb-4192-97ba-3191707726ce}
+            dataId: gitelethub-gateway-flow-rules.json
+            groupId: GITLETHUB_GATEWAY
+            rule-type: gw-flow
+  data:
+    redis:
+      host: ${REDIS_HOST:100.117.188.7}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:1}
+      # 默认命令超时是 60s：Redis 不可达时会把事件循环线程一直占住，前端只能等到 20s 超时
+      connect-timeout: 1s
+      timeout: 1s

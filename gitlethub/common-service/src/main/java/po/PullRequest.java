@@ -1,0 +1,60 @@
+package po;
+
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
+import enums.PRStatusEnum;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@TableName("pull_request")
+public class PullRequest {
+    @TableId
+    private Long id;
+
+    @TableField("repository_id")
+    private Long repositoryId;
+
+    @TableField("title")
+    private String title;
+
+    @TableField("description")
+    private String description;
+
+    @TableField("source_branch")
+    private String sourceBranch;
+
+    @TableField("target_branch")
+    private String targetBranch;
+
+    @TableField("status")
+    private PRStatusEnum status;
+
+    @TableField("author_id")
+    private Long authorId;
+
+    @TableField("create_time")
+    private LocalDateTime createTime;
+
+    @TableField("update_time")
+    private LocalDateTime updateTime;
+
+    @TableField("staging_path")
+    private String stagingPath;  // 暂存区路径（合并时生成）
+
+    @TableField("staging_path_tracked")
+    private String stagingPathTracked;  // 暂存区路径（被追踪的文件映射）
+
+    @TableField("is_deleted")
+    @TableLogic
+    private Integer isDeleted;
+}

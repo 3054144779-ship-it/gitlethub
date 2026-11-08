@@ -1,0 +1,46 @@
+#server:
+#  port: 8081
+
+spring:
+  data:
+    redis:
+      port: 6379
+      host: 100.117.188.7
+      database: 1
+# 开启驼峰命名
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+# jwt 密钥配置
+com:
+  hanabi:
+    jwt:
+      key: RSA
+      expires-time: 604800 # 一周过期
+      key-size: 2048
+
+aliyun:
+  oss:
+    # 华北2（北京）的固定 Endpoint
+    endpoint: oss-cn-beijing.aliyuncs.com
+
+    # AccessKey (环境变量注入)
+    access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID}
+    access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET}
+    # 你的 Bucket 名称
+    bucket-name: huahuo-tlias
+    # 拼接好的访问前缀（前端拿到这个前缀加上路径就能直接访问图片）
+    url-prefix: https://huahuo-tlias.oss-cn-beijing.aliyuncs.com/
+
+hm:
+  db:
+    database: gitlethub
+  swagger:
+    title: 用户服务接口文档
+    package: com.huahuo.controller
+#  mq:
+#    host: 192.168.12.168
+#    un: hmall
+#    pw: 123
+#    vh: /hmall

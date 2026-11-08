@@ -1,0 +1,71 @@
+# 检测 merge
+
+I definitions.inc
+
+> init
+<<<
+
+# master 进行一次提交
++ test1.txt test1.txt
+> add "test1.txt"
+<<<
+
+> commit "This is test1"
+<<<
+
+# 从当前点创建一个分支
+> branch "branch2"
+<<<
+
+# master 再进行一次提交
++ test2.txt test2.txt
+> add "test2.txt"
+<<<
+
+> commit "This is test2"
+<<<
+
+
+E .gitlet/refs/heads/branch2
+
+# 切换到 branch2 分支再进行一次提交
+> checkout "branch2"
+<<<
+
++ test3.txt test3.txt
+> add "test3.txt"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
+> commit "This is test3"
+<<<
+
+# 切换到 master 分支进行合并
+> checkout "master"
+<<<
+
+> status
+${ARBLINES}
+<<<*
+
+> merge "branch2"
+${ARBLINES}
+<<<*
+
+# 验证文件是否通过 merge 到了工作区
+E test1.txt
+E test2.txt
+E test3.txt
+
+# 验证 log 中是否出现了合并提交
+> log
+${ARBLINES}Merged branch2 into master${ARBLINES}
+<<<*
+
+# 测试：再次合并（此时应该是祖先关系）
+> merge "branch2"
+Given branch is an ancestor of the current branch.
+<<<

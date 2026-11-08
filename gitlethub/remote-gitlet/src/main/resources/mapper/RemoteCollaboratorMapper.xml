@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.openapitools.mapper.RemoteCollaboratorMapper">
+    <!--根据用户ID和仓库ID查询协作者-->
+    <select id="getCollaborator" resultType="po.Collaborator">
+        SELECT *
+        FROM collaborator
+        WHERE user_id = #{userId}
+          AND repository_id = #{repositoryId}
+    </select>
+
+    <!-- 重新激活/更新协作者等级：绕过逻辑删除过滤，支持"移除后重新添加" -->
+    <update id="reactivateCollaborator">
+        UPDATE collaborator
+        SET level = #{level},
+            is_deleted = 0
+        WHERE user_id = #{userId}
+          AND repository_id = #{repositoryId}
+    </update>
+</mapper>

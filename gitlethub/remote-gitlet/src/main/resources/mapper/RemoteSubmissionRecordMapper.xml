@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.openapitools.mapper.RemoteSubmissionRecordMapper">
+    <select id="getSubmissionRecordByCommitSha" resultType="java.lang.Boolean">
+        SELECT EXISTS (SELECT 1 FROM submission_record WHERE commit_sha = #{commitSha})
+    </select>
+
+    <!-- is_deleted 显式写 0：@TableLogic 只作用于 MP 生成的 SQL，自定义 XML 得自己带上 -->
+    <insert id="insertBatch">
+        INSERT INTO submission_record (repository_id, commit_sha, user_id, branch_name, submit_time, is_deleted)
+        VALUES
+        <foreach collection="records" item="r" separator=",">
+            (#{r.repositoryId}, #{r.commitSha}, #{r.userId}, #{r.branchName}, #{r.submitTime}, 0)
+        </foreach>
+    </insert>
+</mapper>

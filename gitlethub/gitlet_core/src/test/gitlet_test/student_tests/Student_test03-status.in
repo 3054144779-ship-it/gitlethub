@@ -1,0 +1,177 @@
+I definitions.inc
+
+> init
+<<<
++ test1.txt test1.txt
++ test2.txt test2.txt
++ test3.txt test3.txt
+
+> add test1.txt
+<<<
+> add test2.txt
+<<<
+
+# --- 场景 1：暂存区有文件时 ---
+> status
+=== Branches ===
+*master
+
+=== Staged Files ===
+test1.txt
+test2.txt
+
+=== Removed Files ===
+
+=== Modifications Not Staged For Commit ===
+
+=== Untracked Files ===
+test3.txt
+
+<<<
+
+> commit "This is test"
+<<<
+
+# --- 场景 2：提交后，Staged 栏必须变空 ---
+> status
+=== Branches ===
+*master
+
+=== Staged Files ===
+
+=== Removed Files ===
+
+=== Modifications Not Staged For Commit ===
+
+=== Untracked Files ===
+test3.txt
+
+<<<
+
+> rm test1.txt
+<<<
+
+# --- 场景 3：执行 rm 后，文件出现在 Removed Files ---
+# 注意：此时不带 (deleted) 后缀，因为你是用命令删的
+> status
+=== Branches ===
+*master
+
+=== Staged Files ===
+
+=== Removed Files ===
+test1.txt
+
+=== Modifications Not Staged For Commit ===
+
+=== Untracked Files ===
+test3.txt
+
+<<<
+
+> commit "This is test2"
+<<<
+
+# --- 场景 4：提交“删除”后，Removed 栏变空 ---
+# 此时 test1.txt 已经彻底不在这个分支里了
+> status
+=== Branches ===
+*master
+
+=== Staged Files ===
+
+=== Removed Files ===
+
+=== Modifications Not Staged For Commit ===
+
+=== Untracked Files ===
+test3.txt
+
+<<<
+
+# 修改 test2.txt 的内容（用 test3 的内容覆盖它）
++ test2.txt test3.txt
+
+# --- 场景 5：手动修改但没 add，出现在 Modifications 栏 ---
+> status
+=== Branches ===
+*master
+
+=== Staged Files ===
+
+=== Removed Files ===
+
+=== Modifications Not Staged For Commit ===
+test2.txt (modified)
+
+=== Untracked Files ===
+test3.txt
+
+<<<
+
+> add test2.txt
+<<<
+> add test3.txt
+<<<
+> commit "This is test3"
+<<<
+
+# 手动删除 test2 和 test3 (不使用 rm 命令)
+- test2.txt
+- test3.txt
+
+# --- 场景 6：手动删除文件，出现在 Modifications (deleted) ---
+> status
+=== Branches ===
+*master
+
+=== Staged Files ===
+
+=== Removed Files ===
+
+=== Modifications Not Staged For Commit ===
+test2.txt (deleted)
+test3.txt (deleted)
+
+=== Untracked Files ===
+
+<<<
+
+# 此时运行 rm 才会真正把它们放进 Removed Files
+> rm test2.txt
+<<<
+> rm test3.txt
+<<<
+
+> status
+=== Branches ===
+*master
+
+=== Staged Files ===
+
+=== Removed Files ===
+test2.txt
+test3.txt
+
+=== Modifications Not Staged For Commit ===
+
+=== Untracked Files ===
+
+<<<
+
+> commit "This is test4"
+<<<
+
+> status
+=== Branches ===
+*master
+
+=== Staged Files ===
+
+=== Removed Files ===
+
+=== Modifications Not Staged For Commit ===
+
+=== Untracked Files ===
+
+<<<

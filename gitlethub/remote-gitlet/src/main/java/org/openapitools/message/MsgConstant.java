@@ -1,0 +1,36 @@
+package org.openapitools.message;
+
+public class MsgConstant {
+    public static final String THE_SUBMITTED_FILE_CANNOT_BE_EMPTY = "提交的文件不能为空";
+    public static final String THE_WAREHOUSE_DOES_NOT_EXIST = "仓库不存在";
+    public static final String THE_WAREHOUSE_ALREADY_EXISTS = "仓库已存在";
+    public static final String THE_BRANCH_DOES_NOT_EXIST = "分支不存在";
+    public static final String PULL_FAILED = "拉取失败，因为远程仓库提交为空";
+    public static final String MAIN_BRANCH = "master";
+    public static final String THE_BRANCH_IS_PROTECTED = "当前分支受保护，需要管理员授权";
+    public static final String UNAUTHORIZED = "未经授权";
+    public static final String FORBIDDEN_FORCE_PUSH = "禁止强制推送";
+    public static final String THIS_SUBMISSION_DOES_NOT_EXIST = "该提交不存在于对象储存";
+    public static final String THE_USER_DOES_NOT_EXIST = "用户不存在";
+    public static final String VERSION_CONFLICT = "分支已被其他人更新，请先拉取合并后再推送";
+    public static final String REMOTE_REPOSITORY_UPDATE_FAILED = "远程仓库更新失败";
+    public static final String NOT_THE_OWNER_OF_THE_WAREHOUSE = "远程仓库更新失败，不是仓库的所有者";
+    public static final String THE_FILE_DOES_NOT_EXIST = "文件不存在";
+    public static final String THE_COLLABORATOR_LEVEL_IS_INVALID = "协作者等级非法";
+    public static final String THE_COLLABORATOR_DOES_NOT_EXIST = "协作者不存在";
+    public static final String NOT_REPOSITORY_OWNER = "只有仓库所有者可以管理协作者";
+    public static final String ONLY_OWNER_CAN_MERGE = "只有仓库所有者可以合并该 PR";
+    public static final String ONLY_MEMBERS_CAN_CONTRIBUTE = "只有仓库所有者或贡献者可以操作";
+    public static final String CANNOT_REVIEW_OWN_PR = "不能评审自己创建的 PR";
+    public static final String NOT_COMMENT_AUTHOR = "只有评论作者可以编辑该评论";
+    public static final String CANNOT_DELETE_COMMENT = "只有评论作者或仓库所有者可以删除该评论";
+    public static final String TAG_ALREADY_EXISTS = "标签已存在";
+    public static final String TAG_NAME_INVALID = "标签名不合法";
+    public static final String PR_REVIEW_REJECTED = "PR 存在待修改的评审，不能合并";
+    public static final String PR_APPROVAL_REQUIRED = "保护分支至少需要一条通过评审才能合并";
+    public static final String SYSTEM_ERROR = "系统错误";
+    public static final String REJECT_MERGING_IRRELEVANT_HISTORY = "拒绝合并无关历史";
+    public static final String TASK_REJECTED = "队列已满，任务被拒绝，请稍后再试";
+    public static final String THE_PULL_REQUEST_DOES_NOT_EXIST = "Pull Request 不存在";
+    public static final String INTERNAL_SERVER_ERROR = "更新暂存区失败";
+}

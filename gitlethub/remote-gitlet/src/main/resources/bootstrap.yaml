@@ -1,0 +1,29 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: remote-gitlet
+  profiles:
+    active: local
+  cloud:
+    nacos:
+      server-addr: 100.103.241.43:8848 # Nacos服务器地址
+      username: ${NACOS_USERNAME}
+      password: ${NACOS_PASSWORD}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:e7aa35a9-5acb-4192-97ba-3191707726ce}
+      config:
+        file-extension: yaml # 配置的扩展名
+        shared-configs:
+          - data-id: shared-jdbc.yaml
+          - data-id: shared-log.yaml
+          - data-id: shared-swagger.yaml
+          - data-id: shared-seata.yaml
+          - data-id: shared-mq.yaml
+          - data-id: gitlethub-remote-executor.yaml
+          - data-id: gitlethub-secondary-cache.yaml
+            group: GITLETHUB_REMOTE
+            refresh: true
+        namespace: ${NACOS_NAMESPACE:e7aa35a9-5acb-4192-97ba-3191707726ce}
+
+

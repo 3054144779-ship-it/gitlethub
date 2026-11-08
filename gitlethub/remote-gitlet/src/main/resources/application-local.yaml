@@ -1,0 +1,9 @@
+hm:
+  db:
+    host: 100.117.188.7
+    pw: root123456
+  mq:
+    host: 100.117.188.7
+    un: gitlet
+    pw: gitlet
+    vh: /gitlet
