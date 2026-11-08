@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0f19" />
+    <script>
+      // 在样式表加载前定下主题，避免浅色用户先闪一下深色底
+      ;(function () {
+        var theme = 'dark'
+        try {
+          var saved = localStorage.getItem('gitlethub-theme')
+          if (saved === 'light' || saved === 'dark') theme = saved
+        } catch (e) {
+          /* 隐私模式下读不到，用默认深色 */
+        }
+        var color = theme === 'dark' ? '#0b0f19' : '#f5f7fb'
+        var root = document.documentElement
+        root.classList.toggle('dark', theme === 'dark')
+        root.dataset.theme = theme
+        root.style.backgroundColor = color
+        var meta = document.querySelector('meta[name="theme-color"]')
+        if (meta) meta.setAttribute('content', color)
+      })()
+    </script>
+    <title>GitletHub</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

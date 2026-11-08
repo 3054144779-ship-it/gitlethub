@@ -1,0 +1,39 @@
+### 依赖 / 构建产物 ###
+node_modules/
+dist/
+dist-ssr/
+*.tar
+*.tar.gz
+
+### 本地环境变量 ###
+.env
+.env.local
+.env.*.local
+!.env.example
+
+### 日志 ###
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+nohup.out
+
+### 缓存 / 覆盖率 ###
+.eslintcache
+.cache/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+### IDE / 编辑器 ###
+.idea/
+.vscode/
+*.swp
+*.swo
+
+### 系统文件 ###
+.DS_Store
+Thumbs.db
+desktop.ini
